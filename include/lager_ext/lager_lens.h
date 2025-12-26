@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include <lager_ext/concepts.h>  // C++20 Concepts (StringLike, IndexType, PathElementType, etc.)
 #include <lager_ext/value.h>
 #include <lager/lens.hpp>
 #include <lager/lenses.hpp>
@@ -23,23 +24,14 @@
 
 namespace lager_ext {
 
-// ============================================================
-// C++20 Concepts for lens element types
-// ============================================================
-
-/// Concept for types that can be used as map keys (string-like)
-template<typename T>
-concept StringLike = std::is_convertible_v<T, std::string> ||
-                     std::is_same_v<std::decay_t<T>, const char*> ||
-                     std::is_same_v<std::decay_t<T>, std::string_view>;
+// NOTE: C++20 Concepts (StringLike, IndexType, PathElementType, etc.) are
+// now centralized in <lager_ext/concepts.h>.
+// The following aliases are provided for compatibility with existing code:
 
 /// Concept for types that can be used as array indices
+/// @note Alias for IndexType from concepts.h with additional !StringLike constraint
 template<typename T>
 concept IndexLike = std::is_integral_v<std::decay_t<T>> && !StringLike<T>;
-
-/// Concept for valid path element types
-template<typename T>
-concept PathElementType = StringLike<T> || IndexLike<T>;
 
 // ============================================================
 // Unified Lens Interface (C++20 Concepts)

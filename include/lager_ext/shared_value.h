@@ -316,12 +316,41 @@ private:
 //==============================================================================
 
 // Thread-local shared memory region pointer
-inline thread_local SharedMemoryRegion* g_current_shared_region = nullptr;
+//
+// Note on DLL boundary safety:
+// On Windows, `thread_local` variables in DLLs may not be shared correctly
+// across module boundaries. To ensure safety:
+// 1. Use the accessor function get_current_shared_region() instead of direct access
+// 2. The accessor uses a function-local static to ensure single instantiation
+// 3. For header-only usage, the `inline` keyword ensures proper linkage
+//
+// If you're using lager_ext as a DLL, ensure that all code accessing shared
+// memory regions is linked against the same DLL instance.
 
-// Set current thread's shared memory region
-inline void set_current_shared_region(SharedMemoryRegion* region) {
-    g_current_shared_region = region;
+namespace detail {
+    /// Thread-local storage accessor (function-local static for DLL safety)
+    /// @return Reference to the thread-local region pointer
+    inline SharedMemoryRegion*& current_shared_region_storage() {
+        thread_local SharedMemoryRegion* region = nullptr;
+        return region;
+    }
+} // namespace detail
+
+/// Get the current thread's shared memory region
+/// @return Pointer to the current shared memory region, or nullptr if not set
+[[nodiscard]] inline SharedMemoryRegion* get_current_shared_region() noexcept {
+    return detail::current_shared_region_storage();
 }
+
+/// Set current thread's shared memory region
+/// @param region The shared memory region to use, or nullptr to clear
+inline void set_current_shared_region(SharedMemoryRegion* region) noexcept {
+    detail::current_shared_region_storage() = region;
+}
+
+// Legacy compatibility macro (deprecated - use get_current_shared_region())
+// This allows existing code using g_current_shared_region to continue working
+#define g_current_shared_region (::shared_memory::get_current_shared_region())
 
 //==============================================================================
 // SharedString - Shared memory string type
@@ -806,10 +835,12 @@ struct SharedValue {
     using vec4_type     = Vec4;
     using mat3_type     = Mat3;
     using mat4x3_type   = Mat4x3;
-    using mat4_type     = Mat4;
 
-    std::variant<int,
+    // Variant storage - uses fixed-width integer types for cross-platform consistency
+    std::variant<int32_t,
                  int64_t,
+                 uint32_t,
+                 uint64_t,
                  float,
                  double,
                  bool,
@@ -824,15 +855,20 @@ struct SharedValue {
                  Vec4,
                  Mat3,
                  Mat4x3,
-                 Mat4,
                  std::monostate>
         data;
 
     SharedValue() : data(std::monostate{}) {}
-    SharedValue(int v) : data(v) {}
+    // Signed integer constructors
+    SharedValue(int32_t v) : data(v) {}
     SharedValue(int64_t v) : data(v) {}
+    // Unsigned integer constructors
+    SharedValue(uint32_t v) : data(v) {}
+    SharedValue(uint64_t v) : data(v) {}
+    // Floating-point constructors
     SharedValue(float v) : data(v) {}
     SharedValue(double v) : data(v) {}
+    // Boolean constructor
     SharedValue(bool v) : data(v) {}
     SharedValue(const shared_memory::SharedString& v) : data(v) {}
     SharedValue(shared_memory::SharedString&& v) : data(std::move(v)) {}
@@ -848,7 +884,6 @@ struct SharedValue {
     SharedValue(Vec4 v) : data(v) {}
     SharedValue(Mat3 v) : data(v) {}
     SharedValue(Mat4x3 v) : data(v) {}
-    SharedValue(Mat4 v) : data(v) {}
 
     template <typename T>
     const T* get_if() const { return std::get_if<T>(&data); }
@@ -989,21 +1024,32 @@ inline Value deep_copy_to_local(const SharedValue& shared) {
         if constexpr (std::is_same_v<T, std::monostate>) {
             return Value{};
         }
-        else if constexpr (std::is_same_v<T, int>) {
+        // Signed integers
+        else if constexpr (std::is_same_v<T, int32_t>) {
             return Value{data};
         }
         else if constexpr (std::is_same_v<T, int64_t>) {
             return Value{data};
         }
+        // Unsigned integers
+        else if constexpr (std::is_same_v<T, uint32_t>) {
+            return Value{data};
+        }
+        else if constexpr (std::is_same_v<T, uint64_t>) {
+            return Value{data};
+        }
+        // Floating-point
         else if constexpr (std::is_same_v<T, float>) {
             return Value{data};
         }
         else if constexpr (std::is_same_v<T, double>) {
             return Value{data};
         }
+        // Boolean
         else if constexpr (std::is_same_v<T, bool>) {
             return Value{data};
         }
+        // String
         else if constexpr (std::is_same_v<T, shared_memory::SharedString>) {
             return Value{data.to_string()};
         }
@@ -1035,9 +1081,6 @@ inline Value deep_copy_to_local(const SharedValue& shared) {
         else if constexpr (std::is_same_v<T, Mat4x3>) {
             return Value{data};
         }
-        else if constexpr (std::is_same_v<T, Mat4>) {
-            return Value{data};
-        }
         else {
             return Value{};
         }
@@ -1051,21 +1094,32 @@ inline SharedValue deep_copy_to_shared(const Value& local) {
         if constexpr (std::is_same_v<T, std::monostate>) {
             return SharedValue{};
         }
-        else if constexpr (std::is_same_v<T, int>) {
+        // Signed integers
+        else if constexpr (std::is_same_v<T, int32_t>) {
             return SharedValue{data};
         }
         else if constexpr (std::is_same_v<T, int64_t>) {
             return SharedValue{data};
         }
+        // Unsigned integers
+        else if constexpr (std::is_same_v<T, uint32_t>) {
+            return SharedValue{data};
+        }
+        else if constexpr (std::is_same_v<T, uint64_t>) {
+            return SharedValue{data};
+        }
+        // Floating-point
         else if constexpr (std::is_same_v<T, float>) {
             return SharedValue{data};
         }
         else if constexpr (std::is_same_v<T, double>) {
             return SharedValue{data};
         }
+        // Boolean
         else if constexpr (std::is_same_v<T, bool>) {
             return SharedValue{data};
         }
+        // String
         else if constexpr (std::is_same_v<T, std::string>) {
             return SharedValue{shared_memory::SharedString(data)};
         }
@@ -1095,9 +1149,6 @@ inline SharedValue deep_copy_to_shared(const Value& local) {
             return SharedValue{data};
         }
         else if constexpr (std::is_same_v<T, Mat4x3>) {
-            return SharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, Mat4>) {
             return SharedValue{data};
         }
         else {

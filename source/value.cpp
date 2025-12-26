@@ -70,8 +70,6 @@ std::string value_to_string(const Value& val)
             return format_float_array(arg, "mat3");
         } else if constexpr (std::is_same_v<T, Mat4x3>) {
             return format_float_array(arg, "mat4x3");
-        } else if constexpr (std::is_same_v<T, Mat4>) {
-            return format_float_array(arg, "mat4");
         } else if constexpr (std::is_same_v<T, ValueMap>) {
             return "{map:" + std::to_string(arg.size()) + "}";
         } else if constexpr (std::is_same_v<T, ValueVector>) {
@@ -117,9 +115,6 @@ void print_value(const Value& val, const std::string& prefix, std::size_t depth)
             } else if constexpr (std::is_same_v<T, Mat4x3>) {
                 std::cout << std::string(depth * 2, ' ') << prefix
                           << format_float_array(arg, "mat4x3") << "\n";
-            } else if constexpr (std::is_same_v<T, Mat4>) {
-                std::cout << std::string(depth * 2, ' ') << prefix
-                          << format_float_array(arg, "mat4") << "\n";
             } else if constexpr (std::is_same_v<T, ValueMap>) {
                 for (const auto& [k, v] : arg) {
                     std::cout << std::string(depth * 2, ' ') << prefix << k << ":\n";
@@ -222,13 +217,12 @@ enum class TypeTag : uint8_t {
     Array  = 0x08,
     Table  = 0x09,
     Int64  = 0x0A,
-    // Math types (0x10 - 0x15)
+    // Math types (0x10 - 0x14)
     Vec2   = 0x10,
     Vec3   = 0x11,
     Vec4   = 0x12,
     Mat3   = 0x13,
     Mat4x3 = 0x14,
-    Mat4   = 0x15,
 };
 
 // Helper: write bytes to buffer
@@ -436,9 +430,6 @@ void serialize_value(ByteWriter& w, const Value& val) {
         } else if constexpr (std::is_same_v<T, Mat4x3>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Mat4x3));
             w.write_float_array(arg);
-        } else if constexpr (std::is_same_v<T, Mat4>) {
-            w.write_u8(static_cast<uint8_t>(TypeTag::Mat4));
-            w.write_float_array(arg);
         }
     }, val.data);
 }
@@ -531,9 +522,6 @@ Value deserialize_value(ByteReader& r) {
         case TypeTag::Mat4x3:
             return Value{r.read_float_array<12>()};
 
-        case TypeTag::Mat4:
-            return Value{r.read_float_array<16>()};
-
         default:
             throw std::runtime_error("Unknown type tag: " + std::to_string(static_cast<int>(tag)));
     }
@@ -591,8 +579,6 @@ std::size_t calc_serialized_size(const Value& val) {
             size += 9 * sizeof(float);  // 9 floats
         } else if constexpr (std::is_same_v<T, Mat4x3>) {
             size += 12 * sizeof(float); // 12 floats
-        } else if constexpr (std::is_same_v<T, Mat4>) {
-            size += 16 * sizeof(float); // 16 floats
         }
     }, val.data);
 
@@ -756,9 +742,6 @@ void serialize_value_direct(DirectByteWriter& w, const Value& val) {
         } else if constexpr (std::is_same_v<T, Mat4x3>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Mat4x3));
             w.write_float_array(arg);
-        } else if constexpr (std::is_same_v<T, Mat4>) {
-            w.write_u8(static_cast<uint8_t>(TypeTag::Mat4));
-            w.write_float_array(arg);
         }
     }, val.data);
 }
@@ -858,8 +841,6 @@ void to_json_impl(const Value& val, std::ostringstream& oss, bool compact, int i
         } else if constexpr (std::is_same_v<T, Mat3>) {
             write_float_array_json(arg, oss);
         } else if constexpr (std::is_same_v<T, Mat4x3>) {
-            write_float_array_json(arg, oss);
-        } else if constexpr (std::is_same_v<T, Mat4>) {
             write_float_array_json(arg, oss);
         } else if constexpr (std::is_same_v<T, ValueMap>) {
             if (arg.size() == 0) {

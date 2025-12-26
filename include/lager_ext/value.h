@@ -6,7 +6,7 @@
 ///
 /// This file defines the core Value type that can represent:
 /// - Primitive types: int, float, double, bool, string
-/// - Math types: Vec2, Vec3, Vec4, Mat3, Mat4x3, Mat4 (fixed-size float arrays)
+/// - Math types: Vec2, Vec3, Vec4, Mat3, Mat4x3 (fixed-size float arrays)
 /// - Container types: map, vector, array, table (using immer's immutable containers)
 /// - Null (std::monostate)
 ///
@@ -27,11 +27,13 @@
 #include <immer/vector_transient.hpp>
 
 #include <algorithm>  // for std::copy_n
-#include <array>      // for Vec2, Vec3, Vec4, Mat3, Mat4x3, Mat4
+#include <array>      // for Vec2, Vec3, Vec4, Mat3, Mat4x3
 #include <compare>    // for std::strong_ordering (C++20)
+#include <concepts>   // for C++20 Concepts (C++20)
 #include <cstdint>
 #include <iostream>
 #include <ranges>     // for std::ranges::copy (C++20)
+#include <source_location> // for std::source_location (C++20)
 #include <span>       // for std::span (C++20)
 #include <string>
 #include <variant>
@@ -61,6 +63,95 @@
 
 namespace lager_ext {
 
+// ============================================================
+// Error Logging with Source Location (C++20)
+//
+// Provides detailed error information including:
+// - Function name where the error occurred
+// - File and line number of the caller
+//
+// This is only active when lager_ext_VERBOSE_LOG is enabled.
+// ============================================================
+
+namespace detail {
+
+/// Log an error message with source location information
+/// @param func The function name (typically the current method)
+/// @param message The error message to log
+/// @param loc Source location of the caller (auto-captured)
+inline void log_access_error(
+    std::string_view func,
+    std::string_view message,
+    std::source_location loc = std::source_location::current()) noexcept
+{
+#if lager_ext_VERBOSE_LOG
+    std::cerr << "[" << func << "] " << message
+              << " (called from " << loc.file_name()
+              << ":" << loc.line() << ")\n";
+#else
+    (void)func;
+    (void)message;
+    (void)loc;
+#endif
+}
+
+/// Log a key access error
+inline void log_key_error(
+    std::string_view func,
+    std::string_view key,
+    std::string_view reason,
+    std::source_location loc = std::source_location::current()) noexcept
+{
+#if lager_ext_VERBOSE_LOG
+    std::cerr << "[" << func << "] key '" << key << "' " << reason
+              << " (called from " << loc.file_name()
+              << ":" << loc.line() << ")\n";
+#else
+    (void)func;
+    (void)key;
+    (void)reason;
+    (void)loc;
+#endif
+}
+
+/// Log an index access error
+inline void log_index_error(
+    std::string_view func,
+    std::size_t index,
+    std::string_view reason,
+    std::source_location loc = std::source_location::current()) noexcept
+{
+#if lager_ext_VERBOSE_LOG
+    std::cerr << "[" << func << "] index " << index << " " << reason
+              << " (called from " << loc.file_name()
+              << ":" << loc.line() << ")\n";
+#else
+    (void)func;
+    (void)index;
+    (void)reason;
+    (void)loc;
+#endif
+}
+
+} // namespace detail
+
+// ============================================================
+// C++20 Concepts
+//
+// Core type constraints are centralized in <lager_ext/concepts.h>.
+// This file re-exports them for convenience.
+// ============================================================
+
+} // namespace lager_ext (temporary close for include)
+
+#include <lager_ext/concepts.h>
+
+namespace lager_ext {
+
+// Re-import all concepts from concepts.h into this namespace
+// (concepts.h defines: PrimitiveType, StringLike, VectorMathType, MatrixMathType,
+//  MathType, ValueConstructible, ValueTransformer, ValuePredicate, etc.)
+
 /// @defgroup MathTypes Math Type Aliases
 /// @brief Fixed-size float arrays for common mathematical data.
 ///
@@ -70,21 +161,18 @@ namespace lager_ext {
 ///   - Vec4:   4D vector (homogeneous coordinates, RGBA color, quaternion, etc.)
 ///   - Mat3:   3x3 matrix (2D transforms, rotation matrices, etc.)
 ///   - Mat4x3: 4x3 matrix (compact affine transform, 4 rows x 3 columns)
-///   - Mat4:   4x4 matrix (full 3D transformation matrix)
 ///
 /// Memory Layout:
 ///   - All types are contiguous float arrays.
 ///   - Matrices are stored in row-major order (consistent with DirectX convention).
 ///   - Mat3:  [m00, m01, m02, m10, m11, m12, m20, m21, m22]
 ///   - Mat4x3: [m00, m01, m02, m10, m11, m12, m20, m21, m22, m30, m31, m32]
-///   - Mat4:  [m00, m01, m02, m03, m10, m11, m12, m13, ...]
 /// @{
 using Vec2 = std::array<float, 2>;    ///< 2D vector: [x, y]
 using Vec3 = std::array<float, 3>;    ///< 3D vector: [x, y, z]
 using Vec4 = std::array<float, 4>;    ///< 4D vector: [x, y, z, w]
 using Mat3 = std::array<float, 9>;    ///< 3x3 matrix (row-major)
 using Mat4x3 = std::array<float, 12>; ///< 4x3 matrix (row-major, 4 rows x 3 columns)
-using Mat4 = std::array<float, 16>;   ///< 4x4 matrix (row-major)
 /// @}
 
 // ============================================================
@@ -178,7 +266,7 @@ using Path        = std::vector<PathElement>;
 //
 // Supports:
 // - Primitive types: int, float, double, bool, string
-// - Math types: Vec2, Vec3, Vec4, Mat3, Mat4x3, Mat4
+// - Math types: Vec2, Vec3, Vec4, Mat3, Mat4x3
 // - Container types: value_map, value_vector, value_array, value_table
 // - Null: std::monostate
 //
@@ -199,8 +287,14 @@ struct BasicValue
     using value_table   = BasicValueTable<MemoryPolicy>;
     using table_entry   = BasicTableEntry<MemoryPolicy>;
 
-    std::variant<int,
+    // Variant storage for all value types
+    // Integer types use fixed-width types for cross-platform consistency:
+    //   - int32_t, int64_t (signed)
+    //   - uint32_t, uint64_t (unsigned)
+    std::variant<int32_t,
                  int64_t,
+                 uint32_t,
+                 uint64_t,
                  float,
                  double,
                  bool,
@@ -210,7 +304,6 @@ struct BasicValue
                  Vec4,       // 4D vector / quaternion
                  Mat3,       // 3x3 matrix
                  Mat4x3,     // 4x3 matrix (4 rows x 3 columns)
-                 Mat4,       // 4x4 matrix
                  value_map,
                  value_vector,
                  value_array,
@@ -221,10 +314,20 @@ struct BasicValue
     // Constructors
     // Note: noexcept for primitive types helps compiler optimize move operations
     BasicValue() noexcept : data(std::monostate{}) {}
-    BasicValue(int v) noexcept : data(v) {}
+
+    // Signed integer constructors
+    BasicValue(int32_t v) noexcept : data(v) {}
     BasicValue(int64_t v) noexcept : data(v) {}
+
+    // Unsigned integer constructors
+    BasicValue(uint32_t v) noexcept : data(v) {}
+    BasicValue(uint64_t v) noexcept : data(v) {}
+
+    // Floating-point constructors
     BasicValue(float v) noexcept : data(v) {}
     BasicValue(double v) noexcept : data(v) {}
+
+    // Boolean constructor
     BasicValue(bool v) noexcept : data(v) {}
     BasicValue(const std::string& v) : data(v) {}
     BasicValue(std::string&& v) noexcept : data(std::move(v)) {}
@@ -237,7 +340,6 @@ struct BasicValue
     // Large types (36-64 bytes): pass by const& to avoid unnecessary copy
     BasicValue(const Mat3& v) noexcept : data(v) {}
     BasicValue(const Mat4x3& v) noexcept : data(v) {}
-    BasicValue(const Mat4& v) noexcept : data(v) {}
     // Container type constructors
     BasicValue(value_map v) : data(std::move(v)) {}
     BasicValue(value_vector v) : data(std::move(v)) {}
@@ -377,12 +479,6 @@ struct BasicValue
         return BasicValue{m};
     }
 
-    static BasicValue mat4(std::span<const float, 16> data) {
-        Mat4 m;
-        std::ranges::copy(data, m.begin());
-        return BasicValue{m};
-    }
-
     // Factory functions from raw pointers (backward compatibility)
     static BasicValue vec2(const float* ptr) {
         return vec2(std::span<const float, 2>{ptr, 2});
@@ -404,25 +500,12 @@ struct BasicValue
         return mat4x3(std::span<const float, 12>{ptr, 12});
     }
 
-    static BasicValue mat4(const float* ptr) {
-        return mat4(std::span<const float, 16>{ptr, 16});
-    }
-
-    // Identity matrix factory functions
-    static BasicValue identity_mat3() {
+    // Identity matrix factory functions (constexpr for compile-time evaluation)
+    static constexpr BasicValue identity_mat3() {
         return BasicValue{Mat3{
             1.0f, 0.0f, 0.0f,
             0.0f, 1.0f, 0.0f,
             0.0f, 0.0f, 1.0f
-        }};
-    }
-
-    static BasicValue identity_mat4() {
-        return BasicValue{Mat4{
-            1.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, 0.0f,
-            0.0f, 0.0f, 0.0f, 1.0f
         }};
     }
 
@@ -450,10 +533,9 @@ struct BasicValue
     [[nodiscard]] bool is_vec4() const noexcept { return is<Vec4>(); }
     [[nodiscard]] bool is_mat3() const noexcept { return is<Mat3>(); }
     [[nodiscard]] bool is_mat4x3() const noexcept { return is<Mat4x3>(); }
-    [[nodiscard]] bool is_mat4() const noexcept { return is<Mat4>(); }
     [[nodiscard]] bool is_math_type() const noexcept {
         return is_vec2() || is_vec3() || is_vec4() ||
-               is_mat3() || is_mat4x3() || is_mat4();
+               is_mat3() || is_mat4x3();
     }
 
     // ============================================================
@@ -481,9 +563,7 @@ struct BasicValue
                 return found->value.get();
             }
         }
-#if lager_ext_VERBOSE_LOG
-        std::cerr << "[Value::at] key '" << key << "' not found or type mismatch\n";
-#endif
+        detail::log_key_error("Value::at", key, "not found or type mismatch");
         return BasicValue{};
     }
 
@@ -502,9 +582,7 @@ struct BasicValue
                 return (*a)[index].get();
             }
         }
-#if lager_ext_VERBOSE_LOG
-        std::cerr << "[Value::at] index " << index << " out of range or type mismatch\n";
-#endif
+        detail::log_index_error("Value::at", index, "out of range or type mismatch");
         return BasicValue{};
     }
 
@@ -719,15 +797,6 @@ struct BasicValue
         return default_val;
     }
 
-    /// Get as Mat4
-    /// @param default_val Value to return if type doesn't match
-    /// @return The Mat4 value or default_val
-    [[nodiscard]] Mat4 as_mat4(Mat4 default_val = {}) const
-    {
-        if (auto* p = get_if<Mat4>()) return *p;
-        return default_val;
-    }
-
     // Check if key/index exists
     [[nodiscard]] bool contains(const std::string& key) const
     {
@@ -758,9 +827,7 @@ struct BasicValue
             return t->insert(table_entry{key, value_box{std::move(val)}});
         }
 
-#if lager_ext_VERBOSE_LOG
-        std::cerr << "[Value::set] cannot set key '" << key << "' on non-map type\n";
-#endif
+        detail::log_key_error("Value::set", key, "cannot set on non-map type");
         return *this;
     }
 
@@ -784,9 +851,7 @@ struct BasicValue
             }
         }
 
-#if lager_ext_VERBOSE_LOG
-        std::cerr << "[Value::set] cannot set index " << index << " on non-vector type\n";
-#endif
+        detail::log_index_error("Value::set", index, "cannot set on non-vector type");
         return *this;
     }
 
@@ -820,9 +885,7 @@ struct BasicValue
             return value_map{}.set(key, value_box{std::move(val)});
         }
 
-#if lager_ext_VERBOSE_LOG
-        std::cerr << "[Value::set_vivify] cannot set key '" << key << "' on non-map/non-null type\n";
-#endif
+        detail::log_key_error("Value::set_vivify", key, "cannot set on non-map/non-null type");
         return *this;
     }
 
@@ -855,9 +918,7 @@ struct BasicValue
                     return value_box{std::move(val)};
                 });
             }
-#if lager_ext_VERBOSE_LOG
-            std::cerr << "[Value::set_vivify] array index " << index << " out of range\n";
-#endif
+            detail::log_index_error("Value::set_vivify", index, "array index out of range");
             return *this;
         }
         // Auto-vivification: create new vector if null
@@ -871,9 +932,7 @@ struct BasicValue
             return trans.persistent();
         }
 
-#if lager_ext_VERBOSE_LOG
-        std::cerr << "[Value::set_vivify] cannot set index " << index << " on non-vector/non-null type\n";
-#endif
+        detail::log_index_error("Value::set_vivify", index, "cannot set on non-vector/non-null type");
         return *this;
     }
 
@@ -1042,6 +1101,7 @@ public:
     ///              return v.set_vivify(v.size(), Value{3});  // append 3
     ///          });
     template<typename Fn>
+    requires ValueTransformer<Fn, value_type>
     BasicMapBuilder& update_at(const std::string& key, Fn&& fn) {
         if (auto* found = transient_.find(key)) {
             auto new_val = std::forward<Fn>(fn)(found->get());
@@ -1064,6 +1124,7 @@ public:
     ///       return current.set_vivify(current.size(), Value{"new_item"});
     ///   });
     template<typename Fn>
+    requires ValueTransformer<Fn, value_type>
     BasicMapBuilder& upsert(const std::string& key, Fn&& fn) {
         value_type current{};
         if (auto* found = transient_.find(key)) {
@@ -1301,6 +1362,7 @@ public:
     ///              return v.set("count", Value{v.at("count").get_or<int>(0) + 1});
     ///          });
     template<typename Fn>
+    requires ValueTransformer<Fn, value_type>
     BasicVectorBuilder& update_at(std::size_t index, Fn&& fn) {
         if (index < transient_.size()) {
             auto new_val = std::forward<Fn>(fn)(transient_[index].get());
@@ -1347,6 +1409,7 @@ public:
     /// @param fn Function taking value_type and returning value_type
     /// @return Reference to this builder for chaining
     template<typename Fn>
+    requires ValueTransformer<Fn, value_type>
     BasicVectorBuilder& update_in(const Path& path, Fn&& fn) {
         if (path.empty()) return *this;
         
@@ -1581,6 +1644,7 @@ public:
     /// @return Reference to this builder for chaining
     /// @note If id doesn't exist, no change is made
     template<typename Fn>
+    requires ValueTransformer<Fn, value_type>
     BasicTableBuilder& update(const std::string& id, Fn&& fn) {
         const auto* ptr = transient_.find(id);
         if (ptr) {
@@ -1605,6 +1669,7 @@ public:
     ///       return current.set("visits", Value{visits + 1});
     ///   });
     template<typename Fn>
+    requires ValueTransformer<Fn, value_type>
     BasicTableBuilder& upsert(const std::string& id, Fn&& fn) {
         value_type current{};
         const auto* ptr = transient_.find(id);
@@ -1858,7 +1923,6 @@ Value create_sample_data();
 //   0x12 = Vec4 (16 bytes, 4 floats)
 //   0x13 = Mat3 (36 bytes, 9 floats)
 //   0x14 = Mat4x3 (48 bytes, 12 floats)
-//   0x15 = Mat4 (64 bytes, 16 floats)
 //
 // All multi-byte integers are stored in little-endian format.
 // ============================================================
@@ -1903,7 +1967,7 @@ std::size_t serialize_to(const Value& val, uint8_t* buffer, std::size_t buffer_s
 //
 // Special handling for math types:
 // - Vec2, Vec3, Vec4: JSON arrays [x, y, ...]
-// - Mat3, Mat4x3, Mat4: JSON arrays of floats (row-major)
+// - Mat3, Mat4x3: JSON arrays of floats (row-major)
 //
 // Note: JSON has limitations:
 // - Numbers are always double precision (int64 may lose precision)

@@ -179,10 +179,12 @@ struct FastSharedValue {
     using vec4_type     = Vec4;
     using mat3_type     = Mat3;
     using mat4x3_type   = Mat4x3;
-    using mat4_type     = Mat4;
 
-    std::variant<int,
+    // Variant storage - uses fixed-width integer types for cross-platform consistency
+    std::variant<int32_t,
                  int64_t,
+                 uint32_t,
+                 uint64_t,
                  float,
                  double,
                  bool,
@@ -197,15 +199,20 @@ struct FastSharedValue {
                  Vec4,
                  Mat3,
                  Mat4x3,
-                 Mat4,
                  std::monostate>
         data;
 
     FastSharedValue() : data(std::monostate{}) {}
-    FastSharedValue(int v) : data(v) {}
+    // Signed integer constructors
+    FastSharedValue(int32_t v) : data(v) {}
     FastSharedValue(int64_t v) : data(v) {}
+    // Unsigned integer constructors
+    FastSharedValue(uint32_t v) : data(v) {}
+    FastSharedValue(uint64_t v) : data(v) {}
+    // Floating-point constructors
     FastSharedValue(float v) : data(v) {}
     FastSharedValue(double v) : data(v) {}
+    // Boolean constructor
     FastSharedValue(bool v) : data(v) {}
     FastSharedValue(const ::shared_memory::SharedString& v) : data(v) {}
     FastSharedValue(::shared_memory::SharedString&& v) : data(std::move(v)) {}
@@ -221,7 +228,6 @@ struct FastSharedValue {
     FastSharedValue(Vec4 v) : data(v) {}
     FastSharedValue(Mat3 v) : data(v) {}
     FastSharedValue(Mat4x3 v) : data(v) {}
-    FastSharedValue(Mat4 v) : data(v) {}
 
     template <typename T>
     const T* get_if() const { return std::get_if<T>(&data); }
@@ -368,21 +374,32 @@ inline Value fast_deep_copy_to_local(const FastSharedValue& shared) {
         if constexpr (std::is_same_v<T, std::monostate>) {
             return Value{};
         }
-        else if constexpr (std::is_same_v<T, int>) {
+        // Signed integers
+        else if constexpr (std::is_same_v<T, int32_t>) {
             return Value{data};
         }
         else if constexpr (std::is_same_v<T, int64_t>) {
             return Value{data};
         }
+        // Unsigned integers
+        else if constexpr (std::is_same_v<T, uint32_t>) {
+            return Value{data};
+        }
+        else if constexpr (std::is_same_v<T, uint64_t>) {
+            return Value{data};
+        }
+        // Floating-point
         else if constexpr (std::is_same_v<T, float>) {
             return Value{data};
         }
         else if constexpr (std::is_same_v<T, double>) {
             return Value{data};
         }
+        // Boolean
         else if constexpr (std::is_same_v<T, bool>) {
             return Value{data};
         }
+        // String
         else if constexpr (std::is_same_v<T, ::shared_memory::SharedString>) {
             return Value{data.to_string()};
         }
@@ -414,9 +431,6 @@ inline Value fast_deep_copy_to_local(const FastSharedValue& shared) {
         else if constexpr (std::is_same_v<T, Mat4x3>) {
             return Value{data};
         }
-        else if constexpr (std::is_same_v<T, Mat4>) {
-            return Value{data};
-        }
         else {
             return Value{};
         }
@@ -430,21 +444,32 @@ inline FastSharedValue fast_deep_copy_to_shared(const Value& local) {
         if constexpr (std::is_same_v<T, std::monostate>) {
             return FastSharedValue{};
         }
-        else if constexpr (std::is_same_v<T, int>) {
+        // Signed integers
+        else if constexpr (std::is_same_v<T, int32_t>) {
             return FastSharedValue{data};
         }
         else if constexpr (std::is_same_v<T, int64_t>) {
             return FastSharedValue{data};
         }
+        // Unsigned integers
+        else if constexpr (std::is_same_v<T, uint32_t>) {
+            return FastSharedValue{data};
+        }
+        else if constexpr (std::is_same_v<T, uint64_t>) {
+            return FastSharedValue{data};
+        }
+        // Floating-point
         else if constexpr (std::is_same_v<T, float>) {
             return FastSharedValue{data};
         }
         else if constexpr (std::is_same_v<T, double>) {
             return FastSharedValue{data};
         }
+        // Boolean
         else if constexpr (std::is_same_v<T, bool>) {
             return FastSharedValue{data};
         }
+        // String
         else if constexpr (std::is_same_v<T, std::string>) {
             return FastSharedValue{::shared_memory::SharedString(data)};
         }
@@ -474,9 +499,6 @@ inline FastSharedValue fast_deep_copy_to_shared(const Value& local) {
             return FastSharedValue{data};
         }
         else if constexpr (std::is_same_v<T, Mat4x3>) {
-            return FastSharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, Mat4>) {
             return FastSharedValue{data};
         }
         else {
