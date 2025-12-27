@@ -29,10 +29,10 @@ file(GLOB LAGER_EXT_SOURCES "source/*.cpp")
 
 set(LAGER_EXT_HEADERS
     include/lager_ext/at_lens.h
-    include/lager_ext/delta_undo_engine.h
-    include/lager_ext/diff_collector.h
+    include/lager_ext/concepts.h
+    include/lager_ext/delta_undo.h
+    include/lager_ext/value_diff.h
     include/lager_ext/editor_engine.h
-    include/lager_ext/erased_lens.h
     include/lager_ext/fast_shared_value.h
     include/lager_ext/lager_lens.h
     include/lager_ext/multi_store_engine.h

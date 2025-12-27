@@ -1,15 +1,10 @@
-// diff_collector.cpp
-// Implementation of DiffCollector and diff demos
+// diff_collector.cpp - DiffCollector and diff demos
 
-#include <lager_ext/diff_collector.h>
+#include <lager_ext/value_diff.h>
 #include <immer/algorithm.hpp>
 #include <iostream>
 
 namespace lager_ext {
-
-// ============================================================
-// DiffCollector implementation
-// ============================================================
 
 void DiffCollector::diff(const Value& old_val, const Value& new_val, bool recursive)
 {
@@ -77,12 +72,6 @@ void DiffCollector::print_diffs() const
 
 void DiffCollector::diff_value(const Value& old_val, const Value& new_val, Path& current_path)
 {
-    // NOTE: This function is recursive. For extremely deeply nested data structures,
-    // consider implementing an iterative version with an explicit stack to avoid
-    // stack overflow. Typical use cases with nesting depth < 100 should be safe.
-    // For deeply nested data (e.g., > 1000 levels), an iterative approach is recommended.
-
-    // Fast path: if types differ, record as Change
     const auto old_index = old_val.data.index();
     const auto new_index = new_val.data.index();
     if (old_index != new_index) [[unlikely]] {
@@ -176,8 +165,6 @@ void DiffCollector::diff_vector(const ValueVector& old_vec, const ValueVector& n
     const size_t new_size = new_vec.size();
     const size_t common_size = std::min(old_size, new_size);
 
-    // OPTIMIZED: Use push_back/pop_back pattern to avoid Path copying
-    // Compare common indices
     for (size_t i = 0; i < common_size; ++i) {
         const auto& old_box = old_vec[i];
         const auto& new_box = new_vec[i];
@@ -260,10 +247,6 @@ void DiffCollector::collect_added(const Value& val, Path& current_path)
 {
     collect_entries(val, current_path, true);
 }
-
-// ============================================================
-// Quick change detection (early exit optimization)
-// ============================================================
 
 bool has_any_difference(const Value& old_val, const Value& new_val, bool recursive)
 {
@@ -406,10 +389,6 @@ bool vectors_differ(const ValueVector& old_vec, const ValueVector& new_vec, bool
 
 } // namespace detail
 
-// ============================================================
-// Demo: immer::diff basic usage
-// ============================================================
-
 void demo_immer_diff()
 {
     std::cout << "\n=== immer::diff Demo ===\n\n";
@@ -506,10 +485,6 @@ void demo_immer_diff()
 
     std::cout << "\n=== Demo End ===\n\n";
 }
-
-// ============================================================
-// Demo: DiffCollector usage
-// ============================================================
 
 void demo_recursive_diff_collector()
 {

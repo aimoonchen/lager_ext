@@ -20,7 +20,7 @@
 #pragma once
 
 #include <lager_ext/value.h>
-#include <lager_ext/diff_collector.h>
+#include <lager_ext/value_diff.h>
 
 #include <functional>
 #include <memory>

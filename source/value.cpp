@@ -1,13 +1,6 @@
-// value.cpp
-// Implementation of Value type utilities and serialization
-//
-// Note: BasicValue<MemoryPolicy> is a template class, so its member
-// functions are implemented in value.h. This file only contains
-// implementations for non-template utility functions and serialization.
+// value.cpp - Value type utilities and serialization
 
 #include <lager_ext/value.h>
-
-// Transient headers (for batch construction during deserialization)
 #include <immer/map_transient.hpp>
 #include <immer/vector_transient.hpp>
 #include <immer/array_transient.hpp>
@@ -20,9 +13,6 @@
 
 namespace lager_ext {
 
-// ============================================================
-// Helper: format float array as string
-// ============================================================
 namespace {
 
 template<std::size_t N>
@@ -40,10 +30,6 @@ std::string format_float_array(const std::array<float, N>& arr, const char* name
 
 } // anonymous namespace
 
-// ============================================================
-// Utility functions (for default Value type)
-// ============================================================
-
 std::string value_to_string(const Value& val)
 {
     return std::visit([](const auto& arg) -> std::string {
@@ -52,10 +38,22 @@ std::string value_to_string(const Value& val)
             return "\"" + arg + "\"";
         } else if constexpr (std::is_same_v<T, bool>) {
             return arg ? "true" : "false";
-        } else if constexpr (std::is_same_v<T, int>) {
+        } else if constexpr (std::is_same_v<T, int8_t>) {
+            return std::to_string(static_cast<int>(arg)) + "i8";
+        } else if constexpr (std::is_same_v<T, int16_t>) {
+            return std::to_string(arg) + "i16";
+        } else if constexpr (std::is_same_v<T, int32_t>) {
             return std::to_string(arg);
         } else if constexpr (std::is_same_v<T, int64_t>) {
             return std::to_string(arg) + "L";
+        } else if constexpr (std::is_same_v<T, uint8_t>) {
+            return std::to_string(static_cast<unsigned>(arg)) + "u8";
+        } else if constexpr (std::is_same_v<T, uint16_t>) {
+            return std::to_string(arg) + "u16";
+        } else if constexpr (std::is_same_v<T, uint32_t>) {
+            return std::to_string(arg) + "u";
+        } else if constexpr (std::is_same_v<T, uint64_t>) {
+            return std::to_string(arg) + "uL";
         } else if constexpr (std::is_same_v<T, float>) {
             return std::to_string(arg) + "f";
         } else if constexpr (std::is_same_v<T, double>) {
@@ -66,10 +64,12 @@ std::string value_to_string(const Value& val)
             return format_float_array(arg, "vec3");
         } else if constexpr (std::is_same_v<T, Vec4>) {
             return format_float_array(arg, "vec4");
-        } else if constexpr (std::is_same_v<T, Mat3>) {
-            return format_float_array(arg, "mat3");
-        } else if constexpr (std::is_same_v<T, Mat4x3>) {
-            return format_float_array(arg, "mat4x3");
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
+            return format_float_array(arg.get(), "mat3");
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
+            return format_float_array(arg.get(), "mat4x3");
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            return format_float_array(arg.get(), "mat4");
         } else if constexpr (std::is_same_v<T, ValueMap>) {
             return "{map:" + std::to_string(arg.size()) + "}";
         } else if constexpr (std::is_same_v<T, ValueVector>) {
@@ -95,8 +95,16 @@ void print_value(const Value& val, const std::string& prefix, std::size_t depth)
             } else if constexpr (std::is_same_v<T, bool>) {
                 std::cout << std::string(depth * 2, ' ') << prefix
                           << (arg ? "true" : "false") << "\n";
-            } else if constexpr (std::is_same_v<T, int> ||
+            } else if constexpr (std::is_same_v<T, int8_t>) {
+                std::cout << std::string(depth * 2, ' ') << prefix << static_cast<int>(arg) << "\n";
+            } else if constexpr (std::is_same_v<T, uint8_t>) {
+                std::cout << std::string(depth * 2, ' ') << prefix << static_cast<unsigned>(arg) << "\n";
+            } else if constexpr (std::is_same_v<T, int16_t> ||
+                                 std::is_same_v<T, int32_t> ||
                                  std::is_same_v<T, int64_t> ||
+                                 std::is_same_v<T, uint16_t> ||
+                                 std::is_same_v<T, uint32_t> ||
+                                 std::is_same_v<T, uint64_t> ||
                                  std::is_same_v<T, float> ||
                                  std::is_same_v<T, double>) {
                 std::cout << std::string(depth * 2, ' ') << prefix << arg << "\n";
@@ -109,12 +117,15 @@ void print_value(const Value& val, const std::string& prefix, std::size_t depth)
             } else if constexpr (std::is_same_v<T, Vec4>) {
                 std::cout << std::string(depth * 2, ' ') << prefix
                           << format_float_array(arg, "vec4") << "\n";
-            } else if constexpr (std::is_same_v<T, Mat3>) {
+            } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
                 std::cout << std::string(depth * 2, ' ') << prefix
-                          << format_float_array(arg, "mat3") << "\n";
-            } else if constexpr (std::is_same_v<T, Mat4x3>) {
+                          << format_float_array(arg.get(), "mat3") << "\n";
+            } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
                 std::cout << std::string(depth * 2, ' ') << prefix
-                          << format_float_array(arg, "mat4x3") << "\n";
+                          << format_float_array(arg.get(), "mat4x3") << "\n";
+            } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+                std::cout << std::string(depth * 2, ' ') << prefix
+                          << format_float_array(arg.get(), "mat4") << "\n";
             } else if constexpr (std::is_same_v<T, ValueMap>) {
                 for (const auto& [k, v] : arg) {
                     std::cout << std::string(depth * 2, ' ') << prefix << k << ":\n";
@@ -161,10 +172,6 @@ std::string path_to_string(const Path& path)
     return result.empty() ? "/" : result;
 }
 
-// ============================================================
-// Common test data factory
-// ============================================================
-
 Value create_sample_data()
 {
     // Create user 1 using Builder API for O(n) construction
@@ -198,16 +205,12 @@ Value create_sample_data()
         .finish();
 }
 
-// ============================================================
-// Serialization / Deserialization Implementation
-// ============================================================
-
 namespace {
 
 // Type tags for binary format
 enum class TypeTag : uint8_t {
     Null   = 0x00,
-    Int    = 0x01,
+    Int32  = 0x01,  // int32_t (renamed from Int for clarity)
     Float  = 0x02,
     Double = 0x03,
     Bool   = 0x04,
@@ -216,13 +219,22 @@ enum class TypeTag : uint8_t {
     Vector = 0x07,
     Array  = 0x08,
     Table  = 0x09,
-    Int64  = 0x0A,
-    // Math types (0x10 - 0x14)
+    Int64  = 0x0A,  // int64_t
+    // New integer types (0x0B - 0x0F)
+    Int8   = 0x0B,  // int8_t
+    Int16  = 0x0C,  // int16_t
+    UInt8  = 0x0D,  // uint8_t
+    UInt16 = 0x0E,  // uint16_t
+    UInt32 = 0x0F,  // uint32_t
+    // Math types (0x10 - 0x15)
     Vec2   = 0x10,
     Vec3   = 0x11,
     Vec4   = 0x12,
     Mat3   = 0x13,
     Mat4x3 = 0x14,
+    Mat4   = 0x15,  // 4x4 matrix
+    // Extended integer types (0x16)
+    UInt64 = 0x16,  // uint64_t
 };
 
 // Helper: write bytes to buffer
@@ -371,12 +383,32 @@ void serialize_value(ByteWriter& w, const Value& val) {
 
         if constexpr (std::is_same_v<T, std::monostate>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Null));
-        } else if constexpr (std::is_same_v<T, int>) {
-            w.write_u8(static_cast<uint8_t>(TypeTag::Int));
+        } else if constexpr (std::is_same_v<T, int8_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::Int8));
+            w.write_u8(static_cast<uint8_t>(arg));
+        } else if constexpr (std::is_same_v<T, int16_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::Int16));
+            w.write_u8(static_cast<uint8_t>(arg & 0xFF));
+            w.write_u8(static_cast<uint8_t>((arg >> 8) & 0xFF));
+        } else if constexpr (std::is_same_v<T, int32_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::Int32));
             w.write_i32(arg);
         } else if constexpr (std::is_same_v<T, int64_t>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Int64));
             w.write_i64(arg);
+        } else if constexpr (std::is_same_v<T, uint8_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::UInt8));
+            w.write_u8(arg);
+        } else if constexpr (std::is_same_v<T, uint16_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::UInt16));
+            w.write_u8(static_cast<uint8_t>(arg & 0xFF));
+            w.write_u8(static_cast<uint8_t>((arg >> 8) & 0xFF));
+        } else if constexpr (std::is_same_v<T, uint32_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::UInt32));
+            w.write_u32(arg);
+        } else if constexpr (std::is_same_v<T, uint64_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::UInt64));
+            w.write_i64(static_cast<int64_t>(arg));  // reuse i64 write
         } else if constexpr (std::is_same_v<T, float>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Float));
             w.write_f32(arg);
@@ -424,12 +456,15 @@ void serialize_value(ByteWriter& w, const Value& val) {
         } else if constexpr (std::is_same_v<T, Vec4>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Vec4));
             w.write_float_array(arg);
-        } else if constexpr (std::is_same_v<T, Mat3>) {
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Mat3));
-            w.write_float_array(arg);
-        } else if constexpr (std::is_same_v<T, Mat4x3>) {
+            w.write_float_array(arg.get());
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Mat4x3));
-            w.write_float_array(arg);
+            w.write_float_array(arg.get());
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::Mat4));
+            w.write_float_array(arg.get());
         }
     }, val.data);
 }
@@ -441,12 +476,38 @@ Value deserialize_value(ByteReader& r) {
         case TypeTag::Null:
             return Value{};
 
-        case TypeTag::Int:
+        // Integer types
+        case TypeTag::Int8:
+            return Value{static_cast<int8_t>(r.read_u8())};
+
+        case TypeTag::Int16: {
+            uint8_t lo = r.read_u8();
+            uint8_t hi = r.read_u8();
+            return Value{static_cast<int16_t>(lo | (hi << 8))};
+        }
+
+        case TypeTag::Int32:
             return Value{r.read_i32()};
 
         case TypeTag::Int64:
             return Value{r.read_i64()};
 
+        case TypeTag::UInt8:
+            return Value{r.read_u8()};
+
+        case TypeTag::UInt16: {
+            uint8_t lo = r.read_u8();
+            uint8_t hi = r.read_u8();
+            return Value{static_cast<uint16_t>(lo | (hi << 8))};
+        }
+
+        case TypeTag::UInt32:
+            return Value{r.read_u32()};
+
+        case TypeTag::UInt64:
+            return Value{static_cast<uint64_t>(r.read_i64())};
+
+        // Floating-point types
         case TypeTag::Float:
             return Value{r.read_f32()};
 
@@ -459,6 +520,7 @@ Value deserialize_value(ByteReader& r) {
         case TypeTag::String:
             return Value{r.read_string()};
 
+        // Container types
         case TypeTag::Map: {
             uint32_t count = r.read_u32();
             auto transient = ValueMap{}.transient();
@@ -507,6 +569,7 @@ Value deserialize_value(ByteReader& r) {
             return Value{transient.persistent()};
         }
 
+        // Math types
         case TypeTag::Vec2:
             return Value{r.read_float_array<2>()};
 
@@ -517,10 +580,13 @@ Value deserialize_value(ByteReader& r) {
             return Value{r.read_float_array<4>()};
 
         case TypeTag::Mat3:
-            return Value{r.read_float_array<9>()};
+            return Value{Value::boxed_mat3{r.read_float_array<9>()}};
 
         case TypeTag::Mat4x3:
-            return Value{r.read_float_array<12>()};
+            return Value{Value::boxed_mat4x3{r.read_float_array<12>()}};
+
+        case TypeTag::Mat4:
+            return Value{Value::boxed_mat4{r.read_float_array<16>()}};
 
         default:
             throw std::runtime_error("Unknown type tag: " + std::to_string(static_cast<int>(tag)));
@@ -535,9 +601,13 @@ std::size_t calc_serialized_size(const Value& val) {
 
         if constexpr (std::is_same_v<T, std::monostate>) {
             // no extra data
-        } else if constexpr (std::is_same_v<T, int>) {
+        } else if constexpr (std::is_same_v<T, int8_t> || std::is_same_v<T, uint8_t>) {
+            size += 1;
+        } else if constexpr (std::is_same_v<T, int16_t> || std::is_same_v<T, uint16_t>) {
+            size += 2;
+        } else if constexpr (std::is_same_v<T, int32_t> || std::is_same_v<T, uint32_t>) {
             size += 4;
-        } else if constexpr (std::is_same_v<T, int64_t>) {
+        } else if constexpr (std::is_same_v<T, int64_t> || std::is_same_v<T, uint64_t>) {
             size += 8;
         } else if constexpr (std::is_same_v<T, float>) {
             size += 4;
@@ -575,10 +645,12 @@ std::size_t calc_serialized_size(const Value& val) {
             size += 3 * sizeof(float);  // 3 floats
         } else if constexpr (std::is_same_v<T, Vec4>) {
             size += 4 * sizeof(float);  // 4 floats
-        } else if constexpr (std::is_same_v<T, Mat3>) {
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
             size += 9 * sizeof(float);  // 9 floats
-        } else if constexpr (std::is_same_v<T, Mat4x3>) {
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
             size += 12 * sizeof(float); // 12 floats
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            size += 16 * sizeof(float); // 16 floats
         }
     }, val.data);
 
@@ -683,12 +755,32 @@ void serialize_value_direct(DirectByteWriter& w, const Value& val) {
 
         if constexpr (std::is_same_v<T, std::monostate>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Null));
-        } else if constexpr (std::is_same_v<T, int>) {
-            w.write_u8(static_cast<uint8_t>(TypeTag::Int));
+        } else if constexpr (std::is_same_v<T, int8_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::Int8));
+            w.write_u8(static_cast<uint8_t>(arg));
+        } else if constexpr (std::is_same_v<T, int16_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::Int16));
+            w.write_u8(static_cast<uint8_t>(arg & 0xFF));
+            w.write_u8(static_cast<uint8_t>((arg >> 8) & 0xFF));
+        } else if constexpr (std::is_same_v<T, int32_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::Int32));
             w.write_i32(arg);
         } else if constexpr (std::is_same_v<T, int64_t>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Int64));
             w.write_i64(arg);
+        } else if constexpr (std::is_same_v<T, uint8_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::UInt8));
+            w.write_u8(arg);
+        } else if constexpr (std::is_same_v<T, uint16_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::UInt16));
+            w.write_u8(static_cast<uint8_t>(arg & 0xFF));
+            w.write_u8(static_cast<uint8_t>((arg >> 8) & 0xFF));
+        } else if constexpr (std::is_same_v<T, uint32_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::UInt32));
+            w.write_u32(arg);
+        } else if constexpr (std::is_same_v<T, uint64_t>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::UInt64));
+            w.write_i64(static_cast<int64_t>(arg));
         } else if constexpr (std::is_same_v<T, float>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Float));
             w.write_f32(arg);
@@ -736,12 +828,15 @@ void serialize_value_direct(DirectByteWriter& w, const Value& val) {
         } else if constexpr (std::is_same_v<T, Vec4>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Vec4));
             w.write_float_array(arg);
-        } else if constexpr (std::is_same_v<T, Mat3>) {
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Mat3));
-            w.write_float_array(arg);
-        } else if constexpr (std::is_same_v<T, Mat4x3>) {
+            w.write_float_array(arg.get());
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
             w.write_u8(static_cast<uint8_t>(TypeTag::Mat4x3));
-            w.write_float_array(arg);
+            w.write_float_array(arg.get());
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            w.write_u8(static_cast<uint8_t>(TypeTag::Mat4));
+            w.write_float_array(arg.get());
         }
     }, val.data);
 }
@@ -822,9 +917,16 @@ void to_json_impl(const Value& val, std::ostringstream& oss, bool compact, int i
             oss << "null";
         } else if constexpr (std::is_same_v<T, bool>) {
             oss << (arg ? "true" : "false");
-        } else if constexpr (std::is_same_v<T, int>) {
-            oss << arg;
-        } else if constexpr (std::is_same_v<T, int64_t>) {
+        } else if constexpr (std::is_same_v<T, int8_t>) {
+            oss << static_cast<int>(arg);
+        } else if constexpr (std::is_same_v<T, uint8_t>) {
+            oss << static_cast<unsigned>(arg);
+        } else if constexpr (std::is_same_v<T, int16_t> ||
+                           std::is_same_v<T, int32_t> ||
+                           std::is_same_v<T, int64_t> ||
+                           std::is_same_v<T, uint16_t> ||
+                           std::is_same_v<T, uint32_t> ||
+                           std::is_same_v<T, uint64_t>) {
             oss << arg;
         } else if constexpr (std::is_same_v<T, float>) {
             oss << std::setprecision(7) << arg;
@@ -838,10 +940,12 @@ void to_json_impl(const Value& val, std::ostringstream& oss, bool compact, int i
             write_float_array_json(arg, oss);
         } else if constexpr (std::is_same_v<T, Vec4>) {
             write_float_array_json(arg, oss);
-        } else if constexpr (std::is_same_v<T, Mat3>) {
-            write_float_array_json(arg, oss);
-        } else if constexpr (std::is_same_v<T, Mat4x3>) {
-            write_float_array_json(arg, oss);
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
+            write_float_array_json(arg.get(), oss);
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
+            write_float_array_json(arg.get(), oss);
+        } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            write_float_array_json(arg.get(), oss);
         } else if constexpr (std::is_same_v<T, ValueMap>) {
             if (arg.size() == 0) {
                 oss << "{}";

@@ -6,7 +6,7 @@
 ///
 /// This file contains shared type definitions used by:
 /// - editor_engine.h (snapshot-based undo)
-/// - delta_undo_engine.h (delta-based undo)
+/// - delta_undo.h (delta-based undo)
 /// - multi_store_engine.h (multi-store architecture)
 ///
 /// Centralizing these types avoids code duplication and ensures consistency.

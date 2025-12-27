@@ -1,5 +1,4 @@
-// string_path.cpp
-// Implementation of string-based path parsing API
+// string_path.cpp - String-based path parsing API
 
 #include <lager_ext/string_path.h>
 #include <cctype>
@@ -8,14 +7,9 @@
 
 namespace lager_ext {
 
-// ============================================================
-// String path parsing
-// ============================================================
-
 namespace {
 
-/// Unescape a path segment according to RFC 6901 conventions
-/// ~1 -> /, ~0 -> ~
+// Unescape: ~1 -> /, ~0 -> ~
 std::string unescape_segment(std::string_view segment)
 {
     std::string result;
@@ -39,7 +33,6 @@ std::string unescape_segment(std::string_view segment)
     return result;
 }
 
-/// Check if a string represents a valid array index
 bool is_array_index(const std::string& s)
 {
     if (s.empty() || s == "-") {  // "-" is special case for "end of array"
@@ -127,10 +120,6 @@ std::string path_to_string_path(const Path& path)
     return result;
 }
 
-// ============================================================
-// String path lens functions
-// ============================================================
-
 LagerValueLens string_path_lens(std::string_view path_str)
 {
     return lager_path_lens(parse_string_path(path_str));
@@ -147,10 +136,6 @@ Value set_by_path(const Value& data, std::string_view path_str, Value new_value)
     auto lens = string_path_lens(path_str);
     return lager::set(lens, data, std::move(new_value));
 }
-
-// ============================================================
-// Demo function
-// ============================================================
 
 void demo_string_path()
 {

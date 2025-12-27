@@ -375,15 +375,6 @@ inline LagerValueLens path_element_to_lens(const PathElement& elem)
         elem);
 }
 
-// ============================================================
-// Optimized Path Lens Implementation
-//
-// Uses shared path_utils.h for direct traversal functions,
-// avoiding code duplication with erased_lens.cpp
-// ============================================================
-
-// Build lens from path without caching (internal helper)
-// OPTIMIZED: Uses path_utils.h for direct path traversal
 LagerValueLens build_path_lens_uncached(const Path& path)
 {
     if (path.empty()) {

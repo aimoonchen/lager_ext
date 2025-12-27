@@ -16,7 +16,6 @@
 
 #include <QObject>
 #include <QThreadPool>
-#include <QtConcurrent>
 
 #include <functional>
 #include <stdexcept>
@@ -35,7 +34,7 @@ struct with_qt_event_loop
     template <typename Fn>
     void async(Fn&& fn)
     {
-        QtConcurrent::run(&thread_pool.get(), std::forward<Fn>(fn));
+        thread_pool.get().start(std::forward<Fn>(fn));
     }
 
     template <typename Fn>

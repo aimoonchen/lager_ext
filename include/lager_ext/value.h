@@ -63,22 +63,8 @@
 
 namespace lager_ext {
 
-// ============================================================
-// Error Logging with Source Location (C++20)
-//
-// Provides detailed error information including:
-// - Function name where the error occurred
-// - File and line number of the caller
-//
-// This is only active when lager_ext_VERBOSE_LOG is enabled.
-// ============================================================
-
 namespace detail {
 
-/// Log an error message with source location information
-/// @param func The function name (typically the current method)
-/// @param message The error message to log
-/// @param loc Source location of the caller (auto-captured)
 inline void log_access_error(
     std::string_view func,
     std::string_view message,
@@ -95,7 +81,6 @@ inline void log_access_error(
 #endif
 }
 
-/// Log a key access error
 inline void log_key_error(
     std::string_view func,
     std::string_view key,
@@ -114,7 +99,6 @@ inline void log_key_error(
 #endif
 }
 
-/// Log an index access error
 inline void log_index_error(
     std::string_view func,
     std::size_t index,
@@ -135,78 +119,23 @@ inline void log_index_error(
 
 } // namespace detail
 
-// ============================================================
-// C++20 Concepts
-//
-// Core type constraints are centralized in <lager_ext/concepts.h>.
-// This file re-exports them for convenience.
-// ============================================================
-
 } // namespace lager_ext (temporary close for include)
 
 #include <lager_ext/concepts.h>
 
 namespace lager_ext {
 
-// Re-import all concepts from concepts.h into this namespace
-// (concepts.h defines: PrimitiveType, StringLike, VectorMathType, MatrixMathType,
-//  MathType, ValueConstructible, ValueTransformer, ValuePredicate, etc.)
-
-/// @defgroup MathTypes Math Type Aliases
-/// @brief Fixed-size float arrays for common mathematical data.
-///
-/// These types are used for efficient storage of common mathematical data:
-///   - Vec2:   2D vector (position, UV coordinates, etc.)
-///   - Vec3:   3D vector (position, direction, RGB color, etc.)
-///   - Vec4:   4D vector (homogeneous coordinates, RGBA color, quaternion, etc.)
-///   - Mat3:   3x3 matrix (2D transforms, rotation matrices, etc.)
-///   - Mat4x3: 4x3 matrix (compact affine transform, 4 rows x 3 columns)
-///
-/// Memory Layout:
-///   - All types are contiguous float arrays.
-///   - Matrices are stored in row-major order (consistent with DirectX convention).
-///   - Mat3:  [m00, m01, m02, m10, m11, m12, m20, m21, m22]
-///   - Mat4x3: [m00, m01, m02, m10, m11, m12, m20, m21, m22, m30, m31, m32]
-/// @{
-using Vec2 = std::array<float, 2>;    ///< 2D vector: [x, y]
-using Vec3 = std::array<float, 3>;    ///< 3D vector: [x, y, z]
-using Vec4 = std::array<float, 4>;    ///< 4D vector: [x, y, z, w]
-using Mat3 = std::array<float, 9>;    ///< 3x3 matrix (row-major)
-using Mat4x3 = std::array<float, 12>; ///< 4x3 matrix (row-major, 4 rows x 3 columns)
-/// @}
-
-// ============================================================
-// Memory Policy Support
-//
-// The BasicValue template is parameterized by an immer memory policy,
-// allowing customization of:
-// - Heap allocation strategy (default: free_list_heap)
-// - Reference counting policy (default: thread-safe refcount)
-// - Lock policy (default: spinlock)
-// - Transience policy (for transient operations)
-//
-// Common memory policies from immer:
-// - immer::default_memory_policy (default, thread-safe with free list)
-// - immer::memory_policy<immer::heap_policy<immer::cpp_heap>,
-//                        immer::refcount_policy,
-//                        immer::spinlock_policy>
-// - immer::memory_policy<immer::heap_policy<immer::gc_heap>,
-//                        immer::no_refcount_policy,
-//                        immer::no_lock_policy>  (for Boehm GC)
-//
-// Usage:
-//   using MyPolicy = immer::memory_policy<...>;
-//   using MyValue = lager_ext::BasicValue<MyPolicy>;
-//   using Value = lager_ext::Value;  // Same as BasicValue<default_memory_policy>
-// ============================================================
+// Math type aliases (row-major matrices)
+using Vec2 = std::array<float, 2>;
+using Vec3 = std::array<float, 3>;
+using Vec4 = std::array<float, 4>;
+using Mat3 = std::array<float, 9>;
+using Mat4x3 = std::array<float, 12>;
+using Mat4 = std::array<float, 16>;
 
 // Forward declaration
 template <typename MemoryPolicy>
 struct BasicValue;
-
-// ============================================================
-// Container type aliases (templated on memory policy)
-// ============================================================
 
 template <typename MemoryPolicy>
 using BasicValueBox = immer::box<BasicValue<MemoryPolicy>, MemoryPolicy>;
@@ -226,21 +155,11 @@ template <typename MemoryPolicy>
 using BasicValueArray = immer::array<BasicValueBox<MemoryPolicy>,
                                       MemoryPolicy>;
 
-// ============================================================
-// BasicTableEntry - Entry type for ValueTable (templated)
-//
-// Each entry has a unique string id and an associated value.
-// The id is used as the key for table lookup operations.
-// ============================================================
 template <typename MemoryPolicy>
 struct BasicTableEntry {
     std::string id;
     BasicValueBox<MemoryPolicy> value;
 
-    // Required by immer::table for key extraction
-    // immer's default table_key_fn looks for .id member
-
-    // Required by immer::table for equality comparison
     bool operator==(const BasicTableEntry& other) const {
         return id == other.id && value == other.value;
     }
@@ -257,53 +176,51 @@ using BasicValueTable = immer::table<BasicTableEntry<MemoryPolicy>,
                                       std::equal_to<std::string>,
                                       MemoryPolicy>;
 
-// Path element: either a string key or numeric index
+// Boxed matrix types (reduces variant size from ~72 to ~40 bytes)
+template <typename MemoryPolicy>
+using BoxedMat3 = immer::box<Mat3, MemoryPolicy>;
+
+template <typename MemoryPolicy>
+using BoxedMat4x3 = immer::box<Mat4x3, MemoryPolicy>;
+
+template <typename MemoryPolicy>
+using BoxedMat4 = immer::box<Mat4, MemoryPolicy>;
+
 using PathElement = std::variant<std::string, std::size_t>;
 using Path        = std::vector<PathElement>;
 
-// ============================================================
-// BasicValue struct - JSON-like dynamic data type (templated)
-//
-// Supports:
-// - Primitive types: int, float, double, bool, string
-// - Math types: Vec2, Vec3, Vec4, Mat3, Mat4x3
-// - Container types: value_map, value_vector, value_array, value_table
-// - Null: std::monostate
-//
-// The struct also implements a container-like interface
-// for compatibility with lager::lenses::at
-// ============================================================
 template <typename MemoryPolicy = immer::default_memory_policy>
 struct BasicValue
 {
-    // Memory policy type
     using memory_policy = MemoryPolicy;
-
-    // Container type aliases for this memory policy
     using value_box     = BasicValueBox<MemoryPolicy>;
     using value_map     = BasicValueMap<MemoryPolicy>;
     using value_vector  = BasicValueVector<MemoryPolicy>;
     using value_array   = BasicValueArray<MemoryPolicy>;
     using value_table   = BasicValueTable<MemoryPolicy>;
     using table_entry   = BasicTableEntry<MemoryPolicy>;
+    using boxed_mat3    = BoxedMat3<MemoryPolicy>;
+    using boxed_mat4x3  = BoxedMat4x3<MemoryPolicy>;
+    using boxed_mat4    = BoxedMat4<MemoryPolicy>;
 
-    // Variant storage for all value types
-    // Integer types use fixed-width types for cross-platform consistency:
-    //   - int32_t, int64_t (signed)
-    //   - uint32_t, uint64_t (unsigned)
-    std::variant<int32_t,
+    std::variant<int8_t,
+                 int16_t,
+                 int32_t,
                  int64_t,
+                 uint8_t,
+                 uint16_t,
                  uint32_t,
                  uint64_t,
                  float,
                  double,
                  bool,
                  std::string,
-                 Vec2,       // 2D vector
-                 Vec3,       // 3D vector
-                 Vec4,       // 4D vector / quaternion
-                 Mat3,       // 3x3 matrix
-                 Mat4x3,     // 4x3 matrix (4 rows x 3 columns)
+                 Vec2,
+                 Vec3,
+                 Vec4,
+                 boxed_mat3,
+                 boxed_mat4x3,
+                 boxed_mat4,
                  value_map,
                  value_vector,
                  value_array,
@@ -311,85 +228,36 @@ struct BasicValue
                  std::monostate>
         data;
 
-    // Constructors
-    // Note: noexcept for primitive types helps compiler optimize move operations
     BasicValue() noexcept : data(std::monostate{}) {}
-
-    // Signed integer constructors
+    BasicValue(int8_t v) noexcept : data(v) {}
+    BasicValue(int16_t v) noexcept : data(v) {}
     BasicValue(int32_t v) noexcept : data(v) {}
     BasicValue(int64_t v) noexcept : data(v) {}
-
-    // Unsigned integer constructors
+    BasicValue(uint8_t v) noexcept : data(v) {}
+    BasicValue(uint16_t v) noexcept : data(v) {}
     BasicValue(uint32_t v) noexcept : data(v) {}
     BasicValue(uint64_t v) noexcept : data(v) {}
-
-    // Floating-point constructors
     BasicValue(float v) noexcept : data(v) {}
     BasicValue(double v) noexcept : data(v) {}
-
-    // Boolean constructor
     BasicValue(bool v) noexcept : data(v) {}
     BasicValue(const std::string& v) : data(v) {}
     BasicValue(std::string&& v) noexcept : data(std::move(v)) {}
     BasicValue(const char* v) : data(std::in_place_type<std::string>, v) {}
-    // Math type constructors
-    // Small types (8-16 bytes): pass by value is efficient (fits in registers)
     BasicValue(Vec2 v) noexcept : data(v) {}
     BasicValue(Vec3 v) noexcept : data(v) {}
     BasicValue(Vec4 v) noexcept : data(v) {}
-    // Large types (36-64 bytes): pass by const& to avoid unnecessary copy
-    BasicValue(const Mat3& v) noexcept : data(v) {}
-    BasicValue(const Mat4x3& v) noexcept : data(v) {}
-    // Container type constructors
+    BasicValue(const Mat3& v) : data(boxed_mat3{v}) {}
+    BasicValue(const Mat4x3& v) : data(boxed_mat4x3{v}) {}
+    BasicValue(const Mat4& v) : data(boxed_mat4{v}) {}
+    BasicValue(boxed_mat3 v) : data(std::move(v)) {}
+    BasicValue(boxed_mat4x3 v) : data(std::move(v)) {}
+    BasicValue(boxed_mat4 v) : data(std::move(v)) {}
     BasicValue(value_map v) : data(std::move(v)) {}
     BasicValue(value_vector v) : data(std::move(v)) {}
     BasicValue(value_array v) : data(std::move(v)) {}
     BasicValue(value_table v) : data(std::move(v)) {}
 
-    // ============================================================
     // Factory functions for container types
-    //
-    // All factory functions use transient for O(N) batch construction.
-    //
-    // Container types:
-    //   - object() / map()    -> value_map (HAMT, O(log N) lookup)
-    //   - vector()            -> value_vector (RRB-tree, O(log N) random access)
-    //   - array()             -> value_array (contiguous, O(1) random access, fixed after creation)
-    //   - table()             -> value_table (HAMT with .id key, O(log N) lookup)
-    //
-    // Usage examples:
-    //   // Map from key-value pairs
-    //   Value obj = Value::map({
-    //       {"name", "Alice"},
-    //       {"age", 25},
-    //       {"active", true}
-    //   });
-    //
-    //   // Vector for dynamic arrays
-    //   Value nums = Value::vector({1, 2, 3, 4, 5});
-    //
-    //   // Array for fixed-size contiguous data
-    //   Value coords = Value::array({1.0, 2.0, 3.0});
-    //
-    //   // Table for id-indexed collections
-    //   Value users = Value::table({
-    //       {"user_001", Value::map({{"name", "Alice"}})},
-    //       {"user_002", Value::map({{"name", "Bob"}})}
-    //   });
-    //
-    //   // Nested structures
-    //   Value scene = Value::map({
-    //       {"objects", Value::table({
-    //           {"obj_1", Value::map({{"name", "Cube"}, {"visible", true}})},
-    //           {"obj_2", Value::map({{"name", "Sphere"}, {"visible", false}})}
-    //       })},
-    //       {"settings", Value::map({{"quality", "high"}})}
-    //   });
-    // ============================================================
-
-    /// Create a map from initializer list of key-value pairs (HAMT)
-    /// @param init List of {key, value} pairs
-    /// @return BasicValue containing a value_map
     static BasicValue map(std::initializer_list<std::pair<std::string, BasicValue>> init) {
         auto t = value_map{}.transient();
         for (const auto& [key, val] : init) {
@@ -398,9 +266,6 @@ struct BasicValue
         return BasicValue{t.persistent()};
     }
 
-    /// Create a vector from initializer list (RRB-tree, supports efficient append/update)
-    /// @param init List of values
-    /// @return BasicValue containing a value_vector
     static BasicValue vector(std::initializer_list<BasicValue> init) {
         auto t = value_vector{}.transient();
         for (const auto& val : init) {
@@ -409,10 +274,6 @@ struct BasicValue
         return BasicValue{t.persistent()};
     }
 
-    /// Create an array from initializer list (contiguous memory, O(1) access)
-    /// Note: value_array is optimized for read-heavy workloads with fixed size
-    /// @param init List of values
-    /// @return BasicValue containing a value_array
     static BasicValue array(std::initializer_list<BasicValue> init) {
         value_array result;
         for (const auto& val : init) {
@@ -421,10 +282,6 @@ struct BasicValue
         return BasicValue{std::move(result)};
     }
 
-    /// Create a table from initializer list of id-value pairs (HAMT with .id key)
-    /// Tables are optimized for collections where each entry has a unique string id
-    /// @param init List of {id, value} pairs
-    /// @return BasicValue containing a value_table
     static BasicValue table(std::initializer_list<std::pair<std::string, BasicValue>> init) {
         auto t = value_table{}.transient();
         for (const auto& [id, val] : init) {
@@ -433,9 +290,6 @@ struct BasicValue
         return BasicValue{t.persistent()};
     }
 
-    // ============================================================
-    // Factory functions for math types
-    // ============================================================
     static BasicValue vec2(float x, float y) {
         return BasicValue{Vec2{x, y}};
     }
@@ -448,7 +302,6 @@ struct BasicValue
         return BasicValue{Vec4{x, y, z, w}};
     }
 
-    // Factory functions from std::span (for interoperability with external math libraries)
     static BasicValue vec2(std::span<const float, 2> data) {
         Vec2 v;
         std::ranges::copy(data, v.begin());
@@ -479,7 +332,6 @@ struct BasicValue
         return BasicValue{m};
     }
 
-    // Factory functions from raw pointers (backward compatibility)
     static BasicValue vec2(const float* ptr) {
         return vec2(std::span<const float, 2>{ptr, 2});
     }
@@ -500,7 +352,6 @@ struct BasicValue
         return mat4x3(std::span<const float, 12>{ptr, 12});
     }
 
-    // Identity matrix factory functions (constexpr for compile-time evaluation)
     static constexpr BasicValue identity_mat3() {
         return BasicValue{Mat3{
             1.0f, 0.0f, 0.0f,
@@ -509,202 +360,97 @@ struct BasicValue
         }};
     }
 
-    // Type inspection
     template <typename T>
-    [[nodiscard]] const T* get_if() const
-    {
-        return std::get_if<T>(&data);
-    }
+    [[nodiscard]] const T* get_if() const { return std::get_if<T>(&data); }
 
     template <typename T>
-    [[nodiscard]] bool is() const
-    {
-        return std::holds_alternative<T>(data);
-    }
+    [[nodiscard]] bool is() const { return std::holds_alternative<T>(data); }
 
     [[nodiscard]] std::size_t type_index() const noexcept { return data.index(); }
     [[nodiscard]] bool is_null() const noexcept { return std::holds_alternative<std::monostate>(data); }
-
-    // ============================================================
-    // Math type inspection methods
-    // ============================================================
     [[nodiscard]] bool is_vec2() const noexcept { return is<Vec2>(); }
     [[nodiscard]] bool is_vec3() const noexcept { return is<Vec3>(); }
     [[nodiscard]] bool is_vec4() const noexcept { return is<Vec4>(); }
-    [[nodiscard]] bool is_mat3() const noexcept { return is<Mat3>(); }
-    [[nodiscard]] bool is_mat4x3() const noexcept { return is<Mat4x3>(); }
+    [[nodiscard]] bool is_mat3() const noexcept { return is<boxed_mat3>(); }
+    [[nodiscard]] bool is_mat4x3() const noexcept { return is<boxed_mat4x3>(); }
     [[nodiscard]] bool is_math_type() const noexcept {
-        return is_vec2() || is_vec3() || is_vec4() ||
-               is_mat3() || is_mat4x3();
+        return is_vec2() || is_vec3() || is_vec4() || is_mat3() || is_mat4x3();
     }
 
-    // ============================================================
-    // Container-like interface for lager::lenses::at compatibility
-    //
-    // Design choice: No exceptions thrown. Instead:
-    // - at() returns null Value if key/index not found or type mismatch
-    // - try_at() returns std::optional for explicit "not found" handling
-    // - set() returns self unchanged if type mismatch
-    // - Errors are logged to stderr for debugging
-    // ============================================================
-
-    // Access by string key (for map-like access)
-    [[nodiscard]] BasicValue at(const std::string& key) const
-    {
-        // Try map
+    [[nodiscard]] BasicValue at(const std::string& key) const {
         if (auto* m = get_if<value_map>()) {
-            if (auto* found = m->find(key)) {
-                return found->get();
-            }
+            if (auto* found = m->find(key)) return found->get();
         }
-        // Try table
         if (auto* t = get_if<value_table>()) {
-            if (auto* found = t->find(key)) {
-                return found->value.get();
-            }
+            if (auto* found = t->find(key)) return found->value.get();
         }
         detail::log_key_error("Value::at", key, "not found or type mismatch");
         return BasicValue{};
     }
 
-    // Access by index (for vector-like access)
-    [[nodiscard]] BasicValue at(std::size_t index) const
-    {
-        // Try vector
+    [[nodiscard]] BasicValue at(std::size_t index) const {
         if (auto* v = get_if<value_vector>()) {
-            if (index < v->size()) {
-                return (*v)[index].get();
-            }
+            if (index < v->size()) return (*v)[index].get();
         }
-        // Try array
         if (auto* a = get_if<value_array>()) {
-            if (index < a->size()) {
-                return (*a)[index].get();
-            }
+            if (index < a->size()) return (*a)[index].get();
         }
         detail::log_index_error("Value::at", index, "out of range or type mismatch");
         return BasicValue{};
     }
 
-    // ============================================================
-    // Access with default value
-    //
-    // These methods return a default value when the key/index is not found
-    // or when the value is null (monostate).
-    //
-    // Note: Since Value uses std::monostate to represent "null/not found",
-    // there's no need for std::optional - just check is_null() on the result.
-    // ============================================================
-
-    /// Get value at key with default if not found or null
-    [[nodiscard]] BasicValue at_or(const std::string& key, BasicValue default_val) const
-    {
+    [[nodiscard]] BasicValue at_or(const std::string& key, BasicValue default_val) const {
         auto result = at(key);
         return result.is_null() ? std::move(default_val) : std::move(result);
     }
 
-    /// Get value at index with default if not found or null
-    [[nodiscard]] BasicValue at_or(std::size_t index, BasicValue default_val) const
-    {
+    [[nodiscard]] BasicValue at_or(std::size_t index, BasicValue default_val) const {
         auto result = at(index);
         return result.is_null() ? std::move(default_val) : std::move(result);
     }
 
-    /// Extract value as specific type, returning default if type mismatch
-    /// @tparam T The target type (e.g., value_map, value_vector, int, std::string)
-    /// @param default_val Value to return if type doesn't match
-    /// @return The extracted value or default
-    /// @example
-    ///   Value v = Value::vector({1, 2, 3});
-    ///   auto vec = v.get_or<value_vector>();  // returns the vector
-    ///   auto map = v.get_or<value_map>();     // returns empty map (type mismatch)
     template<typename T>
-    [[nodiscard]] T get_or(T default_val = T{}) const
-    {
-        if (auto* ptr = get_if<T>()) {
-            return *ptr;
-        }
+    [[nodiscard]] T get_or(T default_val = T{}) const {
+        if (auto* ptr = get_if<T>()) return *ptr;
         return default_val;
     }
 
-    // ============================================================
-    // Convenient type extraction methods (as_xxx)
-    //
-    // These methods provide a more readable alternative to get_or<T>()
-    // for common primitive types. All use strict type matching with
-    // no implicit conversions (except as_number which allows widening).
-    // ============================================================
-
-    /// Get as int with strict type matching
-    /// @param default_val Value to return if type doesn't match
-    /// @return The int value or default_val
-    [[nodiscard]] int as_int(int default_val = 0) const
-    {
+    [[nodiscard]] int as_int(int default_val = 0) const {
         if (auto* p = get_if<int>()) return *p;
         return default_val;
     }
 
-    /// Get as int64_t with strict type matching
-    /// @param default_val Value to return if type doesn't match
-    /// @return The int64_t value or default_val
-    [[nodiscard]] int64_t as_int64(int64_t default_val = 0) const
-    {
+    [[nodiscard]] int64_t as_int64(int64_t default_val = 0) const {
         if (auto* p = get_if<int64_t>()) return *p;
         return default_val;
     }
 
-    /// Get as float with strict type matching
-    /// @param default_val Value to return if type doesn't match
-    /// @return The float value or default_val
-    [[nodiscard]] float as_float(float default_val = 0.0f) const
-    {
+    [[nodiscard]] float as_float(float default_val = 0.0f) const {
         if (auto* p = get_if<float>()) return *p;
         return default_val;
     }
 
-    /// Get as double with strict type matching
-    /// @param default_val Value to return if type doesn't match
-    /// @return The double value or default_val
-    [[nodiscard]] double as_double(double default_val = 0.0) const
-    {
+    [[nodiscard]] double as_double(double default_val = 0.0) const {
         if (auto* p = get_if<double>()) return *p;
         return default_val;
     }
 
-    /// Get as bool with strict type matching
-    /// @param default_val Value to return if type doesn't match
-    /// @return The bool value or default_val
-    [[nodiscard]] bool as_bool(bool default_val = false) const
-    {
+    [[nodiscard]] bool as_bool(bool default_val = false) const {
         if (auto* p = get_if<bool>()) return *p;
         return default_val;
     }
 
-    /// Get as string (returns a copy)
-    /// @param default_val Value to return if type doesn't match
-    /// @return The string value or default_val
-    [[nodiscard]] std::string as_string(std::string default_val = "") const
-    {
+    [[nodiscard]] std::string as_string(std::string default_val = "") const {
         if (auto* p = get_if<std::string>()) return *p;
         return default_val;
     }
 
-    /// Get as string_view (zero-copy, but lifetime tied to this Value)
-    /// @warning The returned view becomes invalid if this Value is destroyed
-    /// @return string_view of the string content, or empty view if not a string
-    [[nodiscard]] std::string_view as_string_view() const noexcept
-    {
+    [[nodiscard]] std::string_view as_string_view() const noexcept {
         if (auto* p = get_if<std::string>()) return *p;
         return {};
     }
 
-    /// Get as numeric value with widening conversions
-    /// Attempts to extract a numeric value, allowing safe widening:
-    /// int -> int64_t -> float -> double
-    /// @param default_val Value to return if not a numeric type
-    /// @return The numeric value as double, or default_val
-    [[nodiscard]] double as_number(double default_val = 0.0) const
-    {
+    [[nodiscard]] double as_number(double default_val = 0.0) const {
         if (auto* p = get_if<double>()) return *p;
         if (auto* p = get_if<float>()) return static_cast<double>(*p);
         if (auto* p = get_if<int64_t>()) return static_cast<double>(*p);
@@ -712,245 +458,119 @@ struct BasicValue
         return default_val;
     }
 
-    /// Get as map container
-    /// @param default_val Value to return if type doesn't match (default: empty map)
-    /// @return The map or default_val
-    [[nodiscard]] value_map as_map(value_map default_val = {}) const
-    {
+    [[nodiscard]] value_map as_map(value_map default_val = {}) const {
         if (auto* p = get_if<value_map>()) return *p;
         return default_val;
     }
 
-    /// Get as vector container
-    /// @param default_val Value to return if type doesn't match (default: empty vector)
-    /// @return The vector or default_val
-    [[nodiscard]] value_vector as_vector(value_vector default_val = {}) const
-    {
+    [[nodiscard]] value_vector as_vector(value_vector default_val = {}) const {
         if (auto* p = get_if<value_vector>()) return *p;
         return default_val;
     }
 
-    /// Get as array container
-    /// @param default_val Value to return if type doesn't match (default: empty array)
-    /// @return The array or default_val
-    [[nodiscard]] value_array as_array(value_array default_val = {}) const
-    {
+    [[nodiscard]] value_array as_array(value_array default_val = {}) const {
         if (auto* p = get_if<value_array>()) return *p;
         return default_val;
     }
 
-    /// Get as table container
-    /// @param default_val Value to return if type doesn't match (default: empty table)
-    /// @return The table or default_val
-    [[nodiscard]] value_table as_table(value_table default_val = {}) const
-    {
+    [[nodiscard]] value_table as_table(value_table default_val = {}) const {
         if (auto* p = get_if<value_table>()) return *p;
         return default_val;
     }
 
-    // ============================================================
-    // Math type extraction methods
-    // ============================================================
-
-    /// Get as Vec2
-    /// @param default_val Value to return if type doesn't match
-    /// @return The Vec2 value or default_val
-    [[nodiscard]] Vec2 as_vec2(Vec2 default_val = {}) const
-    {
+    [[nodiscard]] Vec2 as_vec2(Vec2 default_val = {}) const {
         if (auto* p = get_if<Vec2>()) return *p;
         return default_val;
     }
 
-    /// Get as Vec3
-    /// @param default_val Value to return if type doesn't match
-    /// @return The Vec3 value or default_val
-    [[nodiscard]] Vec3 as_vec3(Vec3 default_val = {}) const
-    {
+    [[nodiscard]] Vec3 as_vec3(Vec3 default_val = {}) const {
         if (auto* p = get_if<Vec3>()) return *p;
         return default_val;
     }
 
-    /// Get as Vec4
-    /// @param default_val Value to return if type doesn't match
-    /// @return The Vec4 value or default_val
-    [[nodiscard]] Vec4 as_vec4(Vec4 default_val = {}) const
-    {
+    [[nodiscard]] Vec4 as_vec4(Vec4 default_val = {}) const {
         if (auto* p = get_if<Vec4>()) return *p;
         return default_val;
     }
 
-    /// Get as Mat3
-    /// @param default_val Value to return if type doesn't match
-    /// @return The Mat3 value or default_val
-    [[nodiscard]] Mat3 as_mat3(Mat3 default_val = {}) const
-    {
-        if (auto* p = get_if<Mat3>()) return *p;
+    [[nodiscard]] Mat3 as_mat3(Mat3 default_val = {}) const {
+        if (auto* p = get_if<boxed_mat3>()) return p->get();
         return default_val;
     }
 
-    /// Get as Mat4x3
-    /// @param default_val Value to return if type doesn't match
-    /// @return The Mat4x3 value or default_val
-    [[nodiscard]] Mat4x3 as_mat4x3(Mat4x3 default_val = {}) const
-    {
-        if (auto* p = get_if<Mat4x3>()) return *p;
+    [[nodiscard]] Mat4x3 as_mat4x3(Mat4x3 default_val = {}) const {
+        if (auto* p = get_if<boxed_mat4x3>()) return p->get();
         return default_val;
     }
 
-    // Check if key/index exists
-    [[nodiscard]] bool contains(const std::string& key) const
-    {
-        return count(key) > 0;
-    }
+    [[nodiscard]] bool contains(const std::string& key) const { return count(key) > 0; }
 
-    [[nodiscard]] bool contains(std::size_t index) const
-    {
-        if (auto* v = get_if<value_vector>()) {
-            return index < v->size();
-        }
-        if (auto* a = get_if<value_array>()) {
-            return index < a->size();
-        }
+    [[nodiscard]] bool contains(std::size_t index) const {
+        if (auto* v = get_if<value_vector>()) return index < v->size();
+        if (auto* a = get_if<value_array>()) return index < a->size();
         return false;
     }
 
-    // Immutable set by string key (strict mode)
-    // Note: For auto-vivification, use set_at_path_vivify() from path_utils.h
-    [[nodiscard]] BasicValue set(const std::string& key, BasicValue val) const
-    {
-        // Try map
-        if (auto* m = get_if<value_map>()) {
-            return m->set(key, value_box{std::move(val)});
-        }
-        // Try table
-        if (auto* t = get_if<value_table>()) {
-            return t->insert(table_entry{key, value_box{std::move(val)}});
-        }
-
+    [[nodiscard]] BasicValue set(const std::string& key, BasicValue val) const {
+        if (auto* m = get_if<value_map>()) return m->set(key, value_box{std::move(val)});
+        if (auto* t = get_if<value_table>()) return t->insert(table_entry{key, value_box{std::move(val)}});
         detail::log_key_error("Value::set", key, "cannot set on non-map type");
         return *this;
     }
 
-    // Immutable set by index (strict mode)
-    // Note: For auto-vivification, use set_vivify() or set_at_path_vivify() from path_utils.h
-    [[nodiscard]] BasicValue set(std::size_t index, BasicValue val) const
-    {
-        // Try vector
+    [[nodiscard]] BasicValue set(std::size_t index, BasicValue val) const {
         if (auto* v = get_if<value_vector>()) {
-            if (index < v->size()) {
-                return v->set(index, value_box{std::move(val)});
-            }
+            if (index < v->size()) return v->set(index, value_box{std::move(val)});
         }
-        // Try array
         if (auto* a = get_if<value_array>()) {
             if (index < a->size()) {
-                // immer::array uses update() method to modify elements
-                return a->update(index, [&val](const value_box&) {
-                    return value_box{std::move(val)};
-                });
+                return a->update(index, [&val](const value_box&) { return value_box{std::move(val)}; });
             }
         }
-
         detail::log_index_error("Value::set", index, "cannot set on non-vector type");
         return *this;
     }
 
-    // ============================================================
-    // Auto-Vivification Set Methods
-    //
-    // These methods automatically create intermediate containers when needed:
-    // - set_vivify(key, val): Creates a map if current value is null
-    // - set_vivify(index, val): Creates/extends vector if needed
-    //
-    // Use these when you want to ensure the container structure exists.
-    // ============================================================
-
-    /// Immutable set by string key with auto-vivification
-    /// Creates a map if current value is null
-    /// @param key The key to set
-    /// @param val The value to set
-    /// @return New value with the key set
-    [[nodiscard]] BasicValue set_vivify(const std::string& key, BasicValue val) const
-    {
-        // Try map - exists, just set
-        if (auto* m = get_if<value_map>()) {
-            return m->set(key, value_box{std::move(val)});
-        }
-        // Try table - exists, just insert
-        if (auto* t = get_if<value_table>()) {
-            return t->insert(table_entry{key, value_box{std::move(val)}});
-        }
-        // Auto-vivification: create new map if null
-        if (is_null()) {
-            return value_map{}.set(key, value_box{std::move(val)});
-        }
-
+    [[nodiscard]] BasicValue set_vivify(const std::string& key, BasicValue val) const {
+        if (auto* m = get_if<value_map>()) return m->set(key, value_box{std::move(val)});
+        if (auto* t = get_if<value_table>()) return t->insert(table_entry{key, value_box{std::move(val)}});
+        if (is_null()) return value_map{}.set(key, value_box{std::move(val)});
         detail::log_key_error("Value::set_vivify", key, "cannot set on non-map/non-null type");
         return *this;
     }
 
-    /// Immutable set by index with auto-vivification
-    /// Creates a vector if current value is null, extends if index is beyond size
-    /// @param index The index to set
-    /// @param val The value to set
-    /// @return New value with the index set
-    [[nodiscard]] BasicValue set_vivify(std::size_t index, BasicValue val) const
-    {
-        // Try vector - extends if needed
-        // OPTIMIZATION: Use transient mode for O(N) batch push_back
+    [[nodiscard]] BasicValue set_vivify(std::size_t index, BasicValue val) const {
         if (auto* v = get_if<value_vector>()) {
-            if (index < v->size()) {
-                // Index within bounds, just set
-                return v->set(index, value_box{std::move(val)});
-            }
-            // Need to extend: use transient for batch operations
+            if (index < v->size()) return v->set(index, value_box{std::move(val)});
             auto trans = v->transient();
-            while (trans.size() <= index) {
-                trans.push_back(value_box{});
-            }
+            while (trans.size() <= index) trans.push_back(value_box{});
             trans.set(index, value_box{std::move(val)});
             return trans.persistent();
         }
-        // Try array - only set if within bounds (cannot extend array)
         if (auto* a = get_if<value_array>()) {
             if (index < a->size()) {
-                return a->update(index, [&val](const value_box&) {
-                    return value_box{std::move(val)};
-                });
+                return a->update(index, [&val](const value_box&) { return value_box{std::move(val)}; });
             }
             detail::log_index_error("Value::set_vivify", index, "array index out of range");
             return *this;
         }
-        // Auto-vivification: create new vector if null
-        // Use transient for O(N) construction
         if (is_null()) {
             auto trans = value_vector{}.transient();
-            for (std::size_t i = 0; i < index; ++i) {
-                trans.push_back(value_box{});
-            }
+            for (std::size_t i = 0; i < index; ++i) trans.push_back(value_box{});
             trans.push_back(value_box{std::move(val)});
             return trans.persistent();
         }
-
         detail::log_index_error("Value::set_vivify", index, "cannot set on non-vector/non-null type");
         return *this;
     }
 
-    // Check if key exists
-    [[nodiscard]] std::size_t count(const std::string& key) const
-    {
-        if (auto* m = get_if<value_map>()) {
-            return m->count(key);
-        }
-        if (auto* t = get_if<value_table>()) {
-            return t->count(key) ? 1 : 0;
-        }
+    [[nodiscard]] std::size_t count(const std::string& key) const {
+        if (auto* m = get_if<value_map>()) return m->count(key);
+        if (auto* t = get_if<value_table>()) return t->count(key) ? 1 : 0;
         return 0;
     }
 
-    // Get size
-    [[nodiscard]] std::size_t size() const
-    {
+    [[nodiscard]] std::size_t size() const {
         if (auto* m = get_if<value_map>()) return m->size();
         if (auto* v = get_if<value_vector>()) return v->size();
         if (auto* a = get_if<value_array>()) return a->size();
@@ -958,53 +578,10 @@ struct BasicValue
         return 0;
     }
 
-    // Size type alias (required by lager::lenses::at)
     using size_type = std::size_t;
 };
 
-// ============================================================
-// Builder Classes for Dynamic Construction
-//
-// These builders provide O(n) construction for large data structures
-// by using immer's transient API internally.
-//
-// Performance comparison:
-//   - Repeated .set() calls:  O(n log n) - creates new tree nodes each time
-//   - Builder API:            O(n) - uses transient for in-place mutation
-//
-// Usage examples:
-//   // Build a map with 50,000 entries - O(n)
-//   auto builder = Value::build_map();
-//   for (int i = 0; i < 50000; i++) {
-//       builder.set("key_" + std::to_string(i), i);
-//   }
-//   Value result = builder.finish();
-//
-//   // Build a vector with 100,000 elements - O(n)
-//   auto vec_builder = Value::build_vector();
-//   vec_builder.reserve(100000);  // Optional: pre-allocate
-//   for (int i = 0; i < 100000; i++) {
-//       vec_builder.push_back(i);
-//   }
-//   Value result = vec_builder.finish();
-//
-//   // Nested structures - all O(n)
-//   Value scene = Value::build_map()
-//       .set("version", 1)
-//       .set("objects", Value::build_vector()
-//           .push_back(Value::build_map()
-//               .set("id", 1)
-//               .set("name", "Object1")
-//               .finish())
-//           .push_back(Value::build_map()
-//               .set("id", 2)
-//               .set("name", "Object2")
-//               .finish())
-//           .finish())
-//       .finish();
-// ============================================================
-
-/// Builder for constructing value_map efficiently - O(n) complexity
+// Builder classes for O(n) construction using immer's transient API
 template <typename MemoryPolicy>
 class BasicMapBuilder {
 public:
@@ -1014,25 +591,9 @@ public:
     using value_vector = BasicValueVector<MemoryPolicy>;
     using transient_type = typename value_map::transient_type;
 
-    /// Create an empty map builder
     BasicMapBuilder() : transient_(value_map{}.transient()) {}
+    explicit BasicMapBuilder(const value_map& existing) : transient_(existing.transient()) {}
 
-    /// Create a builder from an existing map (for incremental modification)
-    /// @param existing The existing map to start from
-    /// @note This enables efficient batch modifications on existing data
-    /// @example
-    ///   ValueMap existing = get_config();
-    ///   auto result = MapBuilder(existing)
-    ///       .set("version", 2)      // update existing
-    ///       .set("new_key", "val")  // add new
-    ///       .finish();
-    explicit BasicMapBuilder(const value_map& existing) 
-        : transient_(existing.transient()) {}
-
-    /// Create a builder from a Value containing a map
-    /// @param existing The Value (must contain value_map, otherwise starts empty)
-    /// @example
-    ///   Value config = load_config();
     ///   auto result = MapBuilder(config)
     ///       .set("updated", true)
     ///       .finish();

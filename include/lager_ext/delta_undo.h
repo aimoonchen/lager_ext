@@ -1,7 +1,7 @@
 // Copyright (c) 2024 chenmou. All rights reserved.
 // Licensed under the MIT License. See LICENSE file in the project root.
 
-/// @file delta_undo_engine.h
+/// @file delta_undo.h
 /// @brief Delta-based (Incremental) Undo/Redo Engine.
 ///
 /// This module implements a delta-based undo/redo mechanism that solves the problem

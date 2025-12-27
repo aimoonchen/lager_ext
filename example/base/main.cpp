@@ -1,24 +1,11 @@
-// main.cpp
-// Path Lens Example - Demonstrating multiple approaches for dynamic data access
-//
-// This example showcases four different approaches for working with
-// JSON-like dynamic data stored in immer containers:
-//
-// Scheme 1: Custom ErasedLens using std::function
-// Scheme 2: lager::lens<Value, Value> using lager's built-in type erasure
-// Scheme 3: lager::lenses::at with Value's container interface
-// Scheme 4: String Path API for familiar path syntax
-// Scheme 5: Static Path (compile-time paths for known schemas)
-//
-// All schemes work with the same Value type defined in value.h
+// main.cpp - Path Lens Example
 
 #include <lager_ext/value.h>
-#include <lager_ext/erased_lens.h>
 #include <lager_ext/lager_lens.h>
 #include <lager_ext/at_lens.h>
 #include <lager_ext/string_path.h>
 #include <lager_ext/static_path.h>
-#include <lager_ext/diff_collector.h>
+#include <lager_ext/value_diff.h>
 #include <lager_ext/shared_state.h>
 #include <lager_ext/editor_engine.h>
 
@@ -119,18 +106,16 @@ AppState reducer(AppState state, Action action)
                 new_state.history = new_state.history.push_back(state.data);
                 new_state.future  = immer::vector<Value>{};
 
-                // Use ErasedLens (Scheme 1) for this operation
                 Path items_path = {std::string{"items"}};
-                auto items_lens = path_lens(items_path);
-                auto current_items = items_lens.get(new_state.data);
+                auto items_lens = lager_path_lens(items_path);
+                auto current_items = lager::view(items_lens, new_state.data);
 
                 if (auto* vec = current_items.get_if<ValueVector>()) {
-                auto new_item = Value{
-                    ValueMap{{"title", immer::box<Value>{act.text}},
-                             {"done", immer::box<Value>{false}}}};
-
+                    auto new_item = Value{
+                        ValueMap{{"title", immer::box<Value>{act.text}},
+                                 {"done", immer::box<Value>{false}}}};
                     auto new_vec = vec->push_back(immer::box<Value>{std::move(new_item)});
-                    new_state.data = items_lens.set(new_state.data, Value{std::move(new_vec)});
+                    new_state.data = lager::set(items_lens, new_state.data, Value{std::move(new_vec)});
                 }
 
                 return new_state;
@@ -140,10 +125,9 @@ AppState reducer(AppState state, Action action)
                 new_state.history = new_state.history.push_back(state.data);
                 new_state.future  = immer::vector<Value>{};
 
-                // Use ErasedLens (Scheme 1) for this operation
-                auto lens      = path_lens(act.path);
+                auto lens      = lager_path_lens(act.path);
                 auto new_value = Value{act.new_value};
-                new_state.data = lens.set(new_state.data, std::move(new_value));
+                new_state.data = lager::set(lens, new_state.data, std::move(new_value));
 
                 return new_state;
             }
@@ -179,11 +163,10 @@ int main()
         std::cout << "U. Undo\n";
         std::cout << "R. Redo\n";
         std::cout << "\n=== Scheme Demos ===\n";
-        std::cout << "E. Scheme 1: Custom ErasedLens\n";
-        std::cout << "L. Scheme 2: lager::lens<Value, Value>\n";
-        std::cout << "A. Scheme 3: lager::lenses::at\n";
-        std::cout << "J. Scheme 4: String Path API\n";
-        std::cout << "S. Scheme 5: Static Path (compile-time)\n";
+        std::cout << "L. Scheme 1: lager::lens<Value, Value>\n";
+        std::cout << "A. Scheme 2: lager::lenses::at\n";
+        std::cout << "J. Scheme 3: String Path API\n";
+        std::cout << "S. Scheme 4: Static Path (compile-time)\n";
         std::cout << "\n=== Diff Demos ===\n";
         std::cout << "D. Demo immer::diff (basic)\n";
         std::cout << "C. Demo RecursiveDiffCollector\n";
@@ -229,10 +212,6 @@ int main()
         case 'R':
         case 'r':
             store.dispatch(Redo{});
-            break;
-        case 'E':
-        case 'e':
-            demo_erased_lens();
             break;
         case 'L':
         case 'l':
