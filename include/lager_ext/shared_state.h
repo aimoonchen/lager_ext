@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <lager_ext/api.h>
 #include <lager_ext/value.h>
 #include <lager_ext/value_diff.h>
 
@@ -68,7 +69,7 @@ struct SharedMemoryConfig {
 //   // or for incremental updates:
 //   publisher.publish_diff(old_state, new_state);
 // ============================================================
-class StatePublisher {
+class LAGER_EXT_API StatePublisher {
 public:
     explicit StatePublisher(const SharedMemoryConfig& config);
     ~StatePublisher();
@@ -129,7 +130,7 @@ private:
 //       // Handle new state
 //   });
 // ============================================================
-class StateSubscriber {
+class LAGER_EXT_API StateSubscriber {
 public:
     explicit StateSubscriber(const SharedMemoryConfig& config);
     ~StateSubscriber();
@@ -219,16 +220,16 @@ struct DiffResult {
 // ============================================================
 
 // Collect diff between two Values (returns structured diff)
-DiffResult collect_diff(const Value& old_val, const Value& new_val);
+LAGER_EXT_API DiffResult collect_diff(const Value& old_val, const Value& new_val);
 
 // Encode diff changes to binary format for transmission
-ByteBuffer encode_diff(const DiffResult& diff);
+LAGER_EXT_API ByteBuffer encode_diff(const DiffResult& diff);
 
 // Decode diff changes from binary format
-DiffResult decode_diff(const ByteBuffer& data);
+LAGER_EXT_API DiffResult decode_diff(const ByteBuffer& data);
 
 // Apply diff to a Value, returning the new Value
-Value apply_diff(const Value& base, const DiffResult& diff);
+LAGER_EXT_API Value apply_diff(const Value& base, const DiffResult& diff);
 
 // ============================================================
 // Demo function

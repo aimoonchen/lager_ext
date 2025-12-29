@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <lager_ext/api.h>
 #include <lager_ext/concepts.h>  // C++20 Concepts (StringLike, IndexType, PathElementType, etc.)
 #include <lager_ext/value.h>
 #include <lager/lens.hpp>
@@ -105,9 +106,9 @@ using LagerValueLens = lager::lens<Value, Value>;
 
 [[nodiscard]] auto key_lens(const std::string& key);
 [[nodiscard]] auto index_lens(std::size_t index);
-[[nodiscard]] LagerValueLens lager_key_lens(const std::string& key);
-[[nodiscard]] LagerValueLens lager_index_lens(std::size_t index);
-[[nodiscard]] LagerValueLens lager_path_lens(const Path& path);
+[[nodiscard]] LAGER_EXT_API LagerValueLens lager_key_lens(const std::string& key);
+[[nodiscard]] LAGER_EXT_API LagerValueLens lager_index_lens(std::size_t index);
+[[nodiscard]] LAGER_EXT_API LagerValueLens lager_path_lens(const Path& path);
 
 namespace detail {
 auto element_to_lens(StringLike auto&& elem) {
@@ -132,8 +133,8 @@ struct LensCacheStats {
     double hit_rate = 0.0;
 };
 
-void clear_lens_cache();
-[[nodiscard]] LensCacheStats get_lens_cache_stats();
+LAGER_EXT_API void clear_lens_cache();
+[[nodiscard]] LAGER_EXT_API LensCacheStats get_lens_cache_stats();
 
 class PathLens {
 public:
@@ -268,8 +269,8 @@ struct PathAccessResult {
     }
 };
 
-[[nodiscard]] PathAccessResult get_at_path_safe(const Value& root, const Path& path);
-[[nodiscard]] PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new_val);
+[[nodiscard]] LAGER_EXT_API PathAccessResult get_at_path_safe(const Value& root, const Path& path);
+[[nodiscard]] LAGER_EXT_API PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new_val);
 
 void demo_lager_lens();
 

@@ -1,4 +1,4 @@
-// multi_store_engine.h
+// multi_store.h
 // Multi-Store Architecture with External UndoManager
 //
 // This architecture separates each object into its own lager store,
@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <lager_ext/api.h>
 #include <lager_ext/value.h>
 
 #include <lager/store.hpp>
@@ -79,7 +80,7 @@ using ObjectAction = std::variant<
 >;
 
 // Reducer for individual object stores
-ObjectState object_update(ObjectState state, ObjectAction action);
+LAGER_EXT_API ObjectState object_update(ObjectState state, ObjectAction action);
 
 // ============================================================
 // Scene-Level State (Lightweight - No Object Data)
@@ -113,7 +114,7 @@ using SceneAction = std::variant<
     scene_actions::UnregisterObject
 >;
 
-SceneMetaState scene_update(SceneMetaState state, SceneAction action);
+LAGER_EXT_API SceneMetaState scene_update(SceneMetaState state, SceneAction action);
 
 // ============================================================
 // UndoManager - External Undo/Redo System
@@ -150,7 +151,7 @@ struct CompositeCommand {
     bool empty() const { return sub_commands.empty(); }
 };
 
-class UndoManager {
+class LAGER_EXT_API UndoManager {
 public:
     // Transaction API - group multiple operations
     void begin_transaction(const std::string& description = "");
@@ -221,7 +222,7 @@ using SceneStoreType = decltype(make_scene_store_impl(std::declval<SceneMetaStat
 // StoreRegistry - Manages Multiple Object Stores
 // ============================================================
 
-class StoreRegistry {
+class LAGER_EXT_API StoreRegistry {
 public:
     // Get or create a store for an object
     ObjectStoreType* get(const std::string& object_id);
@@ -258,7 +259,7 @@ private:
 // MultiStoreController - Main Coordinator
 // ============================================================
 
-class MultiStoreController {
+class LAGER_EXT_API MultiStoreController {
 public:
     MultiStoreController();
     ~MultiStoreController() = default;

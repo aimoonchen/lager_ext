@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <lager_ext/api.h>
 #include <lager_ext/scene_types.h>  // Shared types: SceneObject, SceneState, UIMeta, etc.
 #include <lager_ext/value.h>
 #include <lager_ext/shared_state.h>
@@ -231,7 +232,7 @@ struct DeltaModel {
 // ============================================================
 
 /// Factory for creating reversible deltas from operations
-class DeltaFactory {
+class LAGER_EXT_API DeltaFactory {
 public:
     /// Create delta for setting a single property
     static Delta create_set_property_delta(
@@ -271,14 +272,14 @@ public:
 /// - System actions only modify state (no deltas)
 /// - Undo applies unapply_fn to current state
 /// - Redo applies apply_fn to current state
-DeltaModel delta_update(DeltaModel model, DeltaAction action);
+LAGER_EXT_API DeltaModel delta_update(DeltaModel model, DeltaAction action);
 
 // ============================================================
 // Delta Controller - High-level interface
 // ============================================================
 
 /// Controller for delta-based undo/redo engine
-class DeltaController {
+class LAGER_EXT_API DeltaController {
 public:
     DeltaController();
     ~DeltaController();

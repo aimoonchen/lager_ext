@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <lager_ext/api.h>
 #include <lager_ext/scene_types.h>  // Shared types: SceneObject, SceneState, UIMeta, etc.
 #include <lager_ext/value.h>
 #include <lager_ext/shared_state.h>
@@ -215,13 +216,13 @@ struct EditorModel {
 };
 
 // Reducer function for lager store
-EditorModel editor_update(EditorModel model, EditorAction action);
+LAGER_EXT_API EditorModel editor_update(EditorModel model, EditorAction action);
 
 // ============================================================
 // Engine Simulator (Process B)
 // ============================================================
 
-class EngineSimulator {
+class LAGER_EXT_API EngineSimulator {
 public:
     EngineSimulator();
     ~EngineSimulator();
@@ -261,7 +262,7 @@ struct EditorEffects {
     std::function<void(const std::string& object_id)> on_selection_changed;
 };
 
-class EditorController {
+class LAGER_EXT_API EditorController {
 public:
     EditorController();
     ~EditorController();
@@ -319,7 +320,7 @@ struct PropertyBinding {
 };
 
 // Generate property bindings for the currently selected object
-std::vector<PropertyBinding> generate_property_bindings(
+LAGER_EXT_API std::vector<PropertyBinding> generate_property_bindings(
     EditorController& controller,
     const SceneObject& object);
 

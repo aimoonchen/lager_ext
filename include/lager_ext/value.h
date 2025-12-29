@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include "api.h"
+
 #include <immer/array.hpp>
 #include <immer/array_transient.hpp>
 #include <immer/box.hpp>
@@ -1439,13 +1441,13 @@ std::partial_ordering operator<=>(const BasicValue<MemoryPolicy>& a,
 // ============================================================
 
 // Convert Value to human-readable string
-[[nodiscard]] std::string value_to_string(const Value& val);
+[[nodiscard]] LAGER_EXT_API std::string value_to_string(const Value& val);
 
 // Print Value with indentation
-void print_value(const Value& val, const std::string& prefix = "", std::size_t depth = 0);
+LAGER_EXT_API void print_value(const Value& val, const std::string& prefix = "", std::size_t depth = 0);
 
 // Convert Path to dot-notation string (e.g., ".users[0].name")
-[[nodiscard]] std::string path_to_string(const Path& path);
+[[nodiscard]] LAGER_EXT_API std::string path_to_string(const Path& path);
 
 // ============================================================
 // Common test data factory
@@ -1544,8 +1546,5 @@ std::string to_json(const Value& val, bool compact = false);
 // Returns: parsed Value, or null Value on parse error
 // error_out: if provided, receives error message on failure
 Value from_json(const std::string& json_str, std::string* error_out = nullptr);
-
-// Note: JSON Pointer functions (path_to_json_pointer, json_pointer_to_path)
-// are declared in json_pointer.h
 
 } // namespace lager_ext

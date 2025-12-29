@@ -2,17 +2,18 @@
 
 #pragma once
 
+#include <lager_ext/api.h>
 #include <lager_ext/value.h>
 #include <lager_ext/lager_lens.h>
 #include <string_view>
 
 namespace lager_ext {
 
-[[nodiscard]] Path parse_string_path(std::string_view path_str);
-[[nodiscard]] std::string path_to_string_path(const Path& path);
-[[nodiscard]] LagerValueLens string_path_lens(std::string_view path_str);
-[[nodiscard]] Value get_by_path(const Value& data, std::string_view path_str);
-[[nodiscard]] Value set_by_path(const Value& data, std::string_view path_str, Value new_value);
+[[nodiscard]] LAGER_EXT_API Path parse_string_path(std::string_view path_str);
+[[nodiscard]] LAGER_EXT_API std::string path_to_string_path(const Path& path);
+[[nodiscard]] LAGER_EXT_API LagerValueLens string_path_lens(std::string_view path_str);
+[[nodiscard]] LAGER_EXT_API Value get_by_path(const Value& data, std::string_view path_str);
+[[nodiscard]] LAGER_EXT_API Value set_by_path(const Value& data, std::string_view path_str, Value new_value);
 
 template<typename Fn>
 [[nodiscard]] Value over_by_path(const Value& data, std::string_view path_str, Fn&& fn)

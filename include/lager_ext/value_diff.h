@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <lager_ext/api.h>
 #include <lager_ext/value.h>
 #include <vector>
 
@@ -23,7 +24,7 @@ struct DiffEntry {
     DiffEntry() = default;
 };
 
-class DiffCollector {
+class LAGER_EXT_API DiffCollector {
 private:
     std::vector<DiffEntry> diffs_;
     bool recursive_ = true;
@@ -46,7 +47,7 @@ public:
 
 using RecursiveDiffCollector = DiffCollector;
 
-[[nodiscard]] bool has_any_difference(const Value& old_val, const Value& new_val, bool recursive = true);
+[[nodiscard]] LAGER_EXT_API bool has_any_difference(const Value& old_val, const Value& new_val, bool recursive = true);
 
 namespace detail {
     [[nodiscard]] bool values_differ(const Value& old_val, const Value& new_val, bool recursive);
