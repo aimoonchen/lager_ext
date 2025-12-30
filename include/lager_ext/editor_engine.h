@@ -24,7 +24,6 @@
 
 #include <lager/store.hpp>
 #include <lager/event_loop/manual.hpp>
-#include <lager/extra/struct.hpp>
 #include <lager/cursor.hpp>
 #include <lager/lenses.hpp>
 #include <lager/lenses/at.hpp>

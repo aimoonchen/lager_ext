@@ -39,6 +39,12 @@ function(add_lager_ext_example TARGET_NAME)
             /utf-8
             /wd4267
         )
+        # Enable LTCG for Release builds (matches /GL in lager_ext)
+        target_link_options(${TARGET_NAME} PRIVATE
+            $<$<CONFIG:Release>:/LTCG>
+            $<$<CONFIG:RelWithDebInfo>:/LTCG>
+            $<$<CONFIG:MinSizeRel>:/LTCG>
+        )
     else()
         target_compile_options(${TARGET_NAME} PRIVATE
             -Wall
@@ -93,6 +99,12 @@ if(Qt6_FOUND)
             /bigobj
             /utf-8
             /wd4267
+        )
+        # Enable LTCG for Release builds (matches /GL in lager_ext)
+        target_link_options(editor_example PRIVATE
+            $<$<CONFIG:Release>:/LTCG>
+            $<$<CONFIG:RelWithDebInfo>:/LTCG>
+            $<$<CONFIG:MinSizeRel>:/LTCG>
         )
     endif()
     
