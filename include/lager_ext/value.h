@@ -1461,7 +1461,7 @@ LAGER_EXT_API void print_value(const Value& val, const std::string& prefix = "",
 //   "config": { "version": 1, "theme": "dark" }
 // }
 // ============================================================
-Value create_sample_data();
+LAGER_EXT_API Value create_sample_data();
 
 // ============================================================
 // Serialization / Deserialization
@@ -1495,16 +1495,16 @@ using ByteBuffer = std::vector<uint8_t>;
 
 // Serialize Value to binary buffer
 // Returns: byte buffer containing serialized data
-ByteBuffer serialize(const Value& val);
+LAGER_EXT_API ByteBuffer serialize(const Value& val);
 
 // Deserialize Value from binary buffer
 // Returns: reconstructed Value, or null Value on error
 // Note: throws std::runtime_error on invalid data format
-Value deserialize(const ByteBuffer& buffer);
+LAGER_EXT_API Value deserialize(const ByteBuffer& buffer);
 
 // Deserialize from raw pointer and size
 // Useful for memory-mapped data or network buffers
-Value deserialize(const uint8_t* data, std::size_t size);
+LAGER_EXT_API Value deserialize(const uint8_t* data, std::size_t size);
 
 // ============================================================
 // Serialization utilities
@@ -1512,12 +1512,12 @@ Value deserialize(const uint8_t* data, std::size_t size);
 
 // Get serialized size without actually serializing
 // Useful for pre-allocating buffers
-std::size_t serialized_size(const Value& val);
+LAGER_EXT_API std::size_t serialized_size(const Value& val);
 
 // Serialize to pre-allocated buffer
 // Returns: number of bytes written
 // Note: buffer must have at least serialized_size(val) bytes
-std::size_t serialize_to(const Value& val, uint8_t* buffer, std::size_t buffer_size);
+LAGER_EXT_API std::size_t serialize_to(const Value& val, uint8_t* buffer, std::size_t buffer_size);
 
 // ============================================================
 // JSON Serialization / Deserialization
@@ -1540,11 +1540,11 @@ std::size_t serialize_to(const Value& val, uint8_t* buffer, std::size_t buffer_s
 
 // Convert Value to JSON string
 // compact: if false, adds indentation and newlines for readability
-std::string to_json(const Value& val, bool compact = false);
+LAGER_EXT_API std::string to_json(const Value& val, bool compact = false);
 
 // Parse JSON string to Value
 // Returns: parsed Value, or null Value on parse error
 // error_out: if provided, receives error message on failure
-Value from_json(const std::string& json_str, std::string* error_out = nullptr);
+LAGER_EXT_API Value from_json(const std::string& json_str, std::string* error_out = nullptr);
 
 } // namespace lager_ext

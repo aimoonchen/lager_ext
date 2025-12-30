@@ -28,6 +28,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 file(GLOB LAGER_EXT_SOURCES "source/*.cpp")
 
 set(LAGER_EXT_HEADERS
+    include/lager_ext/api.h
     include/lager_ext/at_lens.h
     include/lager_ext/concepts.h
     include/lager_ext/delta_undo.h
