@@ -86,8 +86,38 @@ if(LAGER_EXT_BUILD_SHARED)
         PRIVATE LAGER_EXT_EXPORTS
         PUBLIC LAGER_EXT_SHARED
     )
-    # Shared libraries need PIC
-    set_target_properties(lager_ext PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    
+    # ========================================
+    # Shared Library Properties (Industry Standard)
+    # ========================================
+    set_target_properties(lager_ext PROPERTIES
+        # Position Independent Code (required for shared libraries)
+        POSITION_INDEPENDENT_CODE ON
+        
+        # Version information for shared libraries
+        # - VERSION: full version (libfoo.so.1.0.0)
+        # - SOVERSION: API version for symlinks (libfoo.so.1)
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+        
+        # Windows DLL settings
+        # - Place DLL next to executables in bin directory
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+        
+        # Debug postfix for Windows (foo.dll vs food.dll)
+        DEBUG_POSTFIX "d"
+    )
+    
+    # Windows-specific: Generate .lib import library alongside .dll
+    if(WIN32)
+        set_target_properties(lager_ext PROPERTIES
+            # Ensure import library is generated
+            WINDOWS_EXPORT_ALL_SYMBOLS OFF  # We use explicit LAGER_EXT_API
+        )
+    endif()
+    
     message(STATUS "Building lager_ext as SHARED library")
 else()
     add_library(lager_ext STATIC ${LAGER_EXT_SOURCES} ${LAGER_EXT_HEADERS})
@@ -160,10 +190,37 @@ if(MSVC)
         $<$<CONFIG:Release>:/O2>        # Optimize for speed
         $<$<CONFIG:Release>:/Ob2>       # Inline function expansion
         $<$<CONFIG:Release>:/Oi>        # Enable intrinsic functions
-        $<$<CONFIG:Release>:/Gy>        # Enable function-level linking
+        $<$<CONFIG:Release>:/Gy>        # Enable function-level linking (enables /OPT:REF)
         $<$<CONFIG:Release>:/Gw>        # Optimize global data
-        $<$<CONFIG:Release>:/GL>        # Whole program optimization
-        
+    )
+    
+    # ========================================
+    # LTO / Whole Program Optimization
+    # ========================================
+    # Static vs Shared library optimization strategy:
+    #
+    # STATIC LIBRARIES: Do NOT use /GL (LTCG)
+    #   - /GL creates non-standard LTCG IR instead of standard COFF objects
+    #   - Different MSVC versions may fail to link /GL-compiled .lib files
+    #   - Forces consumers to use /LTCG, reducing library portability
+    #   - Industry standard: Boost, Qt, OpenCV, vcpkg packages avoid /GL
+    #   - Dead code elimination achieved via /Gy + linker /OPT:REF,ICF
+    #
+    # SHARED LIBRARIES (DLLs): CAN use /GL + /LTCG
+    #   - DLLs are self-contained binaries, no ABI concerns with consumers
+    #   - /GL enables aggressive cross-TU inlining and optimization
+    #   - Industry standard: Qt, OpenCV DLLs use LTO for release builds
+    #
+    if(LAGER_EXT_BUILD_SHARED)
+        target_compile_options(lager_ext PRIVATE
+            $<$<CONFIG:Release>:/GL>    # Whole program optimization for DLLs
+        )
+        target_link_options(lager_ext PRIVATE
+            $<$<CONFIG:Release>:/LTCG>  # Link-time code generation
+        )
+    endif()
+    
+    target_compile_options(lager_ext PRIVATE
         # RelWithDebInfo - optimized but debuggable
         $<$<CONFIG:RelWithDebInfo>:/O2>
         $<$<CONFIG:RelWithDebInfo>:/Ob1>
@@ -217,6 +274,16 @@ else()
         $<$<CONFIG:MinSizeRel>:-ffunction-sections>
         $<$<CONFIG:MinSizeRel>:-fdata-sections>
     )
+    
+    # LTO for shared libraries (same rationale as MSVC /GL)
+    if(LAGER_EXT_BUILD_SHARED)
+        target_compile_options(lager_ext PRIVATE
+            $<$<CONFIG:Release>:-flto>
+        )
+        target_link_options(lager_ext PRIVATE
+            $<$<CONFIG:Release>:-flto>
+        )
+    endif()
     
     # Linker options for dead code elimination (Release configurations)
     if(NOT APPLE)
