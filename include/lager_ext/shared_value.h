@@ -95,7 +95,7 @@ static_assert(sizeof(SharedMemoryHeader) == 64,
 /// own version of Boost without conflicting with user's Boost installation.
 ///
 /// @note Implementation is in source/shared_value_region.cpp
-class SharedMemoryRegion {
+class LAGER_EXT_API SharedMemoryRegion {
 public:
     // Recommended fixed base address (choose a high address unlikely to be occupied)
     // Windows x64: User space is 0x00000000 - 0x7FFFFFFFFFFF

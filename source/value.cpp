@@ -1264,4 +1264,31 @@ Value from_json(const std::string& json_str, std::string* error_out) {
 // Note: path_to_string_path() and parse_string_path() are implemented
 // in string_path.cpp to avoid duplicate definitions.
 
+// ============================================================
+// Explicit Template Instantiations
+//
+// These instantiations generate the actual code for the templated classes
+// that are declared with 'extern template' in value.h.
+// This centralizes instantiation in a single translation unit, reducing:
+//   - Compile time (no redundant instantiations across TUs)
+//   - Object file size (no duplicate symbols)
+//   - Link time (fewer symbols to deduplicate)
+// ============================================================
+
+// Explicit instantiation for unsafe_memory_policy (Value, UnsafeValue)
+template struct BasicValue<unsafe_memory_policy>;
+template struct BasicTableEntry<unsafe_memory_policy>;
+template class BasicMapBuilder<unsafe_memory_policy>;
+template class BasicVectorBuilder<unsafe_memory_policy>;
+template class BasicArrayBuilder<unsafe_memory_policy>;
+template class BasicTableBuilder<unsafe_memory_policy>;
+
+// Explicit instantiation for thread_safe_memory_policy (SyncValue, ThreadSafeValue)
+template struct BasicValue<thread_safe_memory_policy>;
+template struct BasicTableEntry<thread_safe_memory_policy>;
+template class BasicMapBuilder<thread_safe_memory_policy>;
+template class BasicVectorBuilder<thread_safe_memory_policy>;
+template class BasicArrayBuilder<thread_safe_memory_policy>;
+template class BasicTableBuilder<thread_safe_memory_policy>;
+
 } // namespace lager_ext

@@ -1547,4 +1547,35 @@ LAGER_EXT_API std::string to_json(const Value& val, bool compact = false);
 // error_out: if provided, receives error message on failure
 LAGER_EXT_API Value from_json(const std::string& json_str, std::string* error_out = nullptr);
 
+// ============================================================
+// Extern Template Declarations
+//
+// These declarations prevent implicit instantiation of common template
+// specializations in every translation unit that includes this header.
+// The actual instantiations are in value.cpp, reducing compile time
+// and object file size.
+//
+// Covered types:
+//   - BasicValue<unsafe_memory_policy>      (Value, UnsafeValue)
+//   - BasicValue<thread_safe_memory_policy> (SyncValue, ThreadSafeValue)
+//   - All Builder classes for both policies
+//   - BasicTableEntry for both policies
+// ============================================================
+
+// Extern template for unsafe_memory_policy (single-threaded, high performance)
+extern template struct BasicValue<unsafe_memory_policy>;
+extern template struct BasicTableEntry<unsafe_memory_policy>;
+extern template class BasicMapBuilder<unsafe_memory_policy>;
+extern template class BasicVectorBuilder<unsafe_memory_policy>;
+extern template class BasicArrayBuilder<unsafe_memory_policy>;
+extern template class BasicTableBuilder<unsafe_memory_policy>;
+
+// Extern template for thread_safe_memory_policy (multi-threaded safe)
+extern template struct BasicValue<thread_safe_memory_policy>;
+extern template struct BasicTableEntry<thread_safe_memory_policy>;
+extern template class BasicMapBuilder<thread_safe_memory_policy>;
+extern template class BasicVectorBuilder<thread_safe_memory_policy>;
+extern template class BasicArrayBuilder<thread_safe_memory_policy>;
+extern template class BasicTableBuilder<thread_safe_memory_policy>;
+
 } // namespace lager_ext

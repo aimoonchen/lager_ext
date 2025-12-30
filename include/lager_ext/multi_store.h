@@ -224,6 +224,17 @@ using SceneStoreType = decltype(make_scene_store_impl(std::declval<SceneMetaStat
 
 class LAGER_EXT_API StoreRegistry {
 public:
+    StoreRegistry() = default;
+    ~StoreRegistry() = default;
+    
+    // Non-copyable (unique_ptr members)
+    StoreRegistry(const StoreRegistry&) = delete;
+    StoreRegistry& operator=(const StoreRegistry&) = delete;
+    
+    // Movable
+    StoreRegistry(StoreRegistry&&) = default;
+    StoreRegistry& operator=(StoreRegistry&&) = default;
+    
     // Get or create a store for an object
     ObjectStoreType* get(const std::string& object_id);
     ObjectStoreType* create(const std::string& object_id, ObjectState initial_state);
