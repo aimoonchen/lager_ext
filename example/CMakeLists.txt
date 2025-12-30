@@ -39,12 +39,8 @@ function(add_lager_ext_example TARGET_NAME)
             /utf-8
             /wd4267
         )
-        # Enable LTCG for Release builds (matches /GL in lager_ext)
-        target_link_options(${TARGET_NAME} PRIVATE
-            $<$<CONFIG:Release>:/LTCG>
-            $<$<CONFIG:RelWithDebInfo>:/LTCG>
-            $<$<CONFIG:MinSizeRel>:/LTCG>
-        )
+        # Note: /LTCG removed because lager_ext static library no longer uses /GL
+        # /LTCG only benefits when linking /GL-compiled objects
     else()
         target_compile_options(${TARGET_NAME} PRIVATE
             -Wall
@@ -101,12 +97,7 @@ if(Qt6_FOUND)
             /utf-8
             /wd4267
         )
-        # Enable LTCG for Release builds (matches /GL in lager_ext)
-        target_link_options(editor PRIVATE
-            $<$<CONFIG:Release>:/LTCG>
-            $<$<CONFIG:RelWithDebInfo>:/LTCG>
-            $<$<CONFIG:MinSizeRel>:/LTCG>
-        )
+        # Note: /LTCG removed because lager_ext static library no longer uses /GL
     endif()
     
     message(STATUS "  Adding example: editor (with Qt6)")
