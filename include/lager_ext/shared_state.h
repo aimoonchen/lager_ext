@@ -231,11 +231,4 @@ LAGER_EXT_API DiffResult decode_diff(const ByteBuffer& data);
 // Apply diff to a Value, returning the new Value
 LAGER_EXT_API Value apply_diff(const Value& base, const DiffResult& diff);
 
-// ============================================================
-// Demo function
-// ============================================================
-
-// Demonstrates cross-process state sharing (single-process simulation)
-void demo_shared_state();
-
 } // namespace lager_ext

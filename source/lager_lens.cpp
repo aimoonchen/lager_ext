@@ -288,65 +288,9 @@ LRUCache<Path, LagerValueLens, PathHash>& get_lens_cache() {
 } // anonymous namespace
 
 // ============================================================
-// Basic getset lens implementations
-// ============================================================
-
-auto key_lens(const std::string& key)
-{
-    return lager::lenses::getset(
-        // Getter
-        [key](const Value& obj) -> Value {
-            if (auto* map = obj.get_if<ValueMap>()) {
-                if (auto found = map->find(key); found != nullptr) {
-                    return **found;
-                }
-            }
-            return Value{};
-        },
-        // Setter (strict mode)
-        // Note: For auto-vivification, use set_at_path_vivify() from path_utils.h
-        [key](Value obj, Value value) -> Value {
-            if (auto* map = obj.get_if<ValueMap>()) {
-                auto new_map = map->set(key, immer::box<Value>{std::move(value)});
-                return Value{std::move(new_map)};
-            }
-            // Strict mode: log error and return unchanged
-            std::cerr << "[key_lens] Not a map, cannot set key: " << key << "\n";
-            return obj;
-        });
-}
-
-auto index_lens(std::size_t index)
-{
-    return lager::lenses::getset(
-        // Getter
-        [index](const Value& obj) -> Value {
-            if (auto* vec = obj.get_if<ValueVector>()) {
-                if (index < vec->size()) {
-                    return *(*vec)[index];
-                }
-            }
-            return Value{};
-        },
-        // Setter (strict mode)
-        // Note: For auto-vivification, use set_at_path_vivify() from path_utils.h
-        [index](Value obj, Value value) -> Value {
-            if (auto* vec = obj.get_if<ValueVector>()) {
-                if (index < vec->size()) {
-                    auto new_vec = vec->update(index, [&](auto&& box) {
-                        return immer::box<Value>{std::move(value)};
-                    });
-                    return Value{std::move(new_vec)};
-                }
-            }
-            // Strict mode: log error and return unchanged
-            std::cerr << "[index_lens] Not a vector or index out of range: " << index << "\n";
-            return obj;
-        });
-}
-
-// ============================================================
 // Type-erased lens wrappers
+// Note: key_lens() and index_lens() are now inline in lager_lens.h
+//       because they return 'auto' and are called from header-only templates
 // ============================================================
 
 LagerValueLens lager_key_lens(const std::string& key)
@@ -441,78 +385,6 @@ LensCacheStats get_lens_cache_stats()
         stats.capacity,
         stats.hit_rate()
     };
-}
-
-// ============================================================
-// Demo function
-// ============================================================
-
-void demo_lager_lens()
-{
-    std::cout << "\n=== Scheme 2: lager::lens<Value, Value> Demo ===\n\n";
-
-    // Use common test data
-    Value data = create_sample_data();
-
-    std::cout << "Data structure:\n";
-    print_value(data, "", 1);
-
-    // Test lager_path_lens with lager::view
-    std::cout << "\n--- Test 1: GET using lager::view ---\n";
-    Path name_path = {std::string{"users"}, size_t{0}, std::string{"name"}};
-    auto lens = lager_path_lens(name_path);
-
-    std::cout << "Path: " << path_to_string(name_path) << "\n";
-    std::cout << "lager::view(lens, data) = " << value_to_string(lager::view(lens, data)) << "\n";
-
-    // Test lager::set
-    std::cout << "\n--- Test 2: SET using lager::set ---\n";
-    Value updated = lager::set(lens, data, Value{std::string{"Alicia"}});
-    std::cout << "After lager::set(lens, data, \"Alicia\"):\n";
-    std::cout << "New value: " << value_to_string(lager::view(lens, updated)) << "\n";
-
-    // Test lager::over
-    std::cout << "\n--- Test 3: OVER using lager::over ---\n";
-    Path age_path = {std::string{"users"}, size_t{1}, std::string{"age"}};
-    auto age_lens = lager_path_lens(age_path);
-
-    std::cout << "Original age: " << value_to_string(lager::view(age_lens, data)) << "\n";
-    Value incremented = lager::over(age_lens, data, [](Value v) {
-        if (auto* n = v.get_if<int>()) {
-            return Value{*n + 5};
-        }
-        return v;
-    });
-    std::cout << "After lager::over +5: " << value_to_string(lager::view(age_lens, incremented)) << "\n";
-
-    // Test composition
-    std::cout << "\n--- Test 4: Composition with zug::comp ---\n";
-    LagerValueLens config_version = zug::comp(lager_key_lens("config"), lager_key_lens("version"));
-    std::cout << "config.version = " << value_to_string(lager::view(config_version, data)) << "\n";
-
-    // Compare with static_path_lens (compile-time known path)
-    std::cout << "\n--- Test 5: static_path_lens (compile-time) ---\n";
-    auto static_lens = static_path_lens("users", 0, "name");
-    std::cout << "static_path_lens(\"users\", 0, \"name\") = "
-              << value_to_string(lager::view(static_lens, data)) << "\n";
-
-    // Test cache (access same path multiple times)
-    std::cout << "\n--- Test 6: Lens Cache Demo ---\n";
-    clear_lens_cache();
-
-    for (int i = 0; i < 5; ++i) {
-        auto lens_again = lager_path_lens(name_path);
-        lager::view(lens_again, data);
-    }
-
-    auto cache_stats = get_lens_cache_stats();
-    std::cout << "Cache stats after 5 accesses to same path:\n";
-    std::cout << "  Hits: " << cache_stats.hits << "\n";
-    std::cout << "  Misses: " << cache_stats.misses << "\n";
-    std::cout << "  Hit rate: " << (cache_stats.hit_rate * 100.0) << "%\n";
-    std::cout << "  Cache size: " << cache_stats.size << "/" << cache_stats.capacity << "\n";
-
-    std::cout << "\n=== Demo End ===\n\n";
 }
 
 // ============================================================

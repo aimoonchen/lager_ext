@@ -104,8 +104,59 @@ template<ValueLens L1, ValueLens L2>
 
 using LagerValueLens = lager::lens<Value, Value>;
 
-[[nodiscard]] auto key_lens(const std::string& key);
-[[nodiscard]] auto index_lens(std::size_t index);
+// key_lens and index_lens must be defined in header because:
+// 1. They return 'auto' and are called from template functions (element_to_lens, static_path_lens)
+// 2. When templates are instantiated in user code, the full definition must be visible
+// 3. Otherwise C3779 error: "a function that returns 'auto' cannot be used before it is defined"
+
+[[nodiscard]] inline auto key_lens(const std::string& key)
+{
+    return lager::lenses::getset(
+        // Getter
+        [key](const Value& obj) -> Value {
+            if (auto* map = obj.get_if<ValueMap>()) {
+                if (auto found = map->find(key); found != nullptr) {
+                    return **found;
+                }
+            }
+            return Value{};
+        },
+        // Setter (strict mode)
+        [key](Value obj, Value value) -> Value {
+            if (auto* map = obj.get_if<ValueMap>()) {
+                auto new_map = map->set(key, immer::box<Value>{std::move(value)});
+                return Value{std::move(new_map)};
+            }
+            return obj;
+        });
+}
+
+[[nodiscard]] inline auto index_lens(std::size_t index)
+{
+    return lager::lenses::getset(
+        // Getter
+        [index](const Value& obj) -> Value {
+            if (auto* vec = obj.get_if<ValueVector>()) {
+                if (index < vec->size()) {
+                    return *(*vec)[index];
+                }
+            }
+            return Value{};
+        },
+        // Setter (strict mode)
+        [index](Value obj, Value value) -> Value {
+            if (auto* vec = obj.get_if<ValueVector>()) {
+                if (index < vec->size()) {
+                    auto new_vec = vec->update(index, [&](auto&&) {
+                        return immer::box<Value>{std::move(value)};
+                    });
+                    return Value{std::move(new_vec)};
+                }
+            }
+            return obj;
+        });
+}
+
 [[nodiscard]] LAGER_EXT_API LagerValueLens lager_key_lens(const std::string& key);
 [[nodiscard]] LAGER_EXT_API LagerValueLens lager_index_lens(std::size_t index);
 [[nodiscard]] LAGER_EXT_API LagerValueLens lager_path_lens(const Path& path);
@@ -271,7 +322,5 @@ struct PathAccessResult {
 
 [[nodiscard]] LAGER_EXT_API PathAccessResult get_at_path_safe(const Value& root, const Path& path);
 [[nodiscard]] LAGER_EXT_API PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new_val);
-
-void demo_lager_lens();
 
 } // namespace lager_ext

@@ -323,20 +323,4 @@ LAGER_EXT_API std::vector<PropertyBinding> generate_property_bindings(
     EditorController& controller,
     const SceneObject& object);
 
-// ============================================================
-// Demo Functions
-// ============================================================
-
-// Run the complete editor-engine demo
-void demo_editor_engine();
-
-// Demo: Property editing with Qt binding simulation
-void demo_property_editing();
-
-// Demo: Undo/Redo functionality
-void demo_undo_redo();
-
-// Demo: User vs System actions and undo filtering
-void demo_action_categories();
-
 } // namespace lager_ext

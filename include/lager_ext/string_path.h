@@ -22,6 +22,4 @@ template<typename Fn>
     return lager::over(lens, data, std::forward<Fn>(fn));
 }
 
-void demo_string_path();
-
 } // namespace lager_ext

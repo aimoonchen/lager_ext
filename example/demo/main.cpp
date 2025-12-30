@@ -2,7 +2,6 @@
 
 #include <lager_ext/value.h>
 #include <lager_ext/lager_lens.h>
-#include <lager_ext/at_lens.h>
 #include <lager_ext/string_path.h>
 #include <lager_ext/static_path.h>
 #include <lager_ext/value_diff.h>
@@ -140,6 +139,18 @@ AppState reducer(AppState state, Action action)
 // ============================================================
 // Main Application
 // ============================================================
+namespace lager_ext {
+    void demo_lager_lens();
+    void demo_at_lens();
+    void demo_string_path();
+    void demo_static_path();
+    void demo_immer_diff();
+    void demo_recursive_diff_collector();
+    void demo_shared_state();
+    void demo_editor_engine();
+    void demo_property_editing();
+    void demo_undo_redo();
+}
 
 int main()
 {
@@ -215,43 +226,43 @@ int main()
             break;
         case 'L':
         case 'l':
-            demo_lager_lens();
+            lager_ext::demo_lager_lens();
             break;
         case 'A':
         case 'a':
-            demo_at_lens();
+            lager_ext::demo_at_lens();
             break;
         case 'J':
         case 'j':
-            demo_string_path();
+            lager_ext::demo_string_path();
             break;
         case 'S':
         case 's':
-            demo_static_path();
+            lager_ext::demo_static_path();
             break;
         case 'D':
         case 'd':
-            demo_immer_diff();
+            lager_ext::demo_immer_diff();
             break;
         case 'C':
         case 'c':
-            demo_recursive_diff_collector();
+            lager_ext::demo_recursive_diff_collector();
             break;
         case 'P':
         case 'p':
-            demo_shared_state();
+            lager_ext::demo_shared_state();
             break;
         case 'G':
         case 'g':
-            demo_editor_engine();
+            lager_ext::demo_editor_engine();
             break;
         case 'H':
         case 'h':
-            demo_property_editing();
+            lager_ext::demo_property_editing();
             break;
         case 'I':
         case 'i':
-            demo_undo_redo();
+            lager_ext::demo_undo_redo();
             break;
         case 'Q':
         case 'q':

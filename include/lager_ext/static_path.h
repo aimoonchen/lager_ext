@@ -457,10 +457,4 @@ using JsonPointerPath = typename detail::BuildPath<
 
 } // namespace static_path
 
-// ============================================================
-// Demo function declaration
-// ============================================================
-
-void demo_static_path();
-
 } // namespace lager_ext

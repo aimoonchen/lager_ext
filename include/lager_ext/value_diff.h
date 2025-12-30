@@ -55,7 +55,4 @@ namespace detail {
     [[nodiscard]] bool vectors_differ(const ValueVector& old_vec, const ValueVector& new_vec, bool recursive);
 }
 
-void demo_immer_diff();
-void demo_recursive_diff_collector();
-
 } // namespace lager_ext

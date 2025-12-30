@@ -43,7 +43,6 @@ endif()
 # ============================================================
 
 set(LAGER_EXT_SOURCES
-    source/at_lens.cpp
     source/delta_undo.cpp
     source/editor_engine.cpp
     source/lager_lens.cpp
@@ -51,7 +50,6 @@ set(LAGER_EXT_SOURCES
     source/path_utils.cpp
     source/shared_state.cpp
     source/shared_value_region.cpp
-    source/static_path.cpp
     source/string_path.cpp
     source/value.cpp
     source/value_diff.cpp
@@ -59,7 +57,6 @@ set(LAGER_EXT_SOURCES
 
 set(LAGER_EXT_HEADERS
     include/lager_ext/api.h
-    include/lager_ext/at_lens.h
     include/lager_ext/concepts.h
     include/lager_ext/delta_undo.h
     include/lager_ext/editor_engine.h

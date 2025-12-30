@@ -58,12 +58,13 @@ endfunction()
 message(STATUS "Configuring examples:")
 
 # ============================================================
-# Example 1: Base (Basic lager_ext usage demo)
+# Example 1: Demo (Basic lager_ext usage demo)
 # ============================================================
 
-add_lager_ext_example(base_example
+add_lager_ext_example(demo
     SOURCES
-        base/main.cpp
+        demo/main.cpp
+        demo/demo.cpp
 )
 
 # ============================================================
@@ -71,13 +72,13 @@ add_lager_ext_example(base_example
 # ============================================================
 
 if(Qt6_FOUND)
-    add_executable(editor_example
+    add_executable(editor
         editor/editor_main.cpp
     )
     
-    set_target_properties(editor_example PROPERTIES AUTOMOC ON)
+    set_target_properties(editor PROPERTIES AUTOMOC ON)
     
-    target_link_libraries(editor_example PRIVATE
+    target_link_libraries(editor PRIVATE
         lager_ext::lager_ext
         Qt6::Core
         Qt6::Concurrent
@@ -88,12 +89,12 @@ if(Qt6_FOUND)
         Qt6::QuickControls2
     )
     
-    target_compile_definitions(editor_example PRIVATE
+    target_compile_definitions(editor PRIVATE
         LAGER_EXT_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../qml"
     )
     
     if(MSVC)
-        target_compile_options(editor_example PRIVATE
+        target_compile_options(editor PRIVATE
             /W3
             /Zc:preprocessor
             /bigobj
@@ -101,14 +102,14 @@ if(Qt6_FOUND)
             /wd4267
         )
         # Enable LTCG for Release builds (matches /GL in lager_ext)
-        target_link_options(editor_example PRIVATE
+        target_link_options(editor PRIVATE
             $<$<CONFIG:Release>:/LTCG>
             $<$<CONFIG:RelWithDebInfo>:/LTCG>
             $<$<CONFIG:MinSizeRel>:/LTCG>
         )
     endif()
     
-    message(STATUS "  Adding example: editor_example (with Qt6)")
+    message(STATUS "  Adding example: editor (with Qt6)")
 else()
     message(STATUS "  Skipping editor_example: Qt6 not found")
 endif()
@@ -117,7 +118,7 @@ endif()
 # Example 3: Engine (Engine/Renderer process)
 # ============================================================
 
-add_lager_ext_example(engine_example
+add_lager_ext_example(engine
     SOURCES
         engine/shared_value_demo.cpp
 )
