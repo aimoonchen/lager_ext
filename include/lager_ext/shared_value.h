@@ -37,9 +37,9 @@
 #include <immer/vector_transient.hpp>
 #include <immer/table_transient.hpp>
 
-// Boost.Interprocess headers
-#include <boost/interprocess/windows_shared_memory.hpp>
-#include <boost/interprocess/mapped_region.hpp>
+// NOTE: Boost.Interprocess is used internally but hidden from public API.
+// The implementation is in source/shared_value_impl.cpp to prevent
+// boost headers from polluting user's include path.
 
 #include <cstdint>
 #include <cstddef>
@@ -88,227 +88,87 @@ struct alignas(64) SharedMemoryHeader {
 static_assert(sizeof(SharedMemoryHeader) == 64,
     "SharedMemoryHeader must be 64 bytes for cache line alignment");
 
-// Shared memory region
+/// @brief Shared memory region management using PIMPL pattern
+///
+/// The implementation uses Boost.Interprocess internally, but this detail
+/// is completely hidden from users. This allows lager_ext to bundle its
+/// own version of Boost without conflicting with user's Boost installation.
+///
+/// @note Implementation is in source/shared_value_region.cpp
 class SharedMemoryRegion {
 public:
     // Recommended fixed base address (choose a high address unlikely to be occupied)
     // Windows x64: User space is 0x00000000 - 0x7FFFFFFFFFFF
     static constexpr void* DEFAULT_BASE_ADDRESS = reinterpret_cast<void*>(0x0000600000000000ULL);
 
-    SharedMemoryRegion() = default;
-    ~SharedMemoryRegion() { close(); }
+    SharedMemoryRegion();
+    ~SharedMemoryRegion();
 
     // Non-copyable
     SharedMemoryRegion(const SharedMemoryRegion&) = delete;
     SharedMemoryRegion& operator=(const SharedMemoryRegion&) = delete;
 
     // Movable
-    SharedMemoryRegion(SharedMemoryRegion&& other) noexcept {
-        swap(other);
-    }
-    SharedMemoryRegion& operator=(SharedMemoryRegion&& other) noexcept {
-        if (this != &other) {
-            close();
-            swap(other);
-        }
-        return *this;
-    }
+    SharedMemoryRegion(SharedMemoryRegion&& other) noexcept;
+    SharedMemoryRegion& operator=(SharedMemoryRegion&& other) noexcept;
 
-    // Create new shared memory region (called by process B)
-    bool create(const char* name, size_t size, void* base_address = DEFAULT_BASE_ADDRESS) {
-        using namespace boost::interprocess;
+    /// @brief Create new shared memory region (called by process B)
+    /// @param name Unique name for the shared memory region
+    /// @param size Total size of the shared memory region
+    /// @param base_address Preferred base address for fixed mapping
+    /// @return true on success, false on failure
+    bool create(const char* name, size_t size, void* base_address = DEFAULT_BASE_ADDRESS);
 
-        close();
+    /// @brief Open existing shared memory region (called by process A)
+    /// @param name Name of the shared memory region to open
+    /// @return true on success, false on failure
+    bool open(const char* name);
 
-        name_ = name;
-        size_ = size;
-        is_owner_ = true;
+    /// @brief Close the shared memory region
+    void close();
 
-        try {
-            shm_ = std::make_unique<windows_shared_memory>(
-                create_only,
-                name,
-                read_write,
-                size
-            );
+    /// @brief Check if the region is valid and mapped
+    bool is_valid() const;
 
-            // Try to map to fixed address
-            region_ = std::make_unique<mapped_region>(
-                *shm_,
-                read_write,
-                0,
-                size,
-                base_address
-            );
+    /// @brief Get the base address of the mapped region
+    void* base() const;
 
-            void* base = region_->get_address();
-            if (!base) {
-                close();
-                return false;
-            }
+    /// @brief Get the total size of the region
+    size_t size() const;
 
-            // Initialize header
-            auto* header = reinterpret_cast<SharedMemoryHeader*>(base);
-            header->magic = SharedMemoryHeader::MAGIC;
-            header->version = SharedMemoryHeader::CURRENT_VERSION;
-            header->fixed_base_address = base;
-            header->total_size = size;
-            header->heap_offset = sizeof(SharedMemoryHeader);
-            header->heap_size = size - sizeof(SharedMemoryHeader);
-            header->heap_used = 0;
-            header->value_offset = 0;
+    /// @brief Check if this process created (owns) the region
+    bool is_owner() const;
 
-            return true;
-        }
-        catch (const interprocess_exception&) {
-            close();
-            return false;
-        }
-    }
+    /// @brief Get the shared memory header
+    SharedMemoryHeader* header() const;
 
-    // Open existing shared memory region (called by process A)
-    bool open(const char* name) {
-        using namespace boost::interprocess;
+    /// @brief Get the base address of the heap area
+    void* heap_base() const;
 
-        close();
+    /// @brief Allocate memory in heap area (single-threaded bump allocator)
+    ///
+    /// This allocator is designed for single-writer scenarios:
+    /// - Uses a local cursor for zero-overhead allocation
+    /// - No atomic operations or memory barriers
+    /// - Full compiler optimization across multiple allocations
+    /// - Call sync_allocation_cursor() after batch operations to persist state
+    ///
+    /// Performance: O(1) - just pointer arithmetic
+    void* allocate(size_t size, size_t alignment = 8);
 
-        name_ = name;
-        is_owner_ = false;
+    /// @brief Sync local cursor back to shared header
+    /// Call this after a batch of allocations
+    void sync_allocation_cursor();
 
-        try {
-            shm_ = std::make_unique<windows_shared_memory>(
-                open_only,
-                name,
-                read_write
-            );
+    /// @brief Reset local cursor (call after sync or when starting fresh)
+    void reset_local_cursor();
 
-            // First map header to get fixed base address and size
-            mapped_region temp_region(*shm_, read_only, 0, sizeof(SharedMemoryHeader));
-
-            auto* temp_header = reinterpret_cast<SharedMemoryHeader*>(temp_region.get_address());
-            if (temp_header->magic != SharedMemoryHeader::MAGIC) {
-                close();
-                return false;
-            }
-
-            void* fixed_base = temp_header->fixed_base_address;
-            size_ = temp_header->total_size;
-
-            // Try to map to the same fixed address
-            region_ = std::make_unique<mapped_region>(
-                *shm_,
-                read_write,
-                0,
-                size_,
-                fixed_base
-            );
-
-            void* base = region_->get_address();
-
-            // Verify mapping address
-            if (base != fixed_base) {
-                close();
-                return false;
-            }
-
-            return true;
-        }
-        catch (const interprocess_exception&) {
-            close();
-            return false;
-        }
-    }
-
-    void close() {
-        region_.reset();
-        shm_.reset();
-        size_ = 0;
-        is_owner_ = false;
-    }
-
-    bool is_valid() const { return region_ && region_->get_address() != nullptr; }
-    void* base() const { return region_ ? region_->get_address() : nullptr; }
-    size_t size() const { return size_; }
-    bool is_owner() const { return is_owner_; }
-
-    SharedMemoryHeader* header() const {
-        return reinterpret_cast<SharedMemoryHeader*>(base());
-    }
-
-    void* heap_base() const {
-        void* b = base();
-        if (!b) return nullptr;
-        return reinterpret_cast<char*>(b) + header()->heap_offset;
-    }
-
-    // Allocate memory in heap area (single-threaded bump allocator)
-    //
-    // This allocator is designed for single-writer scenarios:
-    // - Uses a local cursor for zero-overhead allocation
-    // - No atomic operations or memory barriers
-    // - Full compiler optimization across multiple allocations
-    // - Call sync_allocation_cursor() after batch operations to persist state
-    //
-    // Performance: O(1) - just pointer arithmetic
-    void* allocate(size_t size, size_t alignment = 8) {
-        if (!base()) return nullptr;
-
-        auto* h = header();
-        size_t aligned_size = (size + alignment - 1) & ~(alignment - 1);
-
-        // Initialize local cursor from shared state if needed
-        if (local_heap_cursor_ == 0) {
-            local_heap_cursor_ = h->heap_used;
-        }
-
-        size_t current = local_heap_cursor_;
-        size_t next = current + aligned_size;
-
-        if (next > h->heap_size) {
-            return nullptr;  // Out of memory
-        }
-
-        local_heap_cursor_ = next;
-        return reinterpret_cast<char*>(heap_base()) + current;
-    }
-
-    // Sync local cursor back to shared header
-    // Call this after a batch of allocations
-    void sync_allocation_cursor() {
-        if (local_heap_cursor_ > 0 && base()) {
-            header()->heap_used = local_heap_cursor_;
-        }
-    }
-
-    // Reset local cursor (call after sync or when starting fresh)
-    void reset_local_cursor() {
-        local_heap_cursor_ = 0;
-    }
-
-    // Get current local cursor value (for debugging/diagnostics)
-    size_t local_cursor() const {
-        return local_heap_cursor_;
-    }
+    /// @brief Get current local cursor value (for debugging/diagnostics)
+    size_t local_cursor() const;
 
 private:
-    void swap(SharedMemoryRegion& other) noexcept {
-        std::swap(shm_, other.shm_);
-        std::swap(region_, other.region_);
-        std::swap(size_, other.size_);
-        std::swap(is_owner_, other.is_owner_);
-        std::swap(name_, other.name_);
-        std::swap(local_heap_cursor_, other.local_heap_cursor_);
-    }
-
-    std::unique_ptr<boost::interprocess::windows_shared_memory> shm_;
-    std::unique_ptr<boost::interprocess::mapped_region> region_;
-    size_t size_ = 0;
-    bool is_owner_ = false;
-    std::string name_;
-
-    // Local cursor for allocation (zero overhead bump allocator)
-    // This is NOT in shared memory - each process has its own cursor
-    size_t local_heap_cursor_ = 0;
+    struct Impl;  // Forward declaration - hides boost dependency
+    std::unique_ptr<Impl> impl_;
 };
 
 //==============================================================================

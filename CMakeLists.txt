@@ -50,6 +50,7 @@ set(LAGER_EXT_SOURCES
     source/multi_store.cpp
     source/path_utils.cpp
     source/shared_state.cpp
+    source/shared_value_region.cpp
     source/static_path.cpp
     source/string_path.cpp
     source/value.cpp
@@ -110,6 +111,10 @@ target_include_directories(lager_ext
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+    PRIVATE
+        # Private dependency: boost (isolated from public API)
+        # Users won't see this path - prevents conflict with user's own boost
+        ${CMAKE_CURRENT_SOURCE_DIR}/source/deps
 )
 
 # ============================================================
