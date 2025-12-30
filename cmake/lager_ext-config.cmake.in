@@ -1,0 +1,23 @@
+# lager_ext CMake Configuration File
+# Copyright (c) 2024 chenmou. All rights reserved.
+#
+# This file is used by find_package(lager_ext) to locate the library.
+#
+# Usage:
+#   find_package(lager_ext REQUIRED)
+#   target_link_libraries(your_target PRIVATE lager_ext::lager_ext)
+
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Include the targets file
+include("${CMAKE_CURRENT_LIST_DIR}/lager_ext-targets.cmake")
+
+# Check that all required components are available
+check_required_components(lager_ext)
+
+# Provide helpful message
+if(NOT lager_ext_FIND_QUIETLY)
+    message(STATUS "Found lager_ext: ${CMAKE_CURRENT_LIST_DIR}")
+endif()
