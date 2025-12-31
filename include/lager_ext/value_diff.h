@@ -4,6 +4,7 @@
 
 #include <lager_ext/api.h>
 #include <lager_ext/value.h>
+#include <optional>
 #include <vector>
 
 namespace lager_ext {
@@ -13,8 +14,12 @@ struct DiffEntry {
 
     Type type;
     Path path;              // Path to the changed value
-    Value old_value;        // Old value (null for Add)
-    Value new_value;        // New value (null for Remove)
+    Value old_value;        // Old value (meaningful for Remove and Change)
+    Value new_value;        // New value (meaningful for Add and Change)
+    
+    // Note: For Add, old_value references the actual value being added (stored in new_value).
+    //       For Remove, new_value references the actual value being removed (stored in old_value).
+    //       This avoids creating unnecessary empty Value objects.
 
     // Constructor for emplace_back optimization
     DiffEntry(Type t, const Path& p, const Value& old_v, const Value& new_v)
@@ -22,9 +27,36 @@ struct DiffEntry {
 
     // Default constructor
     DiffEntry() = default;
+    
+    /// Get the value that was added/removed/changed (convenience accessor)
+    /// For Add: returns new_value
+    /// For Remove: returns old_value
+    /// For Change: returns new_value (use old_value for the previous value)
+    [[nodiscard]] const Value& value() const {
+        return (type == Type::Remove) ? old_value : new_value;
+    }
 };
 
-class LAGER_EXT_API DiffCollector {
+/// Special keys used in DiffValue leaf nodes
+namespace diff_keys {
+    inline constexpr const char* TYPE = "_diff_type";
+    inline constexpr const char* OLD  = "_old";
+    inline constexpr const char* NEW  = "_new";
+    
+    // Type values as uint8_t (matching DiffEntry::Type enum values)
+    inline constexpr uint8_t ADD    = static_cast<uint8_t>(DiffEntry::Type::Add);     // 0
+    inline constexpr uint8_t REMOVE = static_cast<uint8_t>(DiffEntry::Type::Remove);  // 1
+    inline constexpr uint8_t CHANGE = static_cast<uint8_t>(DiffEntry::Type::Change);  // 2
+}
+
+// ============================================================
+// DiffEntryCollector - Collects diff as a flat list of DiffEntry
+//
+// Use this when you need a flat list of all changes for processing.
+// Each DiffEntry contains the path, old value, new value, and change type.
+// ============================================================
+
+class LAGER_EXT_API DiffEntryCollector {
 private:
     std::vector<DiffEntry> diffs_;
     bool recursive_ = true;
@@ -45,7 +77,139 @@ public:
     void print_diffs() const;
 };
 
-using RecursiveDiffCollector = DiffCollector;
+// Legacy alias - prefer DiffEntryCollector for clarity
+using DiffCollector = DiffEntryCollector;
+using RecursiveDiffCollector = DiffEntryCollector;
+
+// ============================================================
+// DiffValueCollector - Collects diff directly as a Value tree
+//
+// More efficient than DiffEntryCollector + DiffValue as it builds
+// the tree structure during the diff traversal (single pass).
+//
+// Structure:
+//   - Leaf nodes with changes contain a map with special keys:
+//     {
+//       "_diff_type": <uint8_t: 0=Add, 1=Remove, 2=Change>,
+//       "_old": <old value>,    // present for "remove" and "change"
+//       "_new": <new value>     // present for "add" and "change"
+//     }
+//   - Intermediate nodes mirror the original structure (map/vector)
+// ============================================================
+
+class LAGER_EXT_API DiffValueCollector {
+private:
+    Value result_;
+    bool has_changes_ = false;
+    bool recursive_ = true;
+    
+    // Core diff functions that return the diff subtree for that node
+    Value diff_value_impl(const Value& old_val, const Value& new_val, bool& changed);
+    Value diff_value_impl_box(const ValueBox& old_box, const ValueBox& new_box, bool& changed);
+    Value diff_map_impl(const ValueMap& old_map, const ValueMap& new_map, bool& changed);
+    Value diff_vector_impl(const ValueVector& old_vec, const ValueVector& new_vec, bool& changed);
+    
+    // Collect all entries under a container (for add/remove of entire subtree)
+    Value collect_entries(const Value& val, DiffEntry::Type type);
+    Value collect_entries_box(const ValueBox& val_box, DiffEntry::Type type);
+    
+    // Create a leaf diff node using ValueBox directly (zero-copy for referenced values)
+    // Preferred when we have access to the original ValueBox from container traversal
+    static Value make_diff_node(DiffEntry::Type type, const ValueBox& val_box);
+    static Value make_diff_node(DiffEntry::Type type, const ValueBox& old_box, const ValueBox& new_box);
+    
+    // Convenience overloads for Value& (creates temporary ValueBox)
+    static Value make_diff_node(DiffEntry::Type type, const Value& val);
+    static Value make_diff_node(DiffEntry::Type type, const Value& old_val, const Value& new_val);
+
+public:
+    DiffValueCollector() = default;
+    
+    /// Compute diff and organize as Value tree in a single pass
+    void diff(const Value& old_val, const Value& new_val, bool recursive = true);
+    
+    /// Get the diff result as a Value tree
+    /// Returns an empty map if no differences found
+    [[nodiscard]] const Value& get() const { return result_; }
+    
+    /// Check if any changes were detected
+    [[nodiscard]] bool has_changes() const { return has_changes_; }
+    
+    /// Check if recursive mode was used
+    [[nodiscard]] bool is_recursive() const { return recursive_; }
+    
+    /// Clear the result
+    void clear();
+    
+    /// Check if a path in the diff result is a diff leaf node
+    /// (contains _diff_type key)
+    [[nodiscard]] static bool is_diff_node(const Value& val);
+    
+    /// Extract diff type from a diff leaf node as DiffEntry::Type
+    /// @pre val must be a diff node (verified by is_diff_node())
+    /// @return The diff type. Returns DiffEntry::Type::Add if not a valid diff node.
+    [[nodiscard]] static DiffEntry::Type get_diff_type(const Value& val);
+    
+    /// Extract old value from a diff leaf node
+    /// Returns null Value if not present
+    [[nodiscard]] static Value get_old_value(const Value& val);
+    
+    /// Extract new value from a diff leaf node  
+    /// Returns null Value if not present
+    [[nodiscard]] static Value get_new_value(const Value& val);
+    
+    /// Print the diff tree in a readable format
+    void print() const;
+};
+
+// ============================================================
+// DiffValue - Convenience wrapper using DiffValueCollector
+//
+// This class is a thin wrapper around DiffValueCollector,
+// providing a simpler interface for building diff trees.
+// ============================================================
+
+class LAGER_EXT_API DiffValue {
+private:
+    Value result_;
+    bool has_changes_ = false;
+
+public:
+    DiffValue() = default;
+    
+    /// Compute diff and organize as Value tree (delegates to DiffValueCollector)
+    void diff(const Value& old_val, const Value& new_val, bool recursive = true);
+    
+    /// Get the diff result as a Value tree
+    /// Returns an empty map if no differences found
+    [[nodiscard]] const Value& get() const { return result_; }
+    
+    /// Check if any changes were detected
+    [[nodiscard]] bool has_changes() const { return has_changes_; }
+    
+    /// Clear the result
+    void clear();
+    
+    /// Check if a path in the diff result is a diff leaf node
+    /// (contains _diff_type key)
+    [[nodiscard]] static bool is_diff_node(const Value& val);
+    
+    /// Extract diff type from a diff leaf node as DiffEntry::Type
+    /// @pre val must be a diff node (verified by is_diff_node())
+    /// @return The diff type. Returns DiffEntry::Type::Add if not a valid diff node.
+    [[nodiscard]] static DiffEntry::Type get_diff_type(const Value& val);
+    
+    /// Extract old value from a diff leaf node
+    /// Returns null Value if not present
+    [[nodiscard]] static Value get_old_value(const Value& val);
+    
+    /// Extract new value from a diff leaf node  
+    /// Returns null Value if not present
+    [[nodiscard]] static Value get_new_value(const Value& val);
+    
+    /// Print the diff tree in a readable format
+    void print() const;
+};
 
 [[nodiscard]] LAGER_EXT_API bool has_any_difference(const Value& old_val, const Value& new_val, bool recursive = true);
 
@@ -54,5 +218,8 @@ namespace detail {
     [[nodiscard]] bool maps_differ(const ValueMap& old_map, const ValueMap& new_map, bool recursive);
     [[nodiscard]] bool vectors_differ(const ValueVector& old_vec, const ValueVector& new_vec, bool recursive);
 }
+
+/// Convenience function to compute diff as a Value tree (uses DiffValueCollector)
+[[nodiscard]] LAGER_EXT_API Value diff_as_value(const Value& old_val, const Value& new_val, bool recursive = true);
 
 } // namespace lager_ext

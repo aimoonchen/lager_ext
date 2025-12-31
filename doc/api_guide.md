@@ -30,8 +30,10 @@ This document provides a comprehensive overview of the public APIs in the `lager
     - [4.5 String Path Operations](#45-string-path-operations)
     - [4.6 Path Utilities](#46-path-utilities)
   - [5. Diff Operations](#5-diff-operations)
-    - [5.1 ValueDiff](#51-valuediff)
-    - [5.2 RecursiveDiffCollector](#52-recursivediffcollector)
+    - [5.1 DiffEntry](#51-diffentry)
+    - [5.2 DiffCollector](#52-diffcollector)
+    - [5.3 DiffValue (Tree-structured Result)](#53-diffvalue-tree-structured-result)
+    - [5.4 Quick Difference Check](#54-quick-difference-check)
   - [6. Shared State (Cross-Process)](#6-shared-state-cross-process)
     - [6.1 SharedState](#61-sharedstate)
     - [6.2 Memory Region Operations](#62-memory-region-operations)
@@ -677,7 +679,27 @@ Value without = delete_at_path(root, {"users", size_t(0)});
 
 ## 5. Diff Operations
 
-### 5.1 ValueDiff
+### 5.1 DiffEntry
+
+`DiffEntry` represents a single change between two values:
+
+```cpp
+#include <lager_ext/value_diff.h>
+using namespace lager_ext;
+
+struct DiffEntry {
+    enum class Type { Add, Remove, Change };
+    
+    Type type;           // Type of change
+    Path path;           // Path to the changed value
+    Value old_value;     // Old value (null for Add)
+    Value new_value;     // New value (null for Remove)
+};
+```
+
+### 5.2 DiffCollector
+
+`DiffCollector` compares two values and collects all differences:
 
 ```cpp
 #include <lager_ext/value_diff.h>
@@ -686,41 +708,158 @@ using namespace lager_ext;
 Value old_val = /* ... */;
 Value new_val = /* ... */;
 
-// Get differences
-ValueDiff diff = diff_values(old_val, new_val);
+// Create a collector and compute differences
+DiffCollector collector;
+collector.diff(old_val, new_val);  // recursive by default
 
-for (const auto& change : diff.added) {
-    // change.path - Path to added element
-    // change.value - New value
+// Check if there are any changes
+if (collector.has_changes()) {
+    // Get all differences
+    const auto& diffs = collector.get_diffs();
+    
+    for (const auto& entry : diffs) {
+        switch (entry.type) {
+            case DiffEntry::Type::Add:
+                std::cout << "Added at " << path_to_string(entry.path) 
+                          << ": " << to_json(entry.new_value, true) << std::endl;
+                break;
+            case DiffEntry::Type::Remove:
+                std::cout << "Removed at " << path_to_string(entry.path) 
+                          << ": " << to_json(entry.old_value, true) << std::endl;
+                break;
+            case DiffEntry::Type::Change:
+                std::cout << "Changed at " << path_to_string(entry.path)
+                          << ": " << to_json(entry.old_value, true) 
+                          << " -> " << to_json(entry.new_value, true) << std::endl;
+                break;
+        }
+    }
+    
+    // Or use built-in print
+    collector.print_diffs();
 }
 
-for (const auto& change : diff.removed) {
-    // change.path - Path to removed element
-    // change.value - Old value
-}
-
-for (const auto& change : diff.modified) {
-    // change.path - Path to modified element
-    // change.old_value - Previous value
-    // change.new_value - New value
-}
+// Non-recursive diff (only top-level changes)
+collector.clear();
+collector.diff(old_val, new_val, false);
 ```
 
-### 5.2 RecursiveDiffCollector
+### 5.3 DiffValue (Tree-structured Result)
+
+`DiffValue` organizes diff results as a `Value` tree, mirroring the original data structure. This makes it easy to traverse and process differences using familiar Value APIs.
+
+**Structure:**
+- Intermediate nodes mirror the original structure (maps/vectors)
+- Leaf nodes containing changes have special keys: `_diff_type`, `_old`, `_new`
 
 ```cpp
 #include <lager_ext/value_diff.h>
 using namespace lager_ext;
 
-// Collect differences recursively
-RecursiveDiffResult result = collect_recursive_diff(old_val, new_val);
+Value old_val = Value::map({
+    {"user", Value::map({
+        {"name", "Alice"},
+        {"age", 25}
+    })}
+});
 
-for (const auto& entry : result.changes) {
-    std::cout << "Path: " << path_to_string(entry.path) << std::endl;
-    std::cout << "  Old: " << value_to_string(entry.old_value) << std::endl;
-    std::cout << "  New: " << value_to_string(entry.new_value) << std::endl;
+Value new_val = Value::map({
+    {"user", Value::map({
+        {"name", "Bob"},      // changed
+        {"age", 25},
+        {"email", "bob@example.com"}  // added
+    })}
+});
+
+// Compute diff as a Value tree
+DiffValue diff;
+diff.diff(old_val, new_val);
+
+// Get the result as a Value tree
+const Value& tree = diff.get();
+
+// Result structure:
+// {
+//   "user": {
+//     "name": {
+//       "_diff_type": 2,       // DiffEntry::Type::Change as uint8_t
+//       "_old": "Alice",
+//       "_new": "Bob"
+//     },
+//     "email": {
+//       "_diff_type": 0,       // DiffEntry::Type::Add as uint8_t
+//       "_new": "bob@example.com"
+//     }
+//   }
+// }
+
+// Print the diff tree
+diff.print();
+
+// Traverse the result like any Value
+Value user_diffs = tree.at("user");
+Value name_diff = user_diffs.at("name");
+
+// Check if a node is a diff leaf, then get its type
+if (DiffValue::is_diff_node(name_diff)) {
+    DiffEntry::Type type = DiffValue::get_diff_type(name_diff);
+    
+    if (type == DiffEntry::Type::Change) {
+        Value old_v = DiffValue::get_old_value(name_diff);   // "Alice"
+        Value new_v = DiffValue::get_new_value(name_diff);   // "Bob"
+        
+        std::cout << "Name changed from " << old_v.as_string() 
+                  << " to " << new_v.as_string() << std::endl;
+    }
+}
+
+// Convenience function for one-liner usage
+Value diff_tree = diff_as_value(old_val, new_val);
+```
+
+**Special Keys in Diff Nodes:**
+
+| Key | Description | Value Type |
+|-----|-------------|------------|
+| `_diff_type` | Type of change | `uint8_t` (0=Add, 1=Remove, 2=Change) |
+| `_old` | Previous value | Present for Remove and Change |
+| `_new` | New value | Present for Add and Change |
+
+> **Tip:** Access key names via `diff_keys::TYPE`, `diff_keys::OLD`, `diff_keys::NEW`. Use type constants `diff_keys::ADD` (0), `diff_keys::REMOVE` (1), `diff_keys::CHANGE` (2) for comparison.
+
+**Static Helper Methods:**
+
+| Method | Return Type | Description |
+|--------|-------------|-------------|
+| `DiffValue::is_diff_node(val)` | `bool` | Check if a Value is a diff leaf node |
+| `DiffValue::get_diff_type(val)` | `DiffEntry::Type` | Get the diff type enum (call after `is_diff_node()` returns true) |
+| `DiffValue::get_old_value(val)` | `Value` | Get the old value from a diff node |
+| `DiffValue::get_new_value(val)` | `Value` | Get the new value from a diff node |
+
+### 5.4 Quick Difference Check
+
+For fast detection without collecting details:
+
+```cpp
+#include <lager_ext/value_diff.h>
+using namespace lager_ext;
+
+// Quick check if any differences exist (faster than full diff)
+if (has_any_difference(old_val, new_val)) {
+    // Values are different
+}
+
+// Non-recursive check (only top-level)
+if (has_any_difference(old_val, new_val, false)) {
+    // Top-level values differ
 }
 ```
+
+**Type Aliases:**
+
+| Alias | Actual Type |
+|-------|-------------|
+| `RecursiveDiffCollector` | `DiffCollector` |
 
 ---
 

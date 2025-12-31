@@ -180,7 +180,7 @@ int main()
         std::cout << "S. Scheme 4: Static Path (compile-time)\n";
         std::cout << "\n=== Diff Demos ===\n";
         std::cout << "D. Demo immer::diff (basic)\n";
-        std::cout << "C. Demo RecursiveDiffCollector\n";
+        std::cout << "C. Demo DiffEntryCollector\n";
         std::cout << "\n=== Cross-Process ===\n";
         std::cout << "P. Demo Shared State (Publisher/Subscriber)\n";
         std::cout << "\n=== Editor-Engine Demo ===\n";

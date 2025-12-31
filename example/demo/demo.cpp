@@ -466,7 +466,7 @@ void demo_immer_diff()
 
 void demo_recursive_diff_collector()
 {
-    std::cout << "\n=== DiffCollector Demo ===\n\n";
+    std::cout << "\n=== DiffEntryCollector Demo ===\n\n";
 
     // Create old state
     ValueMap user1;
@@ -517,7 +517,7 @@ void demo_recursive_diff_collector()
 
     // Collect diffs (recursive mode - default)
     std::cout << "\n--- Recursive Diff Results ---\n";
-    DiffCollector collector;
+    DiffEntryCollector collector;
     collector.diff(old_state, new_state);  // recursive = true (default)
     collector.print_diffs();
     std::cout << "\nDetected " << collector.get_diffs().size() << " change(s)\n";
