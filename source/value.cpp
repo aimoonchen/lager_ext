@@ -240,65 +240,93 @@ enum class TypeTag : uint8_t {
 };
 
 // Helper: write bytes to buffer
+// OPTIMIZATION: Use memcpy batch writes instead of per-byte push_back
+// This exploits native little-endian representation on x86/x64 architectures
 class ByteWriter {
 public:
     ByteBuffer buffer;
 
+    // Single byte - no optimization needed
     void write_u8(uint8_t v) {
         buffer.push_back(v);
     }
 
+    // 16-bit write with memcpy
+    void write_u16(uint16_t v) {
+        std::size_t old_size = buffer.size();
+        buffer.resize(old_size + sizeof(v));
+        std::memcpy(buffer.data() + old_size, &v, sizeof(v));
+    }
+
+    void write_i16(int16_t v) {
+        write_u16(static_cast<uint16_t>(v));
+    }
+
+    // 32-bit write with memcpy (little-endian native on x86/x64)
     void write_u32(uint32_t v) {
-        // Little-endian
-        buffer.push_back(static_cast<uint8_t>(v & 0xFF));
-        buffer.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
-        buffer.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
-        buffer.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        std::size_t old_size = buffer.size();
+        buffer.resize(old_size + sizeof(v));
+        std::memcpy(buffer.data() + old_size, &v, sizeof(v));
     }
 
     void write_i32(int32_t v) {
         write_u32(static_cast<uint32_t>(v));
     }
 
+    // 32-bit float with memcpy
     void write_f32(float v) {
-        uint32_t bits;
-        std::memcpy(&bits, &v, sizeof(bits));
-        write_u32(bits);
+        std::size_t old_size = buffer.size();
+        buffer.resize(old_size + sizeof(v));
+        std::memcpy(buffer.data() + old_size, &v, sizeof(v));
     }
 
+    // 64-bit double with memcpy
     void write_f64(double v) {
-        uint64_t bits;
-        std::memcpy(&bits, &v, sizeof(bits));
-        // Little-endian
-        for (int i = 0; i < 8; ++i) {
-            buffer.push_back(static_cast<uint8_t>((bits >> (i * 8)) & 0xFF));
-        }
+        std::size_t old_size = buffer.size();
+        buffer.resize(old_size + sizeof(v));
+        std::memcpy(buffer.data() + old_size, &v, sizeof(v));
     }
 
+    // 64-bit integer with memcpy
     void write_i64(int64_t v) {
-        uint64_t bits = static_cast<uint64_t>(v);
-        for (int i = 0; i < 8; ++i) {
-            buffer.push_back(static_cast<uint8_t>((bits >> (i * 8)) & 0xFF));
-        }
+        std::size_t old_size = buffer.size();
+        buffer.resize(old_size + sizeof(v));
+        std::memcpy(buffer.data() + old_size, &v, sizeof(v));
+    }
+
+    void write_u64(uint64_t v) {
+        std::size_t old_size = buffer.size();
+        buffer.resize(old_size + sizeof(v));
+        std::memcpy(buffer.data() + old_size, &v, sizeof(v));
     }
 
     void write_string(const std::string& s) {
         write_u32(static_cast<uint32_t>(s.size()));
-        // OPTIMIZATION: Use resize + memcpy instead of per-byte push_back
         std::size_t old_size = buffer.size();
         buffer.resize(old_size + s.size());
         std::memcpy(buffer.data() + old_size, s.data(), s.size());
     }
 
+    // OPTIMIZATION: Batch write entire float array with single memcpy
     template<std::size_t N>
     void write_float_array(const std::array<float, N>& arr) {
-        for (std::size_t i = 0; i < N; ++i) {
-            write_f32(arr[i]);
-        }
+        std::size_t old_size = buffer.size();
+        buffer.resize(old_size + sizeof(arr));
+        std::memcpy(buffer.data() + old_size, arr.data(), sizeof(arr));
+    }
+
+    // OPTIMIZATION: Batch write entire double array with single memcpy
+    template<std::size_t N>
+    void write_double_array(const std::array<double, N>& arr) {
+        std::size_t old_size = buffer.size();
+        buffer.resize(old_size + sizeof(arr));
+        std::memcpy(buffer.data() + old_size, arr.data(), sizeof(arr));
     }
 };
 
 // Helper: read bytes from buffer
+// OPTIMIZATION: Use memcpy batch reads instead of per-byte operations
+// This exploits native little-endian representation on x86/x64 architectures
 class ByteReader {
 public:
     const uint8_t* data;
@@ -316,13 +344,25 @@ public:
         return data[pos++];
     }
 
+    // 16-bit read with memcpy
+    uint16_t read_u16() {
+        if (!has_bytes(sizeof(uint16_t))) throw std::runtime_error("Unexpected end of buffer");
+        uint16_t v;
+        std::memcpy(&v, data + pos, sizeof(v));
+        pos += sizeof(v);
+        return v;
+    }
+
+    int16_t read_i16() {
+        return static_cast<int16_t>(read_u16());
+    }
+
+    // 32-bit read with memcpy
     uint32_t read_u32() {
-        if (!has_bytes(4)) throw std::runtime_error("Unexpected end of buffer");
-        uint32_t v = 0;
-        v |= static_cast<uint32_t>(data[pos++]);
-        v |= static_cast<uint32_t>(data[pos++]) << 8;
-        v |= static_cast<uint32_t>(data[pos++]) << 16;
-        v |= static_cast<uint32_t>(data[pos++]) << 24;
+        if (!has_bytes(sizeof(uint32_t))) throw std::runtime_error("Unexpected end of buffer");
+        uint32_t v;
+        std::memcpy(&v, data + pos, sizeof(v));
+        pos += sizeof(v);
         return v;
     }
 
@@ -330,31 +370,39 @@ public:
         return static_cast<int32_t>(read_u32());
     }
 
+    // 32-bit float with memcpy
     float read_f32() {
-        uint32_t bits = read_u32();
+        if (!has_bytes(sizeof(float))) throw std::runtime_error("Unexpected end of buffer");
         float v;
-        std::memcpy(&v, &bits, sizeof(v));
+        std::memcpy(&v, data + pos, sizeof(v));
+        pos += sizeof(v);
         return v;
     }
 
+    // 64-bit double with memcpy
     double read_f64() {
-        if (!has_bytes(8)) throw std::runtime_error("Unexpected end of buffer");
-        uint64_t bits = 0;
-        for (int i = 0; i < 8; ++i) {
-            bits |= static_cast<uint64_t>(data[pos++]) << (i * 8);
-        }
+        if (!has_bytes(sizeof(double))) throw std::runtime_error("Unexpected end of buffer");
         double v;
-        std::memcpy(&v, &bits, sizeof(v));
+        std::memcpy(&v, data + pos, sizeof(v));
+        pos += sizeof(v);
         return v;
     }
 
+    // 64-bit integer with memcpy
     int64_t read_i64() {
-        if (!has_bytes(8)) throw std::runtime_error("Unexpected end of buffer");
-        uint64_t bits = 0;
-        for (int i = 0; i < 8; ++i) {
-            bits |= static_cast<uint64_t>(data[pos++]) << (i * 8);
-        }
-        return static_cast<int64_t>(bits);
+        if (!has_bytes(sizeof(int64_t))) throw std::runtime_error("Unexpected end of buffer");
+        int64_t v;
+        std::memcpy(&v, data + pos, sizeof(v));
+        pos += sizeof(v);
+        return v;
+    }
+
+    uint64_t read_u64() {
+        if (!has_bytes(sizeof(uint64_t))) throw std::runtime_error("Unexpected end of buffer");
+        uint64_t v;
+        std::memcpy(&v, data + pos, sizeof(v));
+        pos += sizeof(v);
+        return v;
     }
 
     std::string read_string() {
@@ -365,12 +413,25 @@ public:
         return s;
     }
 
+    // OPTIMIZATION: Batch read entire float array with single memcpy
     template<std::size_t N>
     std::array<float, N> read_float_array() {
+        constexpr std::size_t byte_size = N * sizeof(float);
+        if (!has_bytes(byte_size)) throw std::runtime_error("Unexpected end of buffer");
         std::array<float, N> arr;
-        for (std::size_t i = 0; i < N; ++i) {
-            arr[i] = read_f32();
-        }
+        std::memcpy(arr.data(), data + pos, byte_size);
+        pos += byte_size;
+        return arr;
+    }
+
+    // OPTIMIZATION: Batch read entire double array with single memcpy
+    template<std::size_t N>
+    std::array<double, N> read_double_array() {
+        constexpr std::size_t byte_size = N * sizeof(double);
+        if (!has_bytes(byte_size)) throw std::runtime_error("Unexpected end of buffer");
+        std::array<double, N> arr;
+        std::memcpy(arr.data(), data + pos, byte_size);
+        pos += byte_size;
         return arr;
     }
 };
@@ -685,6 +746,7 @@ std::size_t serialized_size(const Value& val) {
 }
 
 // Helper class to write directly to a pre-allocated buffer
+// OPTIMIZATION: Use memcpy batch writes instead of per-byte operations
 namespace {
 class DirectByteWriter {
 public:
@@ -699,39 +761,53 @@ public:
         buffer[pos++] = v;
     }
 
+    // 16-bit write with memcpy
+    void write_u16(uint16_t v) {
+        if (pos + sizeof(v) > capacity) throw std::runtime_error("Buffer overflow");
+        std::memcpy(buffer + pos, &v, sizeof(v));
+        pos += sizeof(v);
+    }
+
+    void write_i16(int16_t v) {
+        write_u16(static_cast<uint16_t>(v));
+    }
+
+    // 32-bit write with memcpy
     void write_u32(uint32_t v) {
-        if (pos + 4 > capacity) throw std::runtime_error("Buffer overflow");
-        buffer[pos++] = static_cast<uint8_t>(v & 0xFF);
-        buffer[pos++] = static_cast<uint8_t>((v >> 8) & 0xFF);
-        buffer[pos++] = static_cast<uint8_t>((v >> 16) & 0xFF);
-        buffer[pos++] = static_cast<uint8_t>((v >> 24) & 0xFF);
+        if (pos + sizeof(v) > capacity) throw std::runtime_error("Buffer overflow");
+        std::memcpy(buffer + pos, &v, sizeof(v));
+        pos += sizeof(v);
     }
 
     void write_i32(int32_t v) {
         write_u32(static_cast<uint32_t>(v));
     }
 
+    // 32-bit float with memcpy
     void write_f32(float v) {
-        uint32_t bits;
-        std::memcpy(&bits, &v, sizeof(bits));
-        write_u32(bits);
+        if (pos + sizeof(v) > capacity) throw std::runtime_error("Buffer overflow");
+        std::memcpy(buffer + pos, &v, sizeof(v));
+        pos += sizeof(v);
     }
 
+    // 64-bit double with memcpy
     void write_f64(double v) {
-        if (pos + 8 > capacity) throw std::runtime_error("Buffer overflow");
-        uint64_t bits;
-        std::memcpy(&bits, &v, sizeof(bits));
-        for (int i = 0; i < 8; ++i) {
-            buffer[pos++] = static_cast<uint8_t>((bits >> (i * 8)) & 0xFF);
-        }
+        if (pos + sizeof(v) > capacity) throw std::runtime_error("Buffer overflow");
+        std::memcpy(buffer + pos, &v, sizeof(v));
+        pos += sizeof(v);
     }
 
+    // 64-bit integer with memcpy
     void write_i64(int64_t v) {
-        if (pos + 8 > capacity) throw std::runtime_error("Buffer overflow");
-        uint64_t bits = static_cast<uint64_t>(v);
-        for (int i = 0; i < 8; ++i) {
-            buffer[pos++] = static_cast<uint8_t>((bits >> (i * 8)) & 0xFF);
-        }
+        if (pos + sizeof(v) > capacity) throw std::runtime_error("Buffer overflow");
+        std::memcpy(buffer + pos, &v, sizeof(v));
+        pos += sizeof(v);
+    }
+
+    void write_u64(uint64_t v) {
+        if (pos + sizeof(v) > capacity) throw std::runtime_error("Buffer overflow");
+        std::memcpy(buffer + pos, &v, sizeof(v));
+        pos += sizeof(v);
     }
 
     void write_string(const std::string& s) {
@@ -741,11 +817,12 @@ public:
         pos += s.size();
     }
 
+    // OPTIMIZATION: Batch write entire float array with single memcpy
     template<std::size_t N>
     void write_float_array(const std::array<float, N>& arr) {
-        for (std::size_t i = 0; i < N; ++i) {
-            write_f32(arr[i]);
-        }
+        if (pos + sizeof(arr) > capacity) throw std::runtime_error("Buffer overflow");
+        std::memcpy(buffer + pos, arr.data(), sizeof(arr));
+        pos += sizeof(arr);
     }
 };
 

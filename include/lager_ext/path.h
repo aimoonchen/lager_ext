@@ -6,26 +6,27 @@
 ///
 /// This file provides a unified namespace for path-based lens access:
 ///
-/// 1. Compile-time paths (highest performance):
+/// 1. Compile-time paths (C++20 string literal):
 ///    @code
-///    using namespace lager_ext::path;
-///    auto lens = compile_time<"/users/0/name">();
+///    auto lens = lager_ext::path::lens<"/users/0/name">();
 ///    @endcode
 ///
-/// 2. Runtime paths (flexible):
+/// 2. Runtime paths (flexible string parsing):
 ///    @code
-///    auto lens = lager_ext::path::runtime("/users/0/name");
+///    auto lens = lager_ext::path::lens("/users/0/name");
 ///    @endcode
 ///
-/// 3. Builder-style paths (chainable):
+/// 3. Variadic template paths (type-safe):
 ///    @code
-///    auto lens = lager_ext::path::builder() / "users" / 0 / "name";
+///    auto lens = lager_ext::path::lens("users", 0, "name");
 ///    @endcode
 ///
-/// 4. Variadic template paths (type-safe, compile-time checked):
+/// 4. Builder-style paths (chainable):
 ///    @code
-///    auto lens = lager_ext::path::make("users", 0, "name");
+///    auto path = lager_ext::path::builder() / "users" / 0 / "name";
 ///    @endcode
+///
+/// For direct access without lens, use get/set/over functions.
 
 #pragma once
 
@@ -55,76 +56,52 @@ using Element = PathElement;
 using Elements = Path;
 
 // ============================================================
-// Compile-Time Path API (Highest Performance)
+// Unified Lens API
 // ============================================================
 
-/// @brief Create a compile-time lens from JSON Pointer syntax
+/// @brief Create a lens from compile-time string literal (C++20 NTTP)
 /// @tparam Path JSON Pointer style path (e.g., "/users/0/name")
-/// @return A lens object that can be used for get/set operations
+/// @return Type-erased LagerValueLens
 ///
 /// @example
 /// @code
-/// auto lens = path::compile_time<"/users/0/name">();
+/// auto lens = path::lens<"/users/0/name">();
 /// Value name = lager::view(lens, data);
 /// @endcode
 template<static_path::FixedString Path>
-constexpr auto compile_time() {
-    return static_path::JsonPointerPath<Path>::to_lens();
+[[nodiscard]] Lens lens() {
+    return static_path_lens<Path>();
 }
 
-/// @brief Alias for compile_time - shorter name
-template<static_path::FixedString Path>
-constexpr auto ct() {
-    return compile_time<Path>();
-}
-
-// ============================================================
-// Runtime Path API (Flexible)
-// ============================================================
-
-/// @brief Create a lens from a runtime string path
-/// @param path_str JSON Pointer style path string (e.g., "/users/0/name")
-/// @return Type-erased lens
+/// @brief Create a lens from runtime string path
+/// @param path_str JSON Pointer style path string
+/// @return Type-erased LagerValueLens
 ///
 /// @example
 /// @code
 /// std::string user_path = "/users/" + std::to_string(user_id) + "/name";
-/// auto lens = path::runtime(user_path);
-/// Value name = lager::view(lens, data);
+/// auto lens = path::lens(user_path);
 /// @endcode
-[[nodiscard]] inline Lens runtime(std::string_view path_str) {
+[[nodiscard]] inline Lens lens(std::string_view path_str) {
     return string_path_lens(path_str);
 }
 
-/// @brief Get value at runtime path
-/// @param data The root value
-/// @param path_str JSON Pointer style path
-/// @return Value at path, or null Value if not found
-[[nodiscard]] inline Value get(const Value& data, std::string_view path_str) {
-    return get_by_path(data, path_str);
-}
-
-/// @brief Set value at runtime path
-/// @param data The root value
-/// @param path_str JSON Pointer style path
-/// @param new_value The new value to set
-/// @return New root value with updated path
-[[nodiscard]] inline Value set(const Value& data, std::string_view path_str, Value new_value) {
-    return set_by_path(data, path_str, std::move(new_value));
-}
-
-/// @brief Update value at runtime path using a function
-/// @param data The root value
-/// @param path_str JSON Pointer style path
-/// @param fn Update function (Value -> Value)
-/// @return New root value with updated path
-template<typename Fn>
-[[nodiscard]] Value over(const Value& data, std::string_view path_str, Fn&& fn) {
-    return over_by_path(data, path_str, std::forward<Fn>(fn));
+/// @brief Create a lens from variadic path elements
+/// @tparam Elements Path element types (string-like or integral)
+/// @param elements Path elements
+/// @return Composed lens (auto type, not type-erased)
+///
+/// @example
+/// @code
+/// auto lens = path::lens("users", 0, "name");
+/// @endcode
+template<PathElementType... Elements>
+[[nodiscard]] auto lens(Elements&&... elements) {
+    return static_path_lens(std::forward<Elements>(elements)...);
 }
 
 // ============================================================
-// Builder-Style Path API (Chainable)
+// Builder-Style Path API
 // ============================================================
 
 /// @brief Create a path builder starting from root
@@ -139,44 +116,23 @@ template<typename Fn>
     return Builder{};
 }
 
-/// @brief Global root path - can be used directly with / operator
-/// @example
-/// @code
-/// auto path = path::root / "users" / 0;
-/// @endcode
-inline const Builder root{};
-
-// ============================================================
-// Variadic Template Path API (Type-Safe)
-// ============================================================
-
-/// @brief Create a lens from variadic path elements
-/// @tparam Elements Path element types (string-like or integral)
-/// @param elements Path elements
-/// @return Composed lens
-///
-/// @example
-/// @code
-/// auto lens = path::make("users", 0, "name");
-/// // Equivalent to: (zug::identity | key_lens("users") | index_lens(0) | key_lens("name"))
-/// @endcode
-template<PathElementType... Elements>
-[[nodiscard]] auto make(Elements&&... elements) {
-    return static_path_lens(std::forward<Elements>(elements)...);
-}
-
 /// @brief Create a PathLens from variadic elements
-/// @tparam Elements Path element types
-/// @param elements Path elements
-/// @return PathLens object
 template<PathElementType... Elements>
 [[nodiscard]] Builder make_builder(Elements&&... elements) {
     return make_path(std::forward<Elements>(elements)...);
 }
 
 // ============================================================
-// Convenience Functions
+// Direct Access Functions (without lens)
 // ============================================================
+
+/// @brief Get value at string path
+/// @param data The root value
+/// @param path_str JSON Pointer style path
+/// @return Value at path, or null Value if not found
+[[nodiscard]] inline Value get(const Value& data, std::string_view path_str) {
+    return get_by_path(data, path_str);
+}
 
 /// @brief Get value at variadic path
 template<PathElementType... Elements>
@@ -184,10 +140,25 @@ template<PathElementType... Elements>
     return get_at(data, std::forward<Elements>(path_elements)...);
 }
 
+/// @brief Set value at string path
+/// @param data The root value
+/// @param path_str JSON Pointer style path
+/// @param new_value The new value to set
+/// @return New root value with updated path
+[[nodiscard]] inline Value set(const Value& data, std::string_view path_str, Value new_value) {
+    return set_by_path(data, path_str, std::move(new_value));
+}
+
 /// @brief Set value at variadic path
 template<PathElementType... Elements>
 [[nodiscard]] Value set(const Value& data, Value new_value, Elements&&... path_elements) {
     return set_at(data, std::move(new_value), std::forward<Elements>(path_elements)...);
+}
+
+/// @brief Update value at string path using a function
+template<typename Fn>
+[[nodiscard]] Value over(const Value& data, std::string_view path_str, Fn&& fn) {
+    return over_by_path(data, path_str, std::forward<Fn>(fn));
 }
 
 /// @brief Update value at variadic path
@@ -201,9 +172,6 @@ template<typename Fn, PathElementType... Elements>
 // ============================================================
 
 /// @brief Safe get with detailed error information
-/// @param data The root value
-/// @param path Path elements
-/// @return PathAccessResult with success/error info
 [[nodiscard]] inline PathAccessResult safe_get(const Value& data, const Elements& path) {
     return get_at_path_safe(data, path);
 }
@@ -218,22 +186,16 @@ template<typename Fn, PathElementType... Elements>
 // ============================================================
 
 /// @brief Parse a string path into path elements
-/// @param path_str JSON Pointer style path
-/// @return Vector of path elements
 [[nodiscard]] inline Elements parse(std::string_view path_str) {
     return parse_string_path(path_str);
 }
 
-/// @brief Convert path elements to string
-/// @param path Path elements
-/// @return String representation (e.g., ".users[0].name")
+/// @brief Convert path elements to string (e.g., ".users[0].name")
 [[nodiscard]] inline std::string to_string(const Elements& path) {
     return path_to_string(path);
 }
 
-/// @brief Convert path elements to JSON Pointer string
-/// @param path Path elements
-/// @return JSON Pointer string (e.g., "/users/0/name")
+/// @brief Convert path elements to JSON Pointer string (e.g., "/users/0/name")
 [[nodiscard]] inline std::string to_json_pointer(const Elements& path) {
     return path_to_string_path(path);
 }

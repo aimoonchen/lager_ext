@@ -267,20 +267,18 @@ struct StaticPath<> {
 };
 
 // ============================================================
-// Convenience type aliases and factory functions
+// Convenience type aliases
 // ============================================================
 
-// Create a key segment (use K for brevity to avoid name collision)
+/// @brief Key segment shorthand for map access
+/// @example K<"name">, K<"users">
 template<FixedString S>
 using K = KeySeg<S>;
 
-// Create an index segment (use I for brevity)
+/// @brief Index segment shorthand for vector/array access  
+/// @example I<0>, I<1>
 template<std::size_t N>
 using I = IndexSeg<N>;
-
-// Create a static path from segments
-template<typename... Segments>
-using MakePath = StaticPath<Segments...>;
 
 // ============================================================
 // Path concatenation - combine two static paths
@@ -338,10 +336,10 @@ struct PathRegistry {
 };
 
 // ============================================================
-// JSON Pointer Style Static Path
+// String Literal Static Path
 //
-// Allows defining paths using JSON Pointer syntax:
-//   JsonPointerPath<"/users/0/name">
+// Allows defining paths using string literal syntax:
+//   StaticPath<"/users/0/name">
 //
 // This is equivalent to:
 //   StaticPath<K<"users">, I<0>, K<"name">>
@@ -467,9 +465,17 @@ struct BuildPath<Ptr, std::index_sequence<Is...>> {
 
 } // namespace detail
 
-// Main template: Convert JSON Pointer to StaticPath
+/// @brief Convert string literal to StaticPath at compile time
+/// @tparam Ptr JSON Pointer style path string (e.g., "/users/0/name")
+/// 
+/// Usage: LiteralPath<"/users/0/name">
+/// Equivalent to: StaticPath<K<"users">, I<0>, K<"name">>
+/// 
+/// @example
+/// using UserNamePath = LiteralPath<"/users/0/name">;
+/// Value name = UserNamePath::get(root);
 template<FixedString Ptr>
-using JsonPointerPath = typename detail::BuildPath<
+using LiteralPath = typename detail::BuildPath<
     Ptr,
     std::make_index_sequence<detail::count_segments<Ptr>()>
 >::type;

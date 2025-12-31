@@ -233,24 +233,24 @@ struct BasicValue
                  std::monostate>
         data;
 
-    BasicValue() noexcept : data(std::monostate{}) {}
-    BasicValue(int8_t v) noexcept : data(v) {}
-    BasicValue(int16_t v) noexcept : data(v) {}
-    BasicValue(int32_t v) noexcept : data(v) {}
-    BasicValue(int64_t v) noexcept : data(v) {}
-    BasicValue(uint8_t v) noexcept : data(v) {}
-    BasicValue(uint16_t v) noexcept : data(v) {}
-    BasicValue(uint32_t v) noexcept : data(v) {}
-    BasicValue(uint64_t v) noexcept : data(v) {}
-    BasicValue(float v) noexcept : data(v) {}
-    BasicValue(double v) noexcept : data(v) {}
-    BasicValue(bool v) noexcept : data(v) {}
+    constexpr BasicValue() noexcept : data(std::monostate{}) {}
+    constexpr BasicValue(int8_t v) noexcept : data(v) {}
+    constexpr BasicValue(int16_t v) noexcept : data(v) {}
+    constexpr BasicValue(int32_t v) noexcept : data(v) {}
+    constexpr BasicValue(int64_t v) noexcept : data(v) {}
+    constexpr BasicValue(uint8_t v) noexcept : data(v) {}
+    constexpr BasicValue(uint16_t v) noexcept : data(v) {}
+    constexpr BasicValue(uint32_t v) noexcept : data(v) {}
+    constexpr BasicValue(uint64_t v) noexcept : data(v) {}
+    constexpr BasicValue(float v) noexcept : data(v) {}
+    constexpr BasicValue(double v) noexcept : data(v) {}
+    constexpr BasicValue(bool v) noexcept : data(v) {}
     BasicValue(const std::string& v) : data(v) {}
     BasicValue(std::string&& v) noexcept : data(std::move(v)) {}
     BasicValue(const char* v) : data(std::in_place_type<std::string>, v) {}
-    BasicValue(Vec2 v) noexcept : data(v) {}
-    BasicValue(Vec3 v) noexcept : data(v) {}
-    BasicValue(Vec4 v) noexcept : data(v) {}
+    constexpr BasicValue(Vec2 v) noexcept : data(v) {}
+    constexpr BasicValue(Vec3 v) noexcept : data(v) {}
+    constexpr BasicValue(Vec4 v) noexcept : data(v) {}
     BasicValue(const Mat3& v) : data(boxed_mat3{v}) {}
     BasicValue(const Mat4x3& v) : data(boxed_mat4x3{v}) {}
     BasicValue(const Mat4& v) : data(boxed_mat4{v}) {}

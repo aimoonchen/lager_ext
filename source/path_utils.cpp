@@ -42,49 +42,48 @@ Value set_at_path_direct(const Value& root, const Path& path, Value new_val)
 
 Value set_at_path_element_vivify(const Value& current, const PathElement& elem, Value new_val)
 {
-    return std::visit([&current, &new_val](const auto& key_or_idx) -> Value {
-        using T = std::decay_t<decltype(key_or_idx)>;
-        if constexpr (std::is_same_v<T, std::string>) {
-            // For string keys: auto-create map if null
-            if (auto* m = current.get_if<ValueMap>()) {
-                return m->set(key_or_idx, immer::box<Value>{std::move(new_val)});
-            }
-            if (current.is_null()) {
-                // Auto-vivification: create new map
-                return ValueMap{}.set(key_or_idx, immer::box<Value>{std::move(new_val)});
-            }
-            // Not a map and not null - cannot vivify
-            return current;
-        } else {
-            // For index: auto-extend vector if needed
-            // OPTIMIZATION: Use transient mode for O(N) batch push_back
-            // (immutable push_back in loop would be O(N log N))
-            if (auto* v = current.get_if<ValueVector>()) {
-                if (key_or_idx < v->size()) {
-                    // Index within bounds, just set
-                    return v->set(key_or_idx, immer::box<Value>{std::move(new_val)});
-                }
-                // Need to extend: use transient for batch operations
-                auto trans = v->transient();
-                while (trans.size() <= key_or_idx) {
-                    trans.push_back(immer::box<Value>{});
-                }
-                trans.set(key_or_idx, immer::box<Value>{std::move(new_val)});
-                return trans.persistent();
-            }
-            if (current.is_null()) {
-                // Auto-vivification: create new vector with enough space
-                // Use transient for O(N) construction
-                auto trans = ValueVector{}.transient();
-                for (std::size_t i = 0; i < key_or_idx; ++i) {
-                    trans.push_back(immer::box<Value>{});
-                }
-                trans.push_back(immer::box<Value>{std::move(new_val)});
-                return trans.persistent();
-            }
-            return current;
+    // Optimized: uses if-else instead of std::visit to avoid indirect call overhead
+    if (auto* key = std::get_if<std::string>(&elem)) {
+        // For string keys: auto-create map if null
+        if (auto* m = current.get_if<ValueMap>()) {
+            return m->set(*key, immer::box<Value>{std::move(new_val)});
         }
-    }, elem);
+        if (current.is_null()) {
+            // Auto-vivification: create new map
+            return ValueMap{}.set(*key, immer::box<Value>{std::move(new_val)});
+        }
+        // Not a map and not null - cannot vivify
+        return current;
+    } else {
+        // For index: auto-extend vector if needed
+        auto idx = std::get<std::size_t>(elem);
+        // OPTIMIZATION: Use transient mode for O(N) batch push_back
+        // (immutable push_back in loop would be O(N log N))
+        if (auto* v = current.get_if<ValueVector>()) {
+            if (idx < v->size()) {
+                // Index within bounds, just set
+                return v->set(idx, immer::box<Value>{std::move(new_val)});
+            }
+            // Need to extend: use transient for batch operations
+            auto trans = v->transient();
+            while (trans.size() <= idx) {
+                trans.push_back(immer::box<Value>{});
+            }
+            trans.set(idx, immer::box<Value>{std::move(new_val)});
+            return trans.persistent();
+        }
+        if (current.is_null()) {
+            // Auto-vivification: create new vector with enough space
+            // Use transient for O(N) construction
+            auto trans = ValueVector{}.transient();
+            for (std::size_t i = 0; i < idx; ++i) {
+                trans.push_back(immer::box<Value>{});
+            }
+            trans.push_back(immer::box<Value>{std::move(new_val)});
+            return trans.persistent();
+        }
+        return current;
+    }
 }
 
 Value set_at_path_recursive_vivify(

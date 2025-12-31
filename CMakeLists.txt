@@ -63,6 +63,7 @@ set(LAGER_EXT_HEADERS
     include/lager_ext/fast_shared_value.h
     include/lager_ext/lager_lens.h
     include/lager_ext/multi_store.h
+    include/lager_ext/path.h
     include/lager_ext/path_utils.h
     include/lager_ext/scene_types.h
     include/lager_ext/shared_state.h

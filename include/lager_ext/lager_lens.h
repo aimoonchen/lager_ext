@@ -161,6 +161,32 @@ using LagerValueLens = lager::lens<Value, Value>;
 [[nodiscard]] LAGER_EXT_API LagerValueLens lager_index_lens(std::size_t index);
 [[nodiscard]] LAGER_EXT_API LagerValueLens lager_path_lens(const Path& path);
 
+// ============================================================
+// Literal Path to Lager Lens conversion (C++20)
+// ============================================================
+
+} // namespace lager_ext
+
+// Include static_path.h for LiteralPath support
+// This is placed after closing namespace to avoid circular dependencies
+#include <lager_ext/static_path.h>
+
+namespace lager_ext {
+
+/// @brief Convert a compile-time string literal path to a lager lens
+/// @tparam Ptr JSON Pointer style path string (e.g., "/users/0/name")
+/// @return Type-erased LagerValueLens that can be used with lager::view/set/over
+/// 
+/// @example
+/// auto lens = static_path_lens<"/users/0/name">();
+/// Value name = lager::view(lens, root);
+/// Value updated = lager::set(lens, root, Value{"Alice"});
+template<static_path::FixedString Ptr>
+[[nodiscard]] LagerValueLens static_path_lens() {
+    using PathType = static_path::LiteralPath<Ptr>;
+    return lager_path_lens(PathType::to_runtime_path());
+}
+
 namespace detail {
 auto element_to_lens(StringLike auto&& elem) {
     return key_lens(std::string{std::forward<decltype(elem)>(elem)});

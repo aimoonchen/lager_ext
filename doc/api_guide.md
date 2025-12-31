@@ -1,6 +1,6 @@
 # lager_ext API Guide
 
-This document provides an overview of the public APIs in the `lager_ext` library.
+This document provides a comprehensive overview of the public APIs in the `lager_ext` library.
 
 ## Table of Contents
 
@@ -8,23 +8,37 @@ This document provides an overview of the public APIs in the `lager_ext` library
   - [Table of Contents](#table-of-contents)
   - [1. Value Types](#1-value-types)
     - [1.1 Type Aliases](#11-type-aliases)
-    - [1.2 Construction](#12-construction)
-    - [1.3 Accessors](#13-accessors)
-    - [1.4 Modification](#14-modification)
-    - [1.5 Comparison](#15-comparison)
-  - [2. Path Operations](#2-path-operations)
-    - [2.1 PathLens](#21-pathlens)
-    - [2.2 Static Path Lens](#22-static-path-lens)
-    - [2.3 String Path Operations](#23-string-path-operations)
-  - [3. Diff Operations](#3-diff-operations)
-    - [3.1 DiffCollector](#31-diffcollector)
-    - [3.2 RecursiveDiffCollector](#32-recursivediffcollector)
-  - [4. Shared Memory](#4-shared-memory)
-    - [4.1 SharedValue](#41-sharedvalue)
-    - [4.2 Memory Region Operations](#42-memory-region-operations)
-  - [Quick Reference](#quick-reference)
-    - [Include Headers](#include-headers)
-    - [Typical Usage Pattern](#typical-usage-pattern)
+    - [1.2 Supported Data Types](#12-supported-data-types)
+    - [1.3 Construction](#13-construction)
+    - [1.4 Type Checking](#14-type-checking)
+    - [1.5 Value Access](#15-value-access)
+    - [1.6 Modification (Immutable Operations)](#16-modification-immutable-operations)
+    - [1.7 Comparison Operators (C++20)](#17-comparison-operators-c20)
+  - [2. Builder API](#2-builder-api)
+    - [2.1 Overview](#21-overview)
+    - [2.2 MapBuilder](#22-mapbuilder)
+    - [2.3 VectorBuilder](#23-vectorbuilder)
+    - [2.4 ArrayBuilder \& TableBuilder](#24-arraybuilder--tablebuilder)
+  - [3. Serialization](#3-serialization)
+    - [3.1 Binary Serialization](#31-binary-serialization)
+    - [3.2 JSON Serialization](#32-json-serialization)
+  - [4. Path Operations](#4-path-operations)
+    - [4.1 Path Types](#41-path-types)
+    - [4.2 PathLens](#42-pathlens)
+    - [4.3 Static Path Lens](#43-static-path-lens)
+    - [4.4 String Path Operations](#44-string-path-operations)
+    - [4.5 Path Utilities](#45-path-utilities)
+  - [5. Diff Operations](#5-diff-operations)
+    - [5.1 ValueDiff](#51-valuediff)
+    - [5.2 RecursiveDiffCollector](#52-recursivediffcollector)
+  - [6. Shared State (Cross-Process)](#6-shared-state-cross-process)
+    - [6.1 SharedState](#61-sharedstate)
+    - [6.2 Memory Region Operations](#62-memory-region-operations)
+  - [7. Header Reference](#7-header-reference)
+  - [8. Usage Examples](#8-usage-examples)
+    - [8.1 Basic Usage](#81-basic-usage)
+    - [8.2 Working with Math Types](#82-working-with-math-types)
+    - [8.3 Thread Safety](#83-thread-safety)
   - [Notes](#notes)
 
 ---
@@ -40,140 +54,178 @@ This document provides an overview of the public APIs in the `lager_ext` library
 using Value = lager_ext::UnsafeValue;
 
 // Thread-safe Value for multi-threaded scenarios
-using SyncValue = lager_ext::SyncValue;
+using SyncValue = lager_ext::ThreadSafeValue;
 ```
 
-**Underlying primitive types:**
+**Memory Policy Variants:**
 
-| Type Alias      | Description                         |
-|-----------------|-------------------------------------|
-| `value_null`    | Null type (`std::monostate`)        |
-| `value_bool`    | Boolean                             |
-| `value_int`     | 64-bit signed integer (`int64_t`)   |
-| `value_double`  | 64-bit floating point (`double`)    |
-| `value_string`  | Immutable string (`immer::box<std::string>`) |
-| `value_vector`  | Immutable vector of `Value`         |
-| `value_map`     | Immutable map (`std::string` → `Value`) |
+| Type Alias | Memory Policy | Thread Safety | Performance |
+|------------|---------------|---------------|-------------|
+| `Value` (alias for `UnsafeValue`) | `unsafe_memory_policy` | Single-threaded only | Fastest (10-30% faster) |
+| `SyncValue` (alias for `ThreadSafeValue`) | `thread_safe_memory_policy` | Thread-safe | Standard |
 
-### 1.2 Construction
+### 1.2 Supported Data Types
+
+**Primitive Types:**
+
+| C++ Type | Description | Example |
+|----------|-------------|---------|
+| `int8_t` | 8-bit signed integer | `Value(int8_t{42})` |
+| `int16_t` | 16-bit signed integer | `Value(int16_t{1000})` |
+| `int32_t` / `int` | 32-bit signed integer | `Value(42)` |
+| `int64_t` | 64-bit signed integer | `Value(int64_t{9999999999})` |
+| `uint8_t` | 8-bit unsigned integer | `Value(uint8_t{255})` |
+| `uint16_t` | 16-bit unsigned integer | `Value(uint16_t{65535})` |
+| `uint32_t` | 32-bit unsigned integer | `Value(100u)` |
+| `uint64_t` | 64-bit unsigned integer | `Value(uint64_t{0})` |
+| `float` | 32-bit floating point | `Value(3.14f)` |
+| `double` | 64-bit floating point | `Value(3.14159265)` |
+| `bool` | Boolean | `Value(true)` |
+| `std::string` | String | `Value("hello")` |
+
+**Math Types (for graphics/game development):**
+
+| Type | Elements | Size | Storage |
+|------|----------|------|---------|
+| `Vec2` | 2 floats | 8 bytes | inline |
+| `Vec3` | 3 floats | 12 bytes | inline |
+| `Vec4` | 4 floats | 16 bytes | inline |
+| `Mat3` | 9 floats (3x3) | 36 bytes | boxed (`immer::box`) |
+| `Mat4x3` | 12 floats (4x3) | 48 bytes | boxed |
+| `Mat4` | 16 floats (4x4) | 64 bytes | boxed |
+
+> **Note:** Larger matrices are boxed (heap-allocated) to keep the `Value` variant size compact (~48 bytes).
+
+**Container Types (Immutable):**
+
+| Type | Description | Underlying Type |
+|------|-------------|-----------------|
+| `ValueMap` | Key-value map | `immer::map<string, ValueBox>` |
+| `ValueVector` | Dynamic array | `immer::vector<ValueBox>` |
+| `ValueArray` | Fixed-size array | `immer::array<ValueBox>` |
+| `ValueTable` | ID-indexed table | `immer::table<TableEntry>` |
+
+### 1.3 Construction
 
 ```cpp
 #include <lager_ext/value.h>
 using namespace lager_ext;
 
 // Null
-Value null_val;                        // Default is null
-Value null_val2 = Value::null_value(); // Explicit null
+Value null_val;                         // Default is null
+Value null_val2 = Value{std::monostate{}};
 
-// Boolean
-Value bool_val(true);
-
-// Integer
+// Primitives
 Value int_val(42);
-Value int_val2(int64_t{100});
-
-// Double
 Value double_val(3.14);
-
-// String
+Value bool_val(true);
 Value str_val("hello");
-Value str_val2(std::string("world"));
 
-// Vector (using builder)
-Value vec = Value::vector_builder()
-    .push_back(1)
-    .push_back("two")
-    .push_back(3.0)
-    .build();
+// Math types
+Value vec2_val = Value::vec2(1.0f, 2.0f);
+Value vec3_val = Value::vec3(1.0f, 2.0f, 3.0f);
+Value vec4_val = Value::vec4(1.0f, 2.0f, 3.0f, 4.0f);
+Value mat3_val = Value::identity_mat3();
 
-// Map (using builder)
-Value obj = Value::map_builder()
-    .set("name", "Alice")
-    .set("age", 30)
-    .set("active", true)
-    .build();
+// Using raw arrays
+float data[3] = {1.0f, 2.0f, 3.0f};
+Value vec3_from_ptr = Value::vec3(data);
 
-// Nested structures
-Value nested = Value::map_builder()
-    .set("users", Value::vector_builder()
-        .push_back(Value::map_builder()
-            .set("id", 1)
-            .set("name", "Bob")
-            .build())
-        .build())
-    .build();
+// Factory functions for containers
+Value my_map = Value::map({
+    {"name", "Alice"},
+    {"age", 30}
+});
+
+Value my_vector = Value::vector({1, 2, 3, "four", 5.0});
+
+Value my_table = Value::table({
+    {"id1", Value::map({{"name", "Item1"}})},
+    {"id2", Value::map({{"name", "Item2"}})}
+});
 ```
 
-### 1.3 Accessors
+### 1.4 Type Checking
 
 ```cpp
-// Type checking
+// Check specific types
 val.is_null();
-val.is_bool();
-val.is_int();
-val.is_double();
-val.is_string();
-val.is_vector();
-val.is_map();
+val.is<int>();
+val.is<std::string>();
+val.is<ValueMap>();
+val.is<ValueVector>();
 
-// Direct access (throws if type mismatch)
-bool b         = val.as_bool();
-int64_t i      = val.as_int();
-double d       = val.as_double();
-std::string s  = val.as_string();
-value_vector v = val.as_vector();
-value_map m    = val.as_map();
+// Math type checks
+val.is_vec2();
+val.is_vec3();
+val.is_vec4();
+val.is_mat3();
+val.is_mat4x3();
+val.is_math_type();  // any math type
 
-// Safe access with default value
-bool b         = val.get_bool(false);
-int64_t i      = val.get_int(0);
-double d       = val.get_double(0.0);
-std::string s  = val.get_string("");
-
-// Map key access
-Value name = obj["name"];              // Returns null if key not found
-Value name = obj.at("name");           // Same as operator[]
-
-// Vector index access
-Value first = vec[0];                  // Returns null if out of bounds
-Value first = vec.at(0);               // Same as operator[]
-
-// Size operations
-size_t sz = val.size();                // Vector/Map size, 0 for others
-bool empty = val.empty();              // True if size == 0 or null
-
-// Check if key exists in map
-bool has = obj.contains("name");
+// Get type index (std::variant index)
+std::size_t idx = val.type_index();
 ```
 
-### 1.4 Modification
+### 1.5 Value Access
+
+```cpp
+// Safe access with default value (recommended)
+int i = val.as_int(0);              // Returns 0 if not an int
+double d = val.as_double(0.0);
+float f = val.as_float(0.0f);
+bool b = val.as_bool(false);
+std::string s = val.as_string("");
+int64_t l = val.as_int64(0);
+double n = val.as_number(0.0);      // Converts any numeric type
+
+// Math types
+Vec2 v2 = val.as_vec2({});
+Vec3 v3 = val.as_vec3({});
+Mat3 m3 = val.as_mat3({});
+
+// Containers
+ValueMap m = val.as_map({});
+ValueVector v = val.as_vector({});
+
+// String view (no copy, returns empty if not string)
+std::string_view sv = val.as_string_view();
+
+// Generic template access
+auto ptr = val.get_if<std::string>();  // returns const T* or nullptr
+int i = val.get_or<int>(42);           // returns value or default
+
+// Element access
+Value name = obj.at("name");           // Map key access, returns null if not found
+Value first = vec.at(0);               // Vector index access
+Value with_default = obj.at_or("key", Value{42});
+
+// Existence checks
+bool has_key = obj.contains("name");
+bool has_index = vec.contains(0);
+std::size_t key_count = obj.count("name");  // 0 or 1
+
+// Size
+std::size_t sz = val.size();           // Container size, 0 for non-containers
+```
+
+### 1.6 Modification (Immutable Operations)
 
 All modifications return a **new** `Value` (immutable semantics):
 
 ```cpp
-// Set a key in a map
+// Set key in map (returns new map)
 Value updated_obj = obj.set("email", "alice@example.com");
 
-// Nested set using path
-Value updated = val.set_at_path({"users", 0, "name"}, "Charlie");
+// Set index in vector (returns new vector)
+Value updated_vec = vec.set(0, "new first");
 
-// Push to vector (returns new vector)
-Value new_vec = val.push_back(42);
-
-// Erase from map
-Value without_email = obj.erase("email");
-
-// Update value at key with a function
-Value updated = obj.update("counter", [](const Value& v) {
-    return Value(v.get_int(0) + 1);
-});
-
-// Vivify: Create intermediate structures as needed
-Value result = set_at_path_vivify(Value(), {"a", "b", "c"}, 123);
-// Result: {"a": {"b": {"c": 123}}}
+// Vivify: auto-creates intermediate structures
+Value new_obj = null_val.set_vivify("key", 42);      // {"key": 42}
+Value new_vec = null_val.set_vivify(0, "first");     // ["first"]
 ```
 
-### 1.5 Comparison
+### 1.7 Comparison Operators (C++20)
 
 ```cpp
 Value a(42);
@@ -181,23 +233,245 @@ Value b(42);
 
 a == b;   // true
 a != b;   // false
-a < b;    // Comparison operators available
+a < b;    // Uses three-way comparison
+a <=> b;  // std::partial_ordering (supports floating-point NaN)
 ```
 
 ---
 
-## 2. Path Operations
+## 2. Builder API
 
-### 2.1 PathLens
+### 2.1 Overview
 
-`PathLens` provides type-erased access to nested values:
+Builders provide **O(n)** construction of immutable containers using immer's transient API. Without builders, each modification would be O(log n), resulting in O(n log n) for building a container from scratch.
+
+```cpp
+#include <lager_ext/builders.h>
+using namespace lager_ext;
+```
+
+**Available Builders:**
+
+| Builder | Output Type | Thread-Safe Variant |
+|---------|-------------|---------------------|
+| `MapBuilder` | `Value` containing `ValueMap` | `SyncMapBuilder` |
+| `VectorBuilder` | `Value` containing `ValueVector` | `SyncVectorBuilder` |
+| `ArrayBuilder` | `Value` containing `ValueArray` | `SyncArrayBuilder` |
+| `TableBuilder` | `Value` containing `ValueTable` | `SyncTableBuilder` |
+
+### 2.2 MapBuilder
+
+```cpp
+// Basic usage
+Value config = MapBuilder()
+    .set("width", 1920)
+    .set("height", 1080)
+    .set("fullscreen", true)
+    .finish();
+
+// From existing map (incremental modification)
+Value updated = MapBuilder(existing_map)
+    .set("new_key", "new_value")
+    .finish();
+
+// Advanced operations
+MapBuilder builder;
+builder.set("counter", 0);
+
+// Check existence
+if (!builder.contains("name")) {
+    builder.set("name", "default");
+}
+
+// Get a value
+Value current = builder.get("counter");
+
+// Update a value using function
+builder.update_at("counter", [](const Value& v) {
+    return Value{v.as_int(0) + 1};
+});
+
+// Upsert (update or insert)
+builder.upsert("items", [](const Value& current) {
+    if (current.is_null()) {
+        return Value::vector({});
+    }
+    return current;
+});
+
+// Set at nested path with auto-vivification
+builder.set_in({"users", size_t(0), "name"}, "Alice");
+
+// Update at nested path
+builder.update_in({"users", size_t(0), "age"}, [](const Value& v) {
+    return Value{v.as_int(0) + 1};
+});
+
+Value result = builder.finish();
+```
+
+### 2.3 VectorBuilder
+
+```cpp
+// Build a vector
+Value items = VectorBuilder()
+    .push_back("item1")
+    .push_back("item2")
+    .push_back(42)
+    .finish();
+
+// Modify existing vector
+Value updated = VectorBuilder(existing_vector)
+    .push_back("new_item")
+    .set(0, "modified_first")
+    .finish();
+
+// Get current size
+VectorBuilder builder;
+builder.push_back(1).push_back(2).push_back(3);
+std::size_t sz = builder.size();  // 3
+
+// Get value at index
+Value second = builder.get(1);
+
+// Update at index
+builder.update_at(0, [](const Value& v) {
+    return Value{v.as_int(0) * 2};
+});
+```
+
+### 2.4 ArrayBuilder & TableBuilder
+
+```cpp
+// ArrayBuilder (similar to VectorBuilder)
+Value arr = ArrayBuilder()
+    .push_back(1)
+    .push_back(2)
+    .finish();
+
+// TableBuilder (for ID-indexed collections)
+Value entities = TableBuilder()
+    .insert("player1", Value::map({{"hp", 100}, {"x", 0.0f}}))
+    .insert("enemy1", Value::map({{"hp", 50}, {"x", 10.0f}}))
+    .finish();
+
+// Update existing entity
+TableBuilder builder(entities);
+builder.update("player1", [](const Value& player) {
+    return player.set("hp", player.at("hp").as_int(0) - 10);
+});
+```
+
+---
+
+## 3. Serialization
+
+### 3.1 Binary Serialization
+
+```cpp
+#include <lager_ext/serialization.h>
+using namespace lager_ext;
+
+Value data = MapBuilder()
+    .set("name", "test")
+    .set("values", Value::vector({1, 2, 3}))
+    .finish();
+
+// Serialize to buffer
+ByteBuffer buffer = serialize(data);
+
+// Deserialize from buffer
+Value restored = deserialize(buffer);
+
+// Get serialized size without serializing
+std::size_t size = serialized_size(data);
+
+// Serialize to pre-allocated buffer (zero-copy)
+std::vector<uint8_t> my_buffer(size);
+std::size_t written = serialize_to(data, my_buffer.data(), my_buffer.size());
+
+// Deserialize from raw pointer (useful for memory-mapped files)
+Value from_raw = deserialize(my_buffer.data(), my_buffer.size());
+```
+
+**Binary Format Type Tags:**
+
+| Tag | Type | Data Size |
+|-----|------|-----------|
+| 0x00 | null | 0 bytes |
+| 0x01 | int32 | 4 bytes (little-endian) |
+| 0x02 | float | 4 bytes (IEEE 754) |
+| 0x03 | double | 8 bytes (IEEE 754) |
+| 0x04 | bool | 1 byte |
+| 0x05 | string | 4-byte length + UTF-8 data |
+| 0x06 | map | 4-byte count + key-value pairs |
+| 0x07 | vector | 4-byte count + elements |
+| 0x08 | array | 4-byte count + elements |
+| 0x09 | table | 4-byte count + entries |
+| 0x0A | int64 | 8 bytes |
+| 0x0B-0x0F | other integers | varies |
+| 0x10 | Vec2 | 8 bytes |
+| 0x11 | Vec3 | 12 bytes |
+| 0x12 | Vec4 | 16 bytes |
+| 0x13 | Mat3 | 36 bytes |
+| 0x14 | Mat4x3 | 48 bytes |
+| 0x15 | Mat4 | 64 bytes |
+
+### 3.2 JSON Serialization
+
+```cpp
+#include <lager_ext/serialization.h>
+
+Value data = /* ... */;
+
+// Convert to JSON (pretty-printed)
+std::string json = to_json(data, false);
+
+// Convert to JSON (compact)
+std::string compact_json = to_json(data, true);
+
+// Parse JSON
+std::string error;
+Value parsed = from_json(json, &error);
+if (!error.empty()) {
+    std::cerr << "Parse error: " << error << std::endl;
+}
+
+// Parse without error handling
+Value parsed2 = from_json(json);
+```
+
+---
+
+## 4. Path Operations
+
+### 4.1 Path Types
+
+```cpp
+#include <lager_ext/path_utils.h>
+using namespace lager_ext;
+
+// PathElement: either a string key or numeric index
+using PathElement = std::variant<std::string, std::size_t>;
+
+// Path: sequence of path elements
+using Path = std::vector<PathElement>;
+
+// Example paths
+Path p1 = {"users", size_t(0), "name"};     // .users[0].name
+Path p2 = {"config", "settings", "theme"};  // .config.settings.theme
+```
+
+### 4.2 PathLens
+
+`PathLens` provides type-erased runtime access to nested values:
 
 ```cpp
 #include <lager_ext/lager_lens.h>
 using namespace lager_ext;
 
 // Create a path lens for nested access
-PathLens path = make_path_lens({"users", 0, "name"});
+PathLens path = make_path_lens({"users", size_t(0), "name"});
 
 // Read value at path
 Value name = path.view(root);
@@ -207,11 +481,11 @@ Value new_root = path.set(root, "NewName");
 
 // Update value at path
 Value updated = path.over(root, [](const Value& v) {
-    return Value(v.get_string("") + "_modified");
+    return Value{v.as_string("") + "_modified"};
 });
 ```
 
-### 2.2 Static Path Lens
+### 4.3 Static Path Lens
 
 Compile-time path composition using `lager::lenses`:
 
@@ -234,60 +508,120 @@ Value name = lager::view(lens, root);
 Value new_root = lager::set(lens, root, "Alice");
 ```
 
-**Static Path with JSON Pointer Syntax (C++20):**
+**Static Path with String Literal Syntax (C++20):**
 
-For compile-time string paths using JSON Pointer syntax, use `StaticPath` from `static_path.h`:
+For compile-time string paths, use `LiteralPath` from `static_path.h`:
 
 ```cpp
 #include <lager_ext/static_path.h>
 using namespace lager_ext::static_path;
 
-// Define path using JSON Pointer syntax (C++20 NTTP)
-using UserNamePath = JsonPointerPath<"/users/0/name">;
+// Define path using string literal syntax (C++20 NTTP) - Recommended
+using UserNamePath = LiteralPath<"/users/0/name">;
 
 // Use static methods directly
 Value name = UserNamePath::get(root);
 Value new_root = UserNamePath::set(root, Value{"Alice"});
 
-// Or get a lens object for lager compatibility
-auto lens = UserNamePath::to_lens();
-Value name = lens.get(root);
+// Convert to runtime path if needed
+Path runtime_path = UserNamePath::to_runtime_path();
 ```
 
-### 2.3 String Path Operations
+**String Literal Path Syntax (C++20):**
 
-Parse RFC 6901 JSON Pointer style paths:
+`static_path_lens` also supports JSON Pointer style string literals as template parameters:
 
 ```cpp
 #include <lager_ext/lager_lens.h>
 using namespace lager_ext;
 
-// Parse a path string (supports "/" separator and "~" escape)
-std::vector<PathElement> path = parse_string_path("/users/0/name");
-// Result: {"users", 0, "name"}
+// Create a lager-compatible lens from string literal
+auto lens = static_path_lens<"/users/0/name">();
 
-// Access using string path
-PathLens lens = make_path_lens_from_string("/users/0/name");
-Value name = lens.view(root);
-
-// Set at path with auto-vivification
-Value result = set_at_path_vivify(root, "/a/b/c", 42);
+// Use with lager::view / lager::set / lager::over
+Value name = lager::view(lens, root);
+Value updated = lager::set(lens, root, Value{"Alice"});
 ```
 
-**Path Element Types:**
+> **Note:** `static_path_lens<"/a/0/b">()` and `static_path_lens("a", 0, "b")` are **functionally equivalent** with identical runtime performance. Both generate the same `RuntimePath` internally. The difference is purely syntactic:
+> - Use `static_path_lens<"/path">()` for JSON Pointer style strings
+> - Use `static_path_lens("a", 0, "b")` for variadic argument style
 
-| Type         | Description                        | Example      |
-|--------------|------------------------------------|--------------|
-| String key   | Map key access                     | `"name"`     |
-| Integer index| Vector index access                | `0`, `1`     |
+**Advanced: Path Composition with Segments**
+
+For dynamic path construction or extending paths, use `StaticPath` with segment types:
+
+```cpp
+#include <lager_ext/static_path.h>
+using namespace lager_ext::static_path;
+
+// Equivalent to LiteralPath<"/users/0/name">
+using UserNamePath = StaticPath<K<"users">, I<0>, K<"name">>;
+
+// Extend an existing path
+using UsersPath = LiteralPath<"/users">;
+using FirstUserPath = ExtendPathT<UsersPath, I<0>>;           // /users/0
+using FirstUserNamePath = ExtendPathT<FirstUserPath, K<"name">>; // /users/0/name
+
+// Concatenate two paths
+using FullPath = ConcatPathT<LiteralPath<"/users">, LiteralPath<"/0/name">>;
+
+// Template with dynamic index (compile-time constant)
+template<std::size_t N>
+using NthUserName = StaticPath<K<"users">, I<N>, K<"name">>;
+
+using User0Name = NthUserName<0>;  // /users/0/name
+using User5Name = NthUserName<5>;  // /users/5/name
+```
+
+### 4.4 String Path Operations
+
+Parse RFC 6901 JSON Pointer style paths:
+
+```cpp
+#include <lager_ext/string_path.h>
+using namespace lager_ext;
+
+// Parse a path string
+Path path = parse_string_path("/users/0/name");
+// Result: {"users", 0, "name"}
+
+// Convert path to string
+std::string str = path_to_string_path(path);
+// Result: "/users/0/name"
+
+// JSON Pointer escape sequences
+// ~0 = literal ~
+// ~1 = literal /
+Path escaped = parse_string_path("/a~1b/c~0d");
+// Result: {"a/b", "c~d"}
+```
+
+### 4.5 Path Utilities
+
+```cpp
+#include <lager_ext/path_utils.h>
+using namespace lager_ext;
+
+// Get value at path
+Value val = get_at_path(root, {"users", size_t(0), "name"});
+
+// Set value at path (returns new root)
+Value new_root = set_at_path(root, {"users", size_t(0), "name"}, "Alice");
+
+// Set with auto-vivification (creates intermediate structures)
+Value new_root = set_at_path_vivify(Value{}, {"a", "b", "c"}, 123);
+// Result: {"a": {"b": {"c": 123}}}
+
+// Delete at path
+Value without = delete_at_path(root, {"users", size_t(0)});
+```
 
 ---
 
-## 3. Diff Operations
+## 5. Diff Operations
 
-### 3.1 DiffCollector
-
-Collects shallow differences between two values:
+### 5.1 ValueDiff
 
 ```cpp
 #include <lager_ext/value_diff.h>
@@ -296,65 +630,72 @@ using namespace lager_ext;
 Value old_val = /* ... */;
 Value new_val = /* ... */;
 
-DiffCollector diff;
-diff.collect(old_val, new_val);
+// Get differences
+ValueDiff diff = diff_values(old_val, new_val);
 
-for (const auto& entry : diff.result()) {
-    // entry.path   - Path to the changed element
-    // entry.from   - Old value (null if added)
-    // entry.to     - New value (null if removed)
-    // entry.type   - DiffType::Add / Modify / Remove
+for (const auto& change : diff.added) {
+    // change.path - Path to added element
+    // change.value - New value
+}
+
+for (const auto& change : diff.removed) {
+    // change.path - Path to removed element
+    // change.value - Old value
+}
+
+for (const auto& change : diff.modified) {
+    // change.path - Path to modified element
+    // change.old_value - Previous value
+    // change.new_value - New value
 }
 ```
 
-### 3.2 RecursiveDiffCollector
-
-Collects differences recursively, including nested changes:
+### 5.2 RecursiveDiffCollector
 
 ```cpp
 #include <lager_ext/value_diff.h>
 using namespace lager_ext;
 
-RecursiveDiffCollector diff;
-diff.collect(old_val, new_val);
+// Collect differences recursively
+RecursiveDiffResult result = collect_recursive_diff(old_val, new_val);
 
-// Same interface as DiffCollector
-for (const auto& entry : diff.result()) {
-    // Process recursive diffs
+for (const auto& entry : result.changes) {
+    std::cout << "Path: " << path_to_string(entry.path) << std::endl;
+    std::cout << "  Old: " << value_to_string(entry.old_value) << std::endl;
+    std::cout << "  New: " << value_to_string(entry.new_value) << std::endl;
 }
-```
-
-**DiffEntry Structure:**
-
-```cpp
-struct DiffEntry {
-    std::vector<PathElement> path;  // Path to changed element
-    Value from;                     // Previous value
-    Value to;                       // New value
-    DiffType type;                  // Add, Modify, or Remove
-};
 ```
 
 ---
 
-## 4. Shared Memory
+## 6. Shared State (Cross-Process)
 
-### 4.1 SharedValue
+### 6.1 SharedState
 
-`SharedValue` enables zero-copy sharing of immutable data across processes:
+`SharedState` enables cross-process state synchronization:
 
 ```cpp
-#include <lager_ext/shared_value.h>
+#include <lager_ext/shared_state.h>
 using namespace lager_ext;
 
-// Convert Value to SharedValue for cross-process sharing
-SharedValue shared = to_shared_value(my_value);
+// Publisher side
+SharedStatePublisher publisher("my_app_state");
+publisher.set(create_sample_data());
+publisher.update({"config", "theme"}, "light");
 
-// Convert back to Value
-Value restored = to_value(shared);
+// Subscriber side (different process)
+SharedStateSubscriber subscriber("my_app_state");
+Value current = subscriber.get();
+
+// Watch for changes
+subscriber.watch([](const ValueDiff& diff) {
+    for (const auto& change : diff.modified) {
+        std::cout << "Changed: " << path_to_string(change.path) << std::endl;
+    }
+});
 ```
 
-### 4.2 Memory Region Operations
+### 6.2 Memory Region Operations
 
 ```cpp
 #include <lager_ext/shared_value.h>
@@ -366,70 +707,157 @@ bool ready = is_memory_region_initialized("my_region");
 // Get a handle to a shared memory region
 SharedMemoryHandle handle = get_shared_memory_region("my_region");
 
-// Write SharedValue to memory region
-write_to_memory_region(handle, shared_value);
+// Write Value to memory region
+write_to_memory_region(handle, my_value);
 
-// Read SharedValue from memory region
-SharedValue value = read_from_memory_region(handle);
+// Read Value from memory region
+Value value = read_from_memory_region(handle);
 
 // Release the handle when done
 release_memory_region(handle);
 ```
 
-**SharedValue Types:**
+---
 
-| Type              | Description                       |
-|-------------------|-----------------------------------|
-| `SharedValue`     | Cross-process immutable value     |
-| `SharedString`    | Shared memory string              |
-| `SharedVector`    | Shared memory vector              |
-| `SharedMap`       | Shared memory map                 |
+## 7. Header Reference
+
+| Header | Description |
+|--------|-------------|
+| `<lager_ext/value.h>` | Core `Value` type, type aliases, comparison operators |
+| `<lager_ext/builders.h>` | Builder classes for O(n) container construction |
+| `<lager_ext/serialization.h>` | Binary and JSON serialization |
+| `<lager_ext/path.h>` | **Unified Path API** - single entry point for all path operations |
+| `<lager_ext/path_utils.h>` | Path traversal and manipulation |
+| `<lager_ext/lager_lens.h>` | PathLens and static path lens integration |
+| `<lager_ext/static_path.h>` | Compile-time static path lens (C++20 NTTP) |
+| `<lager_ext/string_path.h>` | RFC 6901 JSON Pointer parsing |
+| `<lager_ext/value_diff.h>` | Value difference detection |
+| `<lager_ext/shared_state.h>` | Cross-process shared state |
+| `<lager_ext/shared_value.h>` | Low-level shared memory operations |
+| `<lager_ext/concepts.h>` | C++20 concepts for type constraints |
+| `<lager_ext/editor_engine.h>` | Scene-like editor state management |
+| `<lager_ext/delta_undo.h>` | Delta-based undo/redo system |
+| `<lager_ext/multi_store.h>` | Multi-document state management |
 
 ---
 
-## Quick Reference
+## 8. Usage Examples
 
-### Include Headers
-
-```cpp
-#include <lager_ext/value.h>        // Value, UnsafeValue, SyncValue
-#include <lager_ext/lager_lens.h>   // PathLens, path operations
-#include <lager_ext/value_diff.h>   // DiffCollector, RecursiveDiffCollector
-#include <lager_ext/shared_value.h> // SharedValue, memory regions
-```
-
-### Typical Usage Pattern
+### 8.1 Basic Usage
 
 ```cpp
 #include <lager_ext/value.h>
-#include <lager_ext/lager_lens.h>
+#include <lager_ext/builders.h>
+#include <lager_ext/serialization.h>
 using namespace lager_ext;
 
 int main() {
-    // Build a complex structure
-    Value state = Value::map_builder()
-        .set("config", Value::map_builder()
+    // Build a complex structure using builders (O(n) construction)
+    Value state = MapBuilder()
+        .set("config", MapBuilder()
             .set("debug", true)
             .set("timeout", 30)
-            .build())
-        .set("users", Value::vector_builder()
-            .push_back(Value::map_builder()
+            .finish())
+        .set("users", VectorBuilder()
+            .push_back(MapBuilder()
                 .set("id", 1)
                 .set("name", "Alice")
-                .build())
-            .build())
-        .build();
+                .finish())
+            .push_back(MapBuilder()
+                .set("id", 2)
+                .set("name", "Bob")
+                .finish())
+            .finish())
+        .finish();
 
-    // Read nested value
-    Value name = state["users"][0]["name"];
-    std::cout << name.get_string("") << std::endl;  // "Alice"
+    // Read nested value using path
+    Value name = state.at("users").at(0).at("name");
+    std::cout << name.as_string() << std::endl;  // "Alice"
 
-    // Update nested value (immutable)
-    Value new_state = state.set_at_path({"users", 0, "name"}, "Bob");
+    // Update nested value (immutable - returns new state)
+    Value new_state = set_at_path(state, 
+        {"users", size_t(0), "name"}, "Charlie");
 
     // Original unchanged
-    assert(state["users"][0]["name"].get_string("") == "Alice");
-    assert(new_state["users"][0]["name"].get_string("") == "Bob");
+    assert(state.at("users").at(0).at("name").as_string() == "Alice");
+    assert(new_state.at("users").at(0).at("name").as_string() == "Charlie");
+
+    // Serialize to JSON
+    std::string json = to_json(state, false);
+    std::cout << json << std::endl;
+
+    // Serialize to binary
+    ByteBuffer buffer = serialize(state);
+    Value restored = deserialize(buffer);
+
+    return 0;
+}
+```
+
+### 8.2 Working with Math Types
+
+```cpp
+#include <lager_ext/value.h>
+#include <lager_ext/builders.h>
+using namespace lager_ext;
+
+int main() {
+    // Create a transform component
+    Value transform = MapBuilder()
+        .set("position", Value::vec3(0.0f, 0.0f, 0.0f))
+        .set("rotation", Value::vec4(0.0f, 0.0f, 0.0f, 1.0f))  // quaternion
+        .set("scale", Value::vec3(1.0f, 1.0f, 1.0f))
+        .finish();
+
+    // Read position
+    Vec3 pos = transform.at("position").as_vec3();
+    std::cout << "Position: " << pos[0] << ", " << pos[1] << ", " << pos[2] << std::endl;
+
+    // Update position
+    Value moved = transform.set("position", Value::vec3(10.0f, 0.0f, 5.0f));
+
+    // Check type
+    if (moved.at("rotation").is_vec4()) {
+        Vec4 rot = moved.at("rotation").as_vec4();
+        // ... use rotation
+    }
+
+    return 0;
+}
+```
+
+### 8.3 Thread Safety
+
+```cpp
+#include <lager_ext/value.h>
+#include <lager_ext/builders.h>
+#include <thread>
+using namespace lager_ext;
+
+int main() {
+    // For single-threaded code, use Value (default, fastest)
+    Value local_state = MapBuilder()
+        .set("counter", 0)
+        .finish();
+
+    // For multi-threaded code, use SyncValue
+    SyncValue shared_state = SyncMapBuilder()
+        .set("counter", 0)
+        .finish();
+
+    // Safe to read from multiple threads
+    std::thread t1([&shared_state]() {
+        SyncValue copy = shared_state;  // atomic refcount
+        // ... read copy safely
+    });
+
+    std::thread t2([&shared_state]() {
+        SyncValue copy = shared_state;  // atomic refcount
+        // ... read copy safely
+    });
+
+    t1.join();
+    t2.join();
 
     return 0;
 }
@@ -440,7 +868,11 @@ int main() {
 ## Notes
 
 - All `Value` operations are **immutable** - modifications return new values.
-- Use `UnsafeValue` (default `Value`) for single-threaded performance.
-- Use `SyncValue` when sharing across threads.
-- Use `SharedValue` for cross-process shared memory scenarios.
+- Use `Value` (alias for `UnsafeValue`) for single-threaded performance (10-30% faster).
+- Use `SyncValue` (alias for `ThreadSafeValue`) when sharing values across threads.
+- Use `SharedState` for cross-process state synchronization.
+- Builders are essential for efficient O(n) construction of containers.
+- C++20 features are used: concepts, `<=>`, `std::span`, `source_location`.
+- Large matrices (Mat3, Mat4x3, Mat4) are boxed to keep `Value` variant size compact (~48 bytes).
 - Path operations support both compile-time (`static_path_lens`) and runtime (`PathLens`) access patterns.
+- Binary serialization uses native little-endian byte order (optimized for x86/x64).

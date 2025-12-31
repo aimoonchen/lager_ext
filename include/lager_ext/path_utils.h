@@ -19,19 +19,25 @@ namespace lager_ext {
 // ============================================================
 
 /// Get value at a single path element (key or index)
+/// Optimized: uses if-else instead of std::visit to avoid indirect call overhead
 [[nodiscard]] inline Value get_at_path_element(const Value& current, const PathElement& elem)
 {
-    return std::visit([&current](const auto& key_or_idx) {
-        return current.at(key_or_idx);
-    }, elem);
+    if (auto* key = std::get_if<std::string>(&elem)) {
+        return current.at(*key);
+    } else {
+        return current.at(std::get<std::size_t>(elem));
+    }
 }
 
 /// Set value at a single path element (key or index)
+/// Optimized: uses if-else instead of std::visit to avoid indirect call overhead
 [[nodiscard]] inline Value set_at_path_element(const Value& current, const PathElement& elem, Value new_val)
 {
-    return std::visit([&current, &new_val](const auto& key_or_idx) {
-        return current.set(key_or_idx, std::move(new_val));
-    }, elem);
+    if (auto* key = std::get_if<std::string>(&elem)) {
+        return current.set(*key, std::move(new_val));
+    } else {
+        return current.set(std::get<std::size_t>(elem), std::move(new_val));
+    }
 }
 
 /// Get value at a full path using direct traversal
@@ -63,30 +69,29 @@ namespace lager_ext {
 }
 
 /// Check if a path element can be accessed in the given value
+/// Optimized: uses if-else instead of std::visit to avoid indirect call overhead
 /// @param val The value to check
 /// @param elem The path element to access
 /// @return true if the element can be accessed
 [[nodiscard]] inline bool can_access(const Value& val, const PathElement& elem)
 {
-    return std::visit([&val](const auto& key_or_idx) -> bool {
-        using T = std::decay_t<decltype(key_or_idx)>;
-        if constexpr (std::is_same_v<T, std::string>) {
-            // For map access, check if it's a map and has the key
-            if (const auto* map = val.get_if<ValueMap>()) {
-                return map->count(key_or_idx) > 0;
-            }
-            return false;
-        } else {
-            // For index access, check if it's a vector/array with valid index
-            if (const auto* vec = val.get_if<ValueVector>()) {
-                return key_or_idx < vec->size();
-            }
-            if (const auto* arr = val.get_if<ValueArray>()) {
-                return key_or_idx < arr->size();
-            }
-            return false;
+    if (auto* key = std::get_if<std::string>(&elem)) {
+        // For map access, check if it's a map and has the key
+        if (const auto* map = val.get_if<ValueMap>()) {
+            return map->count(*key) > 0;
         }
-    }, elem);
+        return false;
+    } else {
+        // For index access, check if it's a vector/array with valid index
+        auto idx = std::get<std::size_t>(elem);
+        if (const auto* vec = val.get_if<ValueVector>()) {
+            return idx < vec->size();
+        }
+        if (const auto* arr = val.get_if<ValueArray>()) {
+            return idx < arr->size();
+        }
+        return false;
+    }
 }
 
 // ============================================================
