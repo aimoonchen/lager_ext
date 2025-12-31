@@ -68,7 +68,7 @@ using Elements = Path;
 /// auto lens = path::lens<"/users/0/name">();
 /// Value name = lager::view(lens, data);
 /// @endcode
-template<static_path::FixedString Path>
+template<FixedString Path>
 [[nodiscard]] Lens lens() {
     return static_path_lens<Path>();
 }

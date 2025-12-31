@@ -26,8 +26,9 @@ This document provides a comprehensive overview of the public APIs in the `lager
     - [4.1 Path Types](#41-path-types)
     - [4.2 PathLens](#42-pathlens)
     - [4.3 Static Path Lens](#43-static-path-lens)
-    - [4.4 String Path Operations](#44-string-path-operations)
-    - [4.5 Path Utilities](#45-path-utilities)
+    - [4.4 Unified Path API (`path::`)](#44-unified-path-api-path)
+    - [4.5 String Path Operations](#45-string-path-operations)
+    - [4.6 Path Utilities](#46-path-utilities)
   - [5. Diff Operations](#5-diff-operations)
     - [5.1 ValueDiff](#51-valuediff)
     - [5.2 RecursiveDiffCollector](#52-recursivediffcollector)
@@ -496,7 +497,10 @@ using namespace lager_ext;
 // Method 1: Variadic arguments (simple and recommended)
 auto lens = static_path_lens("users", 0, "name");
 
-// Method 2: Explicit lens composition (full control)
+// Method 2: String literal syntax (C++20 NTTP)
+auto lens = static_path_lens<"/users/0/name">();
+
+// Method 3: Explicit lens composition (full control)
 auto lens = zug::comp(
     key_lens("users"),
     index_lens(0),
@@ -508,13 +512,17 @@ Value name = lager::view(lens, root);
 Value new_root = lager::set(lens, root, "Alice");
 ```
 
-**Static Path with String Literal Syntax (C++20):**
+> **Note:** `static_path_lens<"/a/0/b">()` and `static_path_lens("a", 0, "b")` are **functionally equivalent** with identical runtime performance. Both generate the same `RuntimePath` internally. The difference is purely syntactic:
+> - Use `static_path_lens<"/path">()` for JSON Pointer style strings
+> - Use `static_path_lens("a", 0, "b")` for variadic argument style
 
-For compile-time string paths, use `LiteralPath` from `static_path.h`:
+**Static Path Types (C++20):**
+
+For compile-time path type definitions, use `LiteralPath` or `StaticPath`:
 
 ```cpp
 #include <lager_ext/static_path.h>
-using namespace lager_ext::static_path;
+using namespace lager_ext;
 
 // Define path using string literal syntax (C++20 NTTP) - Recommended
 using UserNamePath = LiteralPath<"/users/0/name">;
@@ -527,25 +535,9 @@ Value new_root = UserNamePath::set(root, Value{"Alice"});
 Path runtime_path = UserNamePath::to_runtime_path();
 ```
 
-**String Literal Path Syntax (C++20):**
-
-`static_path_lens` also supports JSON Pointer style string literals as template parameters:
-
-```cpp
-#include <lager_ext/lager_lens.h>
-using namespace lager_ext;
-
-// Create a lager-compatible lens from string literal
-auto lens = static_path_lens<"/users/0/name">();
-
-// Use with lager::view / lager::set / lager::over
-Value name = lager::view(lens, root);
-Value updated = lager::set(lens, root, Value{"Alice"});
-```
-
-> **Note:** `static_path_lens<"/a/0/b">()` and `static_path_lens("a", 0, "b")` are **functionally equivalent** with identical runtime performance. Both generate the same `RuntimePath` internally. The difference is purely syntactic:
-> - Use `static_path_lens<"/path">()` for JSON Pointer style strings
-> - Use `static_path_lens("a", 0, "b")` for variadic argument style
+> **Note:** Core types are aliased to the `lager_ext` namespace for convenience:
+> - `lager_ext::LiteralPath` (alias for `lager_ext::static_path::LiteralPath`)
+> - `lager_ext::StaticPath`, `lager_ext::K`, `lager_ext::I`
 
 **Advanced: Path Composition with Segments**
 
@@ -553,7 +545,7 @@ For dynamic path construction or extending paths, use `StaticPath` with segment 
 
 ```cpp
 #include <lager_ext/static_path.h>
-using namespace lager_ext::static_path;
+using namespace lager_ext;
 
 // Equivalent to LiteralPath<"/users/0/name">
 using UserNamePath = StaticPath<K<"users">, I<0>, K<"name">>;
@@ -574,7 +566,71 @@ using User0Name = NthUserName<0>;  // /users/0/name
 using User5Name = NthUserName<5>;  // /users/5/name
 ```
 
-### 4.4 String Path Operations
+### 4.4 Unified Path API (`path::`)
+
+For a single entry point to all path operations, use the `path` namespace:
+
+```cpp
+#include <lager_ext/path.h>
+using namespace lager_ext;
+
+// ========== Create Lenses ==========
+
+// Compile-time string literal (C++20 NTTP)
+auto lens1 = path::lens<"/users/0/name">();
+
+// Runtime string path
+std::string dynamic_path = "/users/" + std::to_string(user_id) + "/name";
+auto lens2 = path::lens(dynamic_path);
+
+// Variadic path elements
+auto lens3 = path::lens("users", 0, "name");
+
+// ========== Builder Style ==========
+
+auto builder = path::builder() / "users" / 0 / "name";
+Value name = builder.get(root);
+Value updated = builder.set(root, Value{"Alice"});
+
+// ========== Direct Access (without lens) ==========
+
+// Get value at path
+Value name = path::get(root, "/users/0/name");
+Value name = path::get(root, "users", 0, "name");
+
+// Set value at path
+Value updated = path::set(root, "/users/0/name", Value{"Alice"});
+
+// Update with function
+Value updated = path::over(root, "/users/0/age", [](const Value& v) {
+    return Value{v.as_int(0) + 1};
+});
+
+// ========== Safe Access (with error handling) ==========
+
+Path elements = {"users", size_t(0), "name"};
+PathAccessResult result = path::safe_get(root, elements);
+if (result) {
+    std::cout << "Found: " << result.value.as_string() << std::endl;
+} else {
+    std::cout << "Error: " << result.error_message << std::endl;
+}
+
+// ========== Utilities ==========
+
+// Parse string to path elements
+Path elements = path::parse("/users/0/name");
+
+// Convert path elements to string
+std::string str = path::to_string(elements);      // ".users[0].name"
+std::string ptr = path::to_json_pointer(elements); // "/users/0/name"
+
+// Cache management
+path::clear_cache();
+auto stats = path::cache_stats();
+```
+
+### 4.5 String Path Operations
 
 Parse RFC 6901 JSON Pointer style paths:
 
@@ -597,7 +653,7 @@ Path escaped = parse_string_path("/a~1b/c~0d");
 // Result: {"a/b", "c~d"}
 ```
 
-### 4.5 Path Utilities
+### 4.6 Path Utilities
 
 ```cpp
 #include <lager_ext/path_utils.h>

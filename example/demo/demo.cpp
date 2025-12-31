@@ -1259,21 +1259,21 @@ void demo_static_path() {
     // --------------------------------------------------------
     std::cout << "--- Demo 8: JSON Pointer Syntax (C++20) ---\n\n";
 
-    // Define paths using JSON Pointer syntax
-    using TitlePathJP = static_path::JsonPointerPath<"/title">;
-    using UserNamePathJP = static_path::JsonPointerPath<"/users/0/name">;
-    using WindowWidthPathJP = static_path::JsonPointerPath<"/window/width">;
+    // Define paths using JSON Pointer syntax (LiteralPath)
+    using TitlePathJP = static_path::LiteralPath<"/title">;
+    using UserNamePathJP = static_path::LiteralPath<"/users/0/name">;
+    using WindowWidthPathJP = static_path::LiteralPath<"/window/width">;
 
     // Use them just like regular StaticPath
     auto title_jp = TitlePathJP::get(state);
     auto user0_name_jp = UserNamePathJP::get(state);
     auto width_jp = WindowWidthPathJP::get(state);
 
-    std::cout << "JsonPointerPath<\"/title\">::get(state) = "
+    std::cout << "LiteralPath<\"/title\">::get(state) = "
         << value_to_string(title_jp) << "\n";
-    std::cout << "JsonPointerPath<\"/users/0/name\">::get(state) = "
+    std::cout << "LiteralPath<\"/users/0/name\">::get(state) = "
         << value_to_string(user0_name_jp) << "\n";
-    std::cout << "JsonPointerPath<\"/window/width\">::get(state) = "
+    std::cout << "LiteralPath<\"/window/width\">::get(state) = "
         << value_to_string(width_jp) << "\n\n";
 
     // Verify they work the same as manually defined paths
@@ -1316,7 +1316,7 @@ void demo_static_path() {
     std::cout << "Syntax comparison:\n";
     std::cout << "  Manual:       StaticPath<K<\"users\">, I<0>, K<\"name\">>\n";
 #if __cplusplus >= 202002L || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)
-    std::cout << "  JSON Pointer: JsonPointerPath<\"/users/0/name\"> (C++20)\n";
+    std::cout << "  JSON Pointer: LiteralPath<\"/users/0/name\"> (C++20)\n";
 #endif
     std::cout << "\n";
 }

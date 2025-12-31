@@ -181,9 +181,9 @@ namespace lager_ext {
 /// auto lens = static_path_lens<"/users/0/name">();
 /// Value name = lager::view(lens, root);
 /// Value updated = lager::set(lens, root, Value{"Alice"});
-template<static_path::FixedString Ptr>
+template<FixedString Ptr>
 [[nodiscard]] LagerValueLens static_path_lens() {
-    using PathType = static_path::LiteralPath<Ptr>;
+    using PathType = LiteralPath<Ptr>;
     return lager_path_lens(PathType::to_runtime_path());
 }
 

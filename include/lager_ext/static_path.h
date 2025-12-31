@@ -482,4 +482,17 @@ using LiteralPath = typename detail::BuildPath<
 
 } // namespace static_path
 
+// ============================================================
+// Promote commonly used types to lager_ext namespace
+// Users can use lager_ext::LiteralPath<"/path"> directly
+// ============================================================
+
+using static_path::FixedString;
+using static_path::LiteralPath;
+using static_path::StaticPath;
+using static_path::K;
+using static_path::I;
+using static_path::ExtendPathT;
+using static_path::ConcatPathT;
+
 } // namespace lager_ext
