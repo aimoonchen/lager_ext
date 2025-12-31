@@ -1,6 +1,8 @@
 // at_lens.cpp
 // Implementation of lager::lenses::at demo (Scheme 3)
 #include "lager_ext/value.h"
+#include "lager_ext/builders.h"
+#include "lager_ext/serialization.h"
 #include "lager_ext/static_path.h"
 #include "lager_ext/lager_lens.h"
 #include "lager_ext/editor_engine.h"

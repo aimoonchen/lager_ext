@@ -1,6 +1,8 @@
 // value.cpp - Value type utilities and serialization
 
 #include <lager_ext/value.h>
+#include <lager_ext/builders.h>
+#include <lager_ext/serialization.h>
 #include <immer/map_transient.hpp>
 #include <immer/vector_transient.hpp>
 #include <immer/array_transient.hpp>

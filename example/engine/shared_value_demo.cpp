@@ -12,6 +12,8 @@
 #include <lager_ext/shared_value.h>
 #include <lager_ext/fast_shared_value.h>
 #include <lager_ext/value.h>
+#include <lager_ext/builders.h>
+#include <lager_ext/serialization.h>
 
 #include <chrono>
 #include <iostream>

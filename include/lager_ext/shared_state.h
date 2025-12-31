@@ -21,6 +21,7 @@
 
 #include <lager_ext/api.h>
 #include <lager_ext/value.h>
+#include <lager_ext/serialization.h>
 #include <lager_ext/value_diff.h>
 
 #include <functional>
