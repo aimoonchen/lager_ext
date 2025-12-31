@@ -170,7 +170,7 @@ void demo_lager_lens()
 
     // Test composition
     std::cout << "\n--- Test 4: Composition with zug::comp ---\n";
-    LagerValueLens config_version = zug::comp(lager_key_lens("config"), lager_key_lens("version"));
+    LagerValueLens config_version = zug::comp(key_lens("config"), key_lens("version"));
     std::cout << "config.version = " << value_to_string(lager::view(config_version, data)) << "\n";
 
     // Compare with static_path_lens (compile-time known path)
@@ -281,65 +281,70 @@ void demo_string_path()
         std::cout << "} -> \"" << round_trip << "\"\n";
     }
 
-    // --- Test 2: GET operations ---
-    std::cout << "\n--- Test 2: GET by String Path ---\n";
+    // --- Test 2: GET operations using PathLens ---
+    std::cout << "\n--- Test 2: GET by String Path (using PathLens) ---\n";
 
-    std::cout << "  get_by_path(\"/users/0/name\") = "
-        << value_to_string(get_by_path(data, "/users/0/name")) << "\n";
+    // Helper lambda: create PathLens from string path
+    auto path_lens = [](std::string_view path_str) {
+        return PathLens(parse_string_path(path_str));
+    };
 
-    std::cout << "  get_by_path(\"/users/1/profile/city\") = "
-        << value_to_string(get_by_path(data, "/users/1/profile/city")) << "\n";
+    std::cout << "  path_lens(\"/users/0/name\").get(data) = "
+        << value_to_string(path_lens("/users/0/name").get(data)) << "\n";
 
-    std::cout << "  get_by_path(\"/config/version\") = "
-        << value_to_string(get_by_path(data, "/config/version")) << "\n";
+    std::cout << "  path_lens(\"/users/1/profile/city\").get(data) = "
+        << value_to_string(path_lens("/users/1/profile/city").get(data)) << "\n";
+
+    std::cout << "  path_lens(\"/config/version\").get(data) = "
+        << value_to_string(path_lens("/config/version").get(data)) << "\n";
 
     // Access key with special characters (escaped)
-    std::cout << "  get_by_path(\"/config/theme~0mode\") = "  // ~0 -> ~
-        << value_to_string(get_by_path(data, "/config/theme~0mode")) << "\n";
+    std::cout << "  path_lens(\"/config/theme~0mode\").get(data) = "  // ~0 -> ~
+        << value_to_string(path_lens("/config/theme~0mode").get(data)) << "\n";
 
-    std::cout << "  get_by_path(\"/users/0/profile/tags~1skills\") = "  // ~1 -> /
-        << value_to_string(get_by_path(data, "/users/0/profile/tags~1skills")) << "\n";
+    std::cout << "  path_lens(\"/users/0/profile/tags~1skills\").get(data) = "  // ~1 -> /
+        << value_to_string(path_lens("/users/0/profile/tags~1skills").get(data)) << "\n";
 
-    std::cout << "  get_by_path(\"/users/0/profile/tags~1skills/0\") = "
-        << value_to_string(get_by_path(data, "/users/0/profile/tags~1skills/0")) << "\n";
+    std::cout << "  path_lens(\"/users/0/profile/tags~1skills/0\").get(data) = "
+        << value_to_string(path_lens("/users/0/profile/tags~1skills/0").get(data)) << "\n";
 
     // Non-existent path
-    std::cout << "  get_by_path(\"/nonexistent\") = "
-        << value_to_string(get_by_path(data, "/nonexistent")) << "\n";
+    std::cout << "  path_lens(\"/nonexistent\").get(data) = "
+        << value_to_string(path_lens("/nonexistent").get(data)) << "\n";
 
     // --- Test 3: SET operations ---
     std::cout << "\n--- Test 3: SET by String Path ---\n";
 
     // Change Alice's name
-    Value updated1 = set_by_path(data, "/users/0/name", Value{ std::string{"Alicia"} });
-    std::cout << "  After set_by_path(\"/users/0/name\", \"Alicia\"):\n";
-    std::cout << "    users[0].name = " << value_to_string(get_by_path(updated1, "/users/0/name")) << "\n";
+    Value updated1 = path_lens("/users/0/name").set(data, Value{ std::string{"Alicia"} });
+    std::cout << "  After set(\"/users/0/name\", \"Alicia\"):\n";
+    std::cout << "    users[0].name = " << value_to_string(path_lens("/users/0/name").get(updated1)) << "\n";
 
     // Update config version
-    Value updated2 = set_by_path(data, "/config/version", Value{ 2 });
-    std::cout << "  After set_by_path(\"/config/version\", 2):\n";
-    std::cout << "    config.version = " << value_to_string(get_by_path(updated2, "/config/version")) << "\n";
+    Value updated2 = path_lens("/config/version").set(data, Value{ 2 });
+    std::cout << "  After set(\"/config/version\", 2):\n";
+    std::cout << "    config.version = " << value_to_string(path_lens("/config/version").get(updated2)) << "\n";
 
     // --- Test 4: OVER operations ---
     std::cout << "\n--- Test 4: OVER by String Path ---\n";
 
-    // Increment version
-    Value updated3 = over_by_path(data, "/config/version", [](Value v) {
+    // Increment version using PathLens::over
+    Value updated3 = path_lens("/config/version").over(data, [](Value v) {
         if (auto* n = v.get_if<int>()) {
             return Value{ *n + 10 };
         }
         return v;
-        });
-    std::cout << "  After over_by_path(\"/config/version\", n + 10):\n";
-    std::cout << "    config.version = " << value_to_string(get_by_path(updated3, "/config/version")) << "\n";
+    });
+    std::cout << "  After over(\"/config/version\", n + 10):\n";
+    std::cout << "    config.version = " << value_to_string(path_lens("/config/version").get(updated3)) << "\n";
 
     // --- Test 5: Using with lager ecosystem ---
     std::cout << "\n--- Test 5: Direct lens usage with lager::view/set/over ---\n";
 
-    // Get lens once, reuse multiple times
-    auto name_lens = string_path_lens("/users/0/name");
+    // PathLens can be used directly with lager::view/set/over
+    auto name_lens = path_lens("/users/0/name");
 
-    std::cout << "  lens = string_path_lens(\"/users/0/name\")\n";
+    std::cout << "  lens = PathLens(\"/users/0/name\")\n";
     std::cout << "  lager::view(lens, data) = " << value_to_string(lager::view(name_lens, data)) << "\n";
 
     auto after_set = lager::set(name_lens, data, Value{ std::string{"Alice2"} });
@@ -350,7 +355,7 @@ void demo_string_path()
             return Value{ *s + " (modified)" };
         }
         return v;
-        });
+    });
     std::cout << "  lager::over(lens, data, fn) -> " << value_to_string(lager::view(name_lens, after_over)) << "\n";
 
     // --- Summary ---
@@ -358,8 +363,8 @@ void demo_string_path()
     std::cout << "String Path API provides:\n";
     std::cout << "  1. Familiar path syntax: \"/users/0/name\"\n";
     std::cout << "  2. Escape sequences for special characters (~0 for ~, ~1 for /)\n";
-    std::cout << "  3. Convenience functions: get_by_path(), set_by_path(), over_by_path()\n";
-    std::cout << "  4. Full lager integration: string_path_lens() returns LagerValueLens\n";
+    std::cout << "  3. PathLens: get(), set(), over() for direct access\n";
+    std::cout << "  4. Full lager integration: PathLens works with lager::view/set/over\n";
     std::cout << "  5. Immutable operations: all set/over return new Value\n";
     std::cout << "\n=== Demo End ===\n\n";
 }

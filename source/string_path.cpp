@@ -57,37 +57,33 @@ Path parse_string_path(std::string_view path_str)
         return Path{};
     }
 
-    // Use PathBuilder for fluent path construction
-    PathBuilder builder;
+    Path result;
 
     // Skip leading '/'
     path_str = path_str.substr(1);
 
     // Split by '/'
     while (!path_str.empty()) {
-        // Find next '/'
         auto pos = path_str.find('/');
         std::string_view segment = (pos == std::string_view::npos)
                                     ? path_str
                                     : path_str.substr(0, pos);
 
-        // Unescape and add to path
         std::string unescaped = unescape_segment(segment);
 
         if (is_array_index(unescaped)) {
-            builder = std::move(builder).index(static_cast<size_t>(std::stoull(unescaped)));
+            result.push_back(static_cast<std::size_t>(std::stoull(unescaped)));
         } else {
-            builder = std::move(builder).key(std::move(unescaped));
+            result.push_back(std::move(unescaped));
         }
 
-        // Move to next segment
         if (pos == std::string_view::npos) {
             break;
         }
         path_str = path_str.substr(pos + 1);
     }
 
-    return builder.path();
+    return result;
 }
 
 std::string path_to_string_path(const Path& path)
@@ -118,23 +114,6 @@ std::string path_to_string_path(const Path& path)
         }, elem);
     }
     return result;
-}
-
-LagerValueLens string_path_lens(std::string_view path_str)
-{
-    return lager_path_lens(parse_string_path(path_str));
-}
-
-Value get_by_path(const Value& data, std::string_view path_str)
-{
-    auto lens = string_path_lens(path_str);
-    return lager::view(lens, data);
-}
-
-Value set_by_path(const Value& data, std::string_view path_str, Value new_value)
-{
-    auto lens = string_path_lens(path_str);
-    return lager::set(lens, data, std::move(new_value));
 }
 
 } // namespace lager_ext

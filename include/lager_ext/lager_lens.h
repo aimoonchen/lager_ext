@@ -5,6 +5,7 @@
 #include <lager_ext/api.h>
 #include <lager_ext/concepts.h>  // C++20 Concepts (StringLike, IndexType, PathElementType, etc.)
 #include <lager_ext/value.h>
+#include <lager_ext/path_utils.h>  // For get_at_path_direct, set_at_path_direct
 #include <lager/lens.hpp>
 #include <lager/lenses.hpp>
 #include <zug/compose.hpp>
@@ -104,11 +105,7 @@ template<ValueLens L1, ValueLens L2>
 
 using LagerValueLens = lager::lens<Value, Value>;
 
-// key_lens and index_lens must be defined in header because:
-// 1. They return 'auto' and are called from template functions (element_to_lens, static_path_lens)
-// 2. When templates are instantiated in user code, the full definition must be visible
-// 3. Otherwise C3779 error: "a function that returns 'auto' cannot be used before it is defined"
-
+/// @brief Create a lens for accessing a map key
 [[nodiscard]] inline auto key_lens(const std::string& key)
 {
     return lager::lenses::getset(
@@ -131,6 +128,7 @@ using LagerValueLens = lager::lens<Value, Value>;
         });
 }
 
+/// @brief Create a lens for accessing a vector index
 [[nodiscard]] inline auto index_lens(std::size_t index)
 {
     return lager::lenses::getset(
@@ -157,13 +155,8 @@ using LagerValueLens = lager::lens<Value, Value>;
         });
 }
 
-[[nodiscard]] LAGER_EXT_API LagerValueLens lager_key_lens(const std::string& key);
-[[nodiscard]] LAGER_EXT_API LagerValueLens lager_index_lens(std::size_t index);
+/// @brief Build a lens from a runtime Path (with caching)
 [[nodiscard]] LAGER_EXT_API LagerValueLens lager_path_lens(const Path& path);
-
-// ============================================================
-// Literal Path to Lager Lens conversion (C++20)
-// ============================================================
 
 } // namespace lager_ext
 
@@ -213,10 +206,42 @@ struct LensCacheStats {
 LAGER_EXT_API void clear_lens_cache();
 [[nodiscard]] LAGER_EXT_API LensCacheStats get_lens_cache_stats();
 
+// ============================================================
+// PathLens - A lens-compatible path accessor
+//
+// PathLens satisfies the lager lens functor protocol, so it can be
+// used directly with lager::view, lager::set, lager::over without
+// needing to call to_lens().
+//
+// Example:
+//   PathLens path = root / "users" / 0 / "name";
+//   Value name = lager::view(path, state);      // Direct use as lens
+//   Value updated = lager::set(path, state, Value{"Alice"});
+// ============================================================
 class PathLens {
 public:
     PathLens() = default;
     explicit PathLens(Path path) : path_(std::move(path)) {}
+
+    // ============================================================
+    // Lens Functor Protocol - Direct compatibility with lager::view/set/over
+    //
+    // This operator() makes PathLens satisfy the lens functor interface.
+    // Instead of calling to_lens(), you can use PathLens directly:
+    //   lager::view(path_lens, root)
+    //   lager::set(path_lens, root, new_val)
+    // ============================================================
+    template<typename F>
+    auto operator()(F&& f) const {
+        return [this, f = std::forward<F>(f)](const Value& whole) {
+            // Get the part at this path
+            Value part = this->get(whole);
+            // Apply the functor and get the setter
+            return f(std::move(part))([this, &whole](Value new_part) {
+                return this->set(whole, std::move(new_part));
+            });
+        };
+    }
 
     [[nodiscard]] PathLens key(const std::string& k) const & {
         PathLens result = *this;
@@ -248,12 +273,18 @@ public:
 
     [[nodiscard]] const Path& path() const noexcept { return path_; }
     [[nodiscard]] Path& path() noexcept { return path_; }
+    
+    /// Convert to LagerValueLens (for compatibility, but usually not needed)
     [[nodiscard]] LagerValueLens to_lens() const { return lager_path_lens(path_); }
-    [[nodiscard]] Value get(const Value& root) const { return lager::view(to_lens(), root); }
-    [[nodiscard]] Value set(const Value& root, Value new_val) const { return lager::set(to_lens(), root, std::move(new_val)); }
-
+    
+    /// Direct get/set/over operations (more efficient than through to_lens())
+    [[nodiscard]] Value get(const Value& root) const;
+    [[nodiscard]] Value set(const Value& root, Value new_val) const;
+    
     template<typename Fn>
-    [[nodiscard]] Value over(const Value& root, Fn&& fn) const { return lager::over(to_lens(), root, std::forward<Fn>(fn)); }
+    [[nodiscard]] Value over(const Value& root, Fn&& fn) const {
+        return set(root, std::forward<Fn>(fn)(get(root)));
+    }
 
     [[nodiscard]] bool empty() const noexcept { return path_.empty(); }
     [[nodiscard]] std::size_t depth() const noexcept { return path_.size(); }
@@ -348,5 +379,212 @@ struct PathAccessResult {
 
 [[nodiscard]] LAGER_EXT_API PathAccessResult get_at_path_safe(const Value& root, const Path& path);
 [[nodiscard]] LAGER_EXT_API PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new_val);
+
+// ============================================================
+// ZoomedValue - A focused view into a Value tree
+//
+// Similar to lager's cursor.zoom() concept, ZoomedValue provides
+// a "zoomed-in" view of a Value at a specific path. Unlike cursor,
+// ZoomedValue is a lightweight, stack-allocated object that doesn't
+// require a store.
+//
+// Key differences from lager cursor:
+// - No subscription/watch mechanism (Value is immutable, no store)
+// - Stack-allocated, zero-overhead abstraction
+// - set() returns new root, not modifying in place
+//
+// Example:
+//   Value state = /* ... */;
+//   ZoomedValue users = ZoomedValue(state) / "users";
+//   ZoomedValue first_user = users / 0;
+//   Value name = (first_user / "name").get();
+//   Value new_state = (first_user / "name").set(Value{"Alice"});
+// ============================================================
+class ZoomedValue {
+public:
+    /// Create a zoomed view at the root
+    explicit ZoomedValue(const Value& root) : root_(&root) {}
+    
+    /// Create a zoomed view at a specific path
+    ZoomedValue(const Value& root, Path path)
+        : root_(&root), path_(std::move(path)) {}
+    
+    // ============================================================
+    // Navigation - Zoom further into the structure
+    // ============================================================
+    
+    /// Zoom into a map key
+    [[nodiscard]] ZoomedValue key(const std::string& k) const & {
+        ZoomedValue result = *this;
+        result.path_.push_back(k);
+        return result;
+    }
+    [[nodiscard]] ZoomedValue key(const std::string& k) && {
+        path_.push_back(k);
+        return std::move(*this);
+    }
+    
+    /// Zoom into a vector index
+    [[nodiscard]] ZoomedValue index(std::size_t i) const & {
+        ZoomedValue result = *this;
+        result.path_.push_back(i);
+        return result;
+    }
+    [[nodiscard]] ZoomedValue index(std::size_t i) && {
+        path_.push_back(i);
+        return std::move(*this);
+    }
+    
+    /// Operator/ for chained navigation
+    [[nodiscard]] ZoomedValue operator/(const std::string& k) const & { return key(k); }
+    [[nodiscard]] ZoomedValue operator/(const std::string& k) && { return std::move(*this).key(k); }
+    [[nodiscard]] ZoomedValue operator/(const char* k) const & { return key(std::string{k}); }
+    [[nodiscard]] ZoomedValue operator/(const char* k) && { return std::move(*this).key(std::string{k}); }
+    [[nodiscard]] ZoomedValue operator/(std::size_t i) const & { return index(i); }
+    [[nodiscard]] ZoomedValue operator/(std::size_t i) && { return std::move(*this).index(i); }
+    [[nodiscard]] ZoomedValue operator/(int i) const & { return index(static_cast<std::size_t>(i)); }
+    [[nodiscard]] ZoomedValue operator/(int i) && { return std::move(*this).index(static_cast<std::size_t>(i)); }
+    
+    // ============================================================
+    // Access Operations
+    // ============================================================
+    
+    /// Get the value at the current zoom path
+    [[nodiscard]] Value get() const {
+        return get_at_path_direct(*root_, path_);
+    }
+    
+    /// Set the value at the current zoom path (returns new root)
+    [[nodiscard]] Value set(Value new_val) const {
+        return set_at_path_direct(*root_, path_, std::move(new_val));
+    }
+    
+    /// Update the value using a function (returns new root)
+    template<typename Fn>
+    [[nodiscard]] Value over(Fn&& fn) const {
+        return set(std::forward<Fn>(fn)(get()));
+    }
+    
+    /// Dereference operator - same as get()
+    [[nodiscard]] Value operator*() const { return get(); }
+    
+    // ============================================================
+    // Introspection
+    // ============================================================
+    
+    /// Get the root value
+    [[nodiscard]] const Value& root() const noexcept { return *root_; }
+    
+    /// Get the current zoom path
+    [[nodiscard]] const Path& path() const noexcept { return path_; }
+    
+    /// Check if at root level
+    [[nodiscard]] bool at_root() const noexcept { return path_.empty(); }
+    
+    /// Get zoom depth (number of path elements)
+    [[nodiscard]] std::size_t depth() const noexcept { return path_.size(); }
+    
+    /// Convert to PathLens (for use with lager APIs)
+    [[nodiscard]] PathLens to_lens() const { return PathLens{path_}; }
+    
+    /// Get parent zoom (go up one level)
+    [[nodiscard]] ZoomedValue parent() const {
+        if (path_.empty()) return *this;
+        ZoomedValue result = *this;
+        result.path_.pop_back();
+        return result;
+    }
+    
+    /// Create a new ZoomedValue with updated root
+    /// Useful after set() to continue working with the new state
+    [[nodiscard]] ZoomedValue with_root(const Value& new_root) const {
+        return ZoomedValue{new_root, path_};
+    }
+
+private:
+    const Value* root_ = nullptr;
+    Path path_;
+};
+
+/// Create a ZoomedValue at root
+[[nodiscard]] inline ZoomedValue zoom(const Value& root) {
+    return ZoomedValue{root};
+}
+
+/// Create a ZoomedValue at a specific path
+[[nodiscard]] inline ZoomedValue zoom(const Value& root, const Path& path) {
+    return ZoomedValue{root, path};
+}
+
+/// Create a ZoomedValue using variadic path elements
+template<PathElementType... Elements>
+[[nodiscard]] ZoomedValue zoom(const Value& root, Elements&&... path_elements) {
+    return ZoomedValue{root, make_path(std::forward<Elements>(path_elements)...).path()};
+}
+
+// ============================================================
+// PathWatcher - Watch for changes at specific paths
+//
+// This utility helps detect and react to changes at specific paths
+// when comparing two Value trees (e.g., before and after state update).
+//
+// Unlike lager's cursor.watch() which uses reactive updates,
+// PathWatcher uses explicit diff checking, which fits the
+// immutable Value model better.
+//
+// Example:
+//   PathWatcher watcher;
+//   watcher.watch("/users/0/name", [](const Value& old_v, const Value& new_v) {
+//       std::cout << "Name changed: " << old_v.as_string() << " -> " << new_v.as_string() << "\n";
+//   });
+//   watcher.check(old_state, new_state);
+// ============================================================
+
+class LAGER_EXT_API PathWatcher {
+public:
+    using ChangeCallback = std::function<void(const Value& old_val, const Value& new_val)>;
+    
+    PathWatcher() = default;
+    
+    /// Add a path to watch with a callback
+    /// @param path_str JSON Pointer style path (e.g., "/users/0/name")
+    /// @param callback Function called when value at path changes
+    void watch(const std::string& path_str, ChangeCallback callback);
+    
+    /// Add a path to watch with a callback
+    /// @param path Path elements
+    /// @param callback Function called when value at path changes
+    void watch(Path path, ChangeCallback callback);
+    
+    /// Add a path to watch using PathLens
+    void watch(const PathLens& lens, ChangeCallback callback) {
+        watch(lens.path(), std::move(callback));
+    }
+    
+    /// Remove a watched path
+    void unwatch(const std::string& path_str);
+    void unwatch(const Path& path);
+    
+    /// Clear all watched paths
+    void clear();
+    
+    /// Check for changes between old and new state
+    /// Calls callbacks for any paths that have changed
+    /// @return Number of callbacks triggered
+    std::size_t check(const Value& old_state, const Value& new_state);
+    
+    /// Get number of watched paths
+    [[nodiscard]] std::size_t size() const noexcept { return watches_.size(); }
+    
+    /// Check if any paths are being watched
+    [[nodiscard]] bool empty() const noexcept { return watches_.empty(); }
+
+private:
+    struct WatchEntry {
+        Path path;
+        ChangeCallback callback;
+    };
+    std::vector<WatchEntry> watches_;
+};
 
 } // namespace lager_ext

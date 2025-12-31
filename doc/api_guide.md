@@ -469,25 +469,102 @@ Path p2 = {"config", "settings", "theme"};  // .config.settings.theme
 
 ### 4.2 PathLens
 
-`PathLens` provides type-erased runtime access to nested values:
+`PathLens` is a type-erased runtime lens that provides fluent access to nested values. It implements the **lager lens protocol** and can be used directly with `lager::view`, `lager::set`, and `lager::over`.
 
 ```cpp
 #include <lager_ext/lager_lens.h>
 using namespace lager_ext;
 
-// Create a path lens for nested access
-PathLens path = make_path_lens({"users", size_t(0), "name"});
+// ========== Construction ==========
+
+// From Path vector
+Path path = {"users", size_t(0), "name"};
+PathLens lens1(path);
+
+// From string path (JSON Pointer format)
+PathLens lens2(parse_string_path("/users/0/name"));
+
+// Using / operator for fluent building
+PathLens lens3 = PathLens() / "users" / 0 / "name";
+
+// ========== Direct Access Methods ==========
 
 // Read value at path
-Value name = path.view(root);
+Value name = lens1.get(root);
 
-// Set value at path (returns new root)
-Value new_root = path.set(root, "NewName");
+// Set value at path (returns new root, immutable)
+Value new_root = lens1.set(root, Value{"NewName"});
 
-// Update value at path
-Value updated = path.over(root, [](const Value& v) {
+// Update value at path with a function
+Value updated = lens1.over(root, [](const Value& v) {
     return Value{v.as_string("") + "_modified"};
 });
+
+// ========== Lager Integration ==========
+
+// PathLens works directly with lager::view/set/over
+Value name2 = lager::view(lens1, root);
+Value new_root2 = lager::set(lens1, root, Value{"Alice"});
+Value updated2 = lager::over(lens1, root, [](Value v) {
+    return Value{v.as_string() + "!"};
+});
+
+// ========== Path Inspection ==========
+
+// Check if path is empty (root lens)
+bool is_root = lens1.empty();
+
+// Get the underlying path
+const Path& elements = lens1.path();
+
+// Convert to string representation
+std::string str = lens1.to_string();        // ".users[0].name"
+std::string ptr = lens1.to_json_pointer();  // "/users/0/name"
+```
+
+**ZoomedValue** - Fluent navigation helper:
+
+```cpp
+// Create a zoomed view at a path
+ZoomedValue zoomed(root, {"users", size_t(0)});
+
+// Navigate further with /
+Value name = (zoomed / "name").get();
+Value age = (zoomed / "age").get();
+
+// Set values
+Value new_root = (zoomed / "name").set(Value{"Alice"});
+
+// Chain operations
+Value new_root2 = ZoomedValue(root) / "config" / "theme"
+    .set(Value{"dark"});
+```
+
+**PathWatcher** - Monitor state changes at a specific path:
+
+```cpp
+#include <lager_ext/lager_lens.h>
+using namespace lager_ext;
+
+// Create a watcher for a specific path
+PathWatcher watcher({"users", size_t(0), "name"});
+
+// Or from string path
+PathWatcher watcher2(parse_string_path("/config/theme"));
+
+// Check if value at path has changed
+Value old_state = /* previous state */;
+Value new_state = /* current state */;
+
+if (watcher.has_changed(old_state, new_state)) {
+    Value old_val = watcher.get_old();
+    Value new_val = watcher.get_new();
+    std::cout << "Changed from " << old_val.as_string() 
+              << " to " << new_val.as_string() << std::endl;
+}
+
+// Get current value at path
+Value current = watcher.get(new_state);
 ```
 
 ### 4.3 Static Path Lens

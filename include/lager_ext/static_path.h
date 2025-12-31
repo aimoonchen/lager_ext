@@ -100,8 +100,8 @@ struct StaticKeyLens {
         return whole.at(key.to_string());
     }
 
-    Value set(Value whole, const Value& part) const {
-        return whole.set(key.to_string(), part);
+    Value set(Value whole, Value part) const {
+        return whole.set(key.to_string(), std::move(part));
     }
 };
 
@@ -114,8 +114,8 @@ struct StaticIndexLens {
         return whole.at(index);
     }
 
-    Value set(Value whole, const Value& part) const {
-        return whole.set(index, part);
+    Value set(Value whole, Value part) const {
+        return whole.set(index, std::move(part));
     }
 };
 
