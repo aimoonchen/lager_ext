@@ -64,11 +64,11 @@ void DiffEntryCollector::print_diffs() const
         }
         std::cout << "  " << type_str << " " << path_to_string(d.path);
         if (d.type == DiffEntry::Type::Change) {
-            std::cout << ": " << value_to_string(d.old_value) << " -> " << value_to_string(d.new_value);
+            std::cout << ": " << value_to_string(d.get_old()) << " -> " << value_to_string(d.get_new());
         } else if (d.type == DiffEntry::Type::Add) {
-            std::cout << ": " << value_to_string(d.new_value);
+            std::cout << ": " << value_to_string(d.get_new());
         } else {
-            std::cout << ": " << value_to_string(d.old_value);
+            std::cout << ": " << value_to_string(d.get_old());
         }
         std::cout << "\n";
     }
@@ -400,6 +400,44 @@ bool vectors_differ(const ValueVector& old_vec, const ValueVector& new_vec, bool
 // DiffValueCollector - Single-pass diff to Value tree
 // ============================================================
 
+namespace {
+    // Pre-cached diff type ValueBoxes to avoid repeated allocation
+    // These are created once and shared across all diff operations
+    inline const ValueBox& get_type_box(DiffEntry::Type type) {
+        static const ValueBox add_box{Value{static_cast<uint8_t>(DiffEntry::Type::Add)}};
+        static const ValueBox remove_box{Value{static_cast<uint8_t>(DiffEntry::Type::Remove)}};
+        static const ValueBox change_box{Value{static_cast<uint8_t>(DiffEntry::Type::Change)}};
+        
+        switch (type) {
+            case DiffEntry::Type::Add:    return add_box;
+            case DiffEntry::Type::Remove: return remove_box;
+            case DiffEntry::Type::Change: return change_box;
+        }
+        return add_box;  // fallback (should never reach)
+    }
+    
+    // Pre-cached index strings for common vector indices (0-99)
+    // Avoids std::to_string allocation for small indices
+    inline const std::string& get_index_string(size_t i) {
+        static const std::array<std::string, 100> cache = []() {
+            std::array<std::string, 100> arr;
+            for (size_t j = 0; j < 100; ++j) {
+                arr[j] = std::to_string(j);
+            }
+            return arr;
+        }();
+        
+        if (i < 100) [[likely]] {
+            return cache[i];
+        }
+        // For large indices, use static buffer (single-threaded context)
+        // This avoids heap allocation on each call
+        static std::string large_index;
+        large_index = std::to_string(i);
+        return large_index;
+    }
+}
+
 void DiffValueCollector::diff(const Value& old_val, const Value& new_val, bool recursive)
 {
     clear();
@@ -425,9 +463,8 @@ Value DiffValueCollector::make_diff_node(DiffEntry::Type type, const ValueBox& v
 {
     auto builder = ValueMap{};
     
-    // Set diff type as uint8_t
-    uint8_t type_val = static_cast<uint8_t>(type);
-    builder = builder.set(diff_keys::TYPE, ValueBox{Value{type_val}});
+    // Use cached type box to avoid repeated allocation
+    builder = builder.set(diff_keys::TYPE, get_type_box(type));
     
     // Store the value box directly - no copy, just reference count increment
     // Add: only _new (value being added)
@@ -447,7 +484,8 @@ Value DiffValueCollector::make_diff_node(DiffEntry::Type type, const ValueBox& o
     // For Change type, we need both values
     if (type == DiffEntry::Type::Change) {
         auto builder = ValueMap{};
-        builder = builder.set(diff_keys::TYPE, ValueBox{Value{static_cast<uint8_t>(type)}});
+        // Use cached type box to avoid repeated allocation
+        builder = builder.set(diff_keys::TYPE, get_type_box(type));
         builder = builder.set(diff_keys::OLD, old_box);
         builder = builder.set(diff_keys::NEW, new_box);
         return Value{builder};
@@ -649,7 +687,7 @@ Value DiffValueCollector::diff_vector_impl(const ValueVector& old_vec, const Val
         Value subtree = diff_value_impl_box(old_box, new_box, subtree_changed);
         if (subtree_changed) {
             has_any_change = true;
-            result = result.set(std::to_string(i), ValueBox{subtree});
+            result = result.set(get_index_string(i), ValueBox{subtree});
         }
     }
     
@@ -657,14 +695,14 @@ Value DiffValueCollector::diff_vector_impl(const ValueVector& old_vec, const Val
     for (size_t i = common_size; i < old_size; ++i) {
         has_any_change = true;
         Value subtree = collect_entries_box(old_vec[i], DiffEntry::Type::Remove);
-        result = result.set(std::to_string(i), ValueBox{subtree});
+        result = result.set(get_index_string(i), ValueBox{subtree});
     }
     
     // Added tail elements - use box version for zero-copy
     for (size_t i = common_size; i < new_size; ++i) {
         has_any_change = true;
         Value subtree = collect_entries_box(new_vec[i], DiffEntry::Type::Add);
-        result = result.set(std::to_string(i), ValueBox{subtree});
+        result = result.set(get_index_string(i), ValueBox{subtree});
     }
     
     if (has_any_change) {
@@ -697,9 +735,9 @@ Value DiffValueCollector::collect_entries(const Value& val, DiffEntry::Type type
         else if constexpr (std::is_same_v<T, ValueVector>) {
             ValueMap result;
             for (size_t i = 0; i < arg.size(); ++i) {
-                // Use box version for zero-copy
+                // Use box version for zero-copy, and cached index string
                 Value subtree = collect_entries_box(arg[i], type);
-                result = result.set(std::to_string(i), ValueBox{subtree});
+                result = result.set(get_index_string(i), ValueBox{subtree});
             }
             return Value{result};
         }
@@ -738,7 +776,8 @@ Value DiffValueCollector::collect_entries_box(const ValueBox& val_box, DiffEntry
             ValueMap result;
             for (size_t i = 0; i < arg.size(); ++i) {
                 Value subtree = collect_entries_box(arg[i], type);
-                result = result.set(std::to_string(i), ValueBox{subtree});
+                // Use cached index string to avoid allocation
+                result = result.set(get_index_string(i), ValueBox{subtree});
             }
             return Value{result};
         }
@@ -797,80 +836,6 @@ Value DiffValueCollector::get_new_value(const Value& val)
 void DiffValueCollector::print() const
 {
     std::cout << "DiffValueCollector tree:\n";
-    if (!has_changes_) {
-        std::cout << "  (no changes)\n";
-        return;
-    }
-    print_value(result_, "  ");
-}
-
-// ============================================================
-// DiffValue - Wrapper using DiffValueCollector
-// ============================================================
-
-void DiffValue::diff(const Value& old_val, const Value& new_val, bool recursive)
-{
-    // Delegate to DiffValueCollector for efficient single-pass tree construction
-    DiffValueCollector collector;
-    collector.diff(old_val, new_val, recursive);
-    
-    result_ = collector.get();
-    has_changes_ = collector.has_changes();
-}
-
-void DiffValue::clear()
-{
-    result_ = Value{};
-    has_changes_ = false;
-}
-
-bool DiffValue::is_diff_node(const Value& val)
-{
-    if (auto* m = val.get_if<ValueMap>()) {
-        return m->count(diff_keys::TYPE) > 0;
-    }
-    return false;
-}
-
-DiffEntry::Type DiffValue::get_diff_type(const Value& val)
-{
-    if (auto* m = val.get_if<ValueMap>()) {
-        if (auto* type_box = m->find(diff_keys::TYPE)) {
-            if (auto* type_val = type_box->get().get_if<uint8_t>()) {
-                // Validate the value is within enum range
-                if (*type_val <= static_cast<uint8_t>(DiffEntry::Type::Change)) {
-                    return static_cast<DiffEntry::Type>(*type_val);
-                }
-            }
-        }
-    }
-    // Default fallback (should not happen if is_diff_node() was checked first)
-    return DiffEntry::Type::Add;
-}
-
-Value DiffValue::get_old_value(const Value& val)
-{
-    if (auto* m = val.get_if<ValueMap>()) {
-        if (auto* old_box = m->find(diff_keys::OLD)) {
-            return old_box->get();
-        }
-    }
-    return Value{};
-}
-
-Value DiffValue::get_new_value(const Value& val)
-{
-    if (auto* m = val.get_if<ValueMap>()) {
-        if (auto* new_box = m->find(diff_keys::NEW)) {
-            return new_box->get();
-        }
-    }
-    return Value{};
-}
-
-void DiffValue::print() const
-{
-    std::cout << "DiffValue tree:\n";
     if (!has_changes_) {
         std::cout << "  (no changes)\n";
         return;

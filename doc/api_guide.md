@@ -31,9 +31,10 @@ This document provides a comprehensive overview of the public APIs in the `lager
     - [4.6 Path Utilities](#46-path-utilities)
   - [5. Diff Operations](#5-diff-operations)
     - [5.1 DiffEntry](#51-diffentry)
-    - [5.2 DiffCollector](#52-diffcollector)
-    - [5.3 DiffValue (Tree-structured Result)](#53-diffvalue-tree-structured-result)
+    - [5.2 DiffEntryCollector](#52-diffentrycollector)
+    - [5.3 DiffValueCollector (Tree-structured Result)](#53-diffvaluecollector-tree-structured-result)
     - [5.4 Quick Difference Check](#54-quick-difference-check)
+    - [5.5 Choosing Between Collectors](#55-choosing-between-collectors)
   - [6. Shared State (Cross-Process)](#6-shared-state-cross-process)
     - [6.1 SharedState](#61-sharedstate)
     - [6.2 Memory Region Operations](#62-memory-region-operations)
@@ -692,14 +693,21 @@ struct DiffEntry {
     
     Type type;           // Type of change
     Path path;           // Path to the changed value
-    Value old_value;     // Old value (null for Add)
-    Value new_value;     // New value (null for Remove)
+    ValueBox old_value;  // Old value box (zero-copy reference)
+    ValueBox new_value;  // New value box (zero-copy reference)
+    
+    // Convenience accessors
+    const Value& get_old() const;  // Dereference old_value box
+    const Value& get_new() const;  // Dereference new_value box
+    const Value& value() const;    // Returns appropriate value based on type
 };
 ```
 
-### 5.2 DiffCollector
+> **Performance Note:** `DiffEntry` uses `ValueBox` (alias for `immer::box<Value>`) internally for zero-copy storage. When you access values via `get_old()` or `get_new()`, you get a reference to the original data without any copying.
 
-`DiffCollector` compares two values and collects all differences:
+### 5.2 DiffEntryCollector
+
+`DiffEntryCollector` compares two values and collects all differences as a flat list:
 
 ```cpp
 #include <lager_ext/value_diff.h>
@@ -709,28 +717,28 @@ Value old_val = /* ... */;
 Value new_val = /* ... */;
 
 // Create a collector and compute differences
-DiffCollector collector;
+DiffEntryCollector collector;
 collector.diff(old_val, new_val);  // recursive by default
 
 // Check if there are any changes
 if (collector.has_changes()) {
-    // Get all differences
+    // Get all differences as a vector
     const auto& diffs = collector.get_diffs();
     
     for (const auto& entry : diffs) {
         switch (entry.type) {
             case DiffEntry::Type::Add:
                 std::cout << "Added at " << path_to_string(entry.path) 
-                          << ": " << to_json(entry.new_value, true) << std::endl;
+                          << ": " << to_json(entry.get_new(), true) << std::endl;
                 break;
             case DiffEntry::Type::Remove:
                 std::cout << "Removed at " << path_to_string(entry.path) 
-                          << ": " << to_json(entry.old_value, true) << std::endl;
+                          << ": " << to_json(entry.get_old(), true) << std::endl;
                 break;
             case DiffEntry::Type::Change:
                 std::cout << "Changed at " << path_to_string(entry.path)
-                          << ": " << to_json(entry.old_value, true) 
-                          << " -> " << to_json(entry.new_value, true) << std::endl;
+                          << ": " << to_json(entry.get_old(), true) 
+                          << " -> " << to_json(entry.get_new(), true) << std::endl;
                 break;
         }
     }
@@ -744,9 +752,9 @@ collector.clear();
 collector.diff(old_val, new_val, false);
 ```
 
-### 5.3 DiffValue (Tree-structured Result)
+### 5.3 DiffValueCollector (Tree-structured Result)
 
-`DiffValue` organizes diff results as a `Value` tree, mirroring the original data structure. This makes it easy to traverse and process differences using familiar Value APIs.
+`DiffValueCollector` organizes diff results as a `Value` tree, mirroring the original data structure. This is more efficient than `DiffEntryCollector` when you need to process changes by path, as it builds the tree structure during traversal (single pass).
 
 **Structure:**
 - Intermediate nodes mirror the original structure (maps/vectors)
@@ -772,11 +780,11 @@ Value new_val = Value::map({
 });
 
 // Compute diff as a Value tree
-DiffValue diff;
-diff.diff(old_val, new_val);
+DiffValueCollector collector;
+collector.diff(old_val, new_val);
 
 // Get the result as a Value tree
-const Value& tree = diff.get();
+const Value& tree = collector.get();
 
 // Result structure:
 // {
@@ -794,19 +802,19 @@ const Value& tree = diff.get();
 // }
 
 // Print the diff tree
-diff.print();
+collector.print();
 
 // Traverse the result like any Value
 Value user_diffs = tree.at("user");
 Value name_diff = user_diffs.at("name");
 
 // Check if a node is a diff leaf, then get its type
-if (DiffValue::is_diff_node(name_diff)) {
-    DiffEntry::Type type = DiffValue::get_diff_type(name_diff);
+if (DiffValueCollector::is_diff_node(name_diff)) {
+    DiffEntry::Type type = DiffValueCollector::get_diff_type(name_diff);
     
     if (type == DiffEntry::Type::Change) {
-        Value old_v = DiffValue::get_old_value(name_diff);   // "Alice"
-        Value new_v = DiffValue::get_new_value(name_diff);   // "Bob"
+        Value old_v = DiffValueCollector::get_old_value(name_diff);   // "Alice"
+        Value new_v = DiffValueCollector::get_new_value(name_diff);   // "Bob"
         
         std::cout << "Name changed from " << old_v.as_string() 
                   << " to " << new_v.as_string() << std::endl;
@@ -825,16 +833,16 @@ Value diff_tree = diff_as_value(old_val, new_val);
 | `_old` | Previous value | Present for Remove and Change |
 | `_new` | New value | Present for Add and Change |
 
-> **Tip:** Access key names via `diff_keys::TYPE`, `diff_keys::OLD`, `diff_keys::NEW`. Use type constants `diff_keys::ADD` (0), `diff_keys::REMOVE` (1), `diff_keys::CHANGE` (2) for comparison.
+> **Tip:** Access key names via `diff_keys::TYPE`, `diff_keys::OLD`, `diff_keys::NEW`.
 
 **Static Helper Methods:**
 
 | Method | Return Type | Description |
 |--------|-------------|-------------|
-| `DiffValue::is_diff_node(val)` | `bool` | Check if a Value is a diff leaf node |
-| `DiffValue::get_diff_type(val)` | `DiffEntry::Type` | Get the diff type enum (call after `is_diff_node()` returns true) |
-| `DiffValue::get_old_value(val)` | `Value` | Get the old value from a diff node |
-| `DiffValue::get_new_value(val)` | `Value` | Get the new value from a diff node |
+| `DiffValueCollector::is_diff_node(val)` | `bool` | Check if a Value is a diff leaf node |
+| `DiffValueCollector::get_diff_type(val)` | `DiffEntry::Type` | Get the diff type enum |
+| `DiffValueCollector::get_old_value(val)` | `Value` | Get the old value from a diff node |
+| `DiffValueCollector::get_new_value(val)` | `Value` | Get the new value from a diff node |
 
 ### 5.4 Quick Difference Check
 
@@ -855,11 +863,14 @@ if (has_any_difference(old_val, new_val, false)) {
 }
 ```
 
-**Type Aliases:**
+### 5.5 Choosing Between Collectors
 
-| Alias | Actual Type |
-|-------|-------------|
-| `RecursiveDiffCollector` | `DiffCollector` |
+| Collector | Output | Best For |
+|-----------|--------|----------|
+| `DiffEntryCollector` | `std::vector<DiffEntry>` | Flat iteration over all changes |
+| `DiffValueCollector` | `Value` tree | Hierarchical traversal, path-based access |
+
+Both collectors use zero-copy internally with `ValueBox` for optimal performance
 
 ---
 
