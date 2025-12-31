@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.16)
 project(lager_ext 
     VERSION 1.0.0 
     DESCRIPTION "Immutable data structure extensions for lager state management"
-    HOMEPAGE_URL "https://github.com/chenmou/lager_ext"
+    HOMEPAGE_URL "https://github.com/aimoonchen/lager_ext"
     LANGUAGES CXX
 )
 

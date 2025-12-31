@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -119,56 +120,74 @@ struct StaticIndexLens {
 };
 
 // ============================================================
-// Composed Static Lens - Zero-overhead lens composition
+// Composed Static Lens - Zero-overhead lens composition using fold expression
 // ============================================================
 
-// Forward declaration with variadic template
+/// @brief Composed lens using C++17 fold expressions for cleaner implementation
+/// 
+/// This implementation replaces the recursive template approach with fold expressions,
+/// resulting in cleaner code and potentially better compile-time performance.
 template<typename... Lenses>
-struct ComposedLens;
-
-// Base case: single lens
-template<typename Lens>
-struct ComposedLens<Lens> {
-    Lens lens;
+struct ComposedLens {
+    std::tuple<Lenses...> lenses;
 
     constexpr ComposedLens() = default;
-    constexpr explicit ComposedLens(Lens l) : lens(std::move(l)) {}
+    constexpr explicit ComposedLens(Lenses... ls) : lenses(std::move(ls)...) {}
 
+    /// Get: Apply lenses left-to-right (lens0.get → lens1.get → ...)
     Value get(const Value& v) const {
-        return lens.get(v);
+        return get_impl(v, std::index_sequence_for<Lenses...>{});
     }
 
+    /// Set: Apply lenses right-to-left for the setter
     Value set(Value v, const Value& x) const {
-        return lens.set(std::move(v), x);
+        return set_impl(std::move(v), x, std::index_sequence_for<Lenses...>{});
+    }
+
+private:
+    template<std::size_t... Is>
+    Value get_impl(const Value& v, std::index_sequence<Is...>) const {
+        if constexpr (sizeof...(Is) == 0) {
+            return v;
+        } else {
+            Value result = v;
+            // Fold expression: apply each lens's get in sequence
+            ((result = std::get<Is>(lenses).get(result)), ...);
+            return result;
+        }
+    }
+
+    template<std::size_t... Is>
+    Value set_impl(Value v, const Value& x, std::index_sequence<Is...>) const {
+        if constexpr (sizeof...(Is) == 0) {
+            return x;
+        } else {
+            return set_recursive<0>(std::move(v), x, std::index_sequence<Is...>{});
+        }
+    }
+
+    // Recursive set: need to get intermediate values, then set back
+    template<std::size_t Current, std::size_t First, std::size_t... Rest>
+    Value set_recursive(Value v, const Value& x, std::index_sequence<First, Rest...>) const {
+        if constexpr (sizeof...(Rest) == 0) {
+            // Base case: last lens
+            return std::get<Current>(lenses).set(std::move(v), x);
+        } else {
+            // Get the intermediate value
+            auto inner = std::get<Current>(lenses).get(v);
+            // Recursively set in the inner value
+            auto new_inner = set_recursive<Current + 1>(std::move(inner), x, std::index_sequence<Rest...>{});
+            // Set back to the current level
+            return std::get<Current>(lenses).set(std::move(v), new_inner);
+        }
     }
 };
 
-// Recursive case: lens composition
-template<typename First, typename... Rest>
-struct ComposedLens<First, Rest...> {
-    First first;
-    ComposedLens<Rest...> rest;
-
-    constexpr ComposedLens() = default;
-
-    constexpr ComposedLens(First f, Rest... r)
-        : first(std::move(f)), rest(std::move(r)...) {}
-
-    Value get(const Value& v) const {
-        auto inner = first.get(v);
-        return rest.get(inner);
-    }
-
-    Value set(Value v, const Value& x) const {
-        auto inner = first.get(v);
-        auto new_inner = rest.set(std::move(inner), x);
-        return first.set(std::move(v), new_inner);
-    }
-};
-
-// Empty case (identity lens)
+// Empty case (identity lens) - specialization for zero lenses
 template<>
 struct ComposedLens<> {
+    std::tuple<> lenses;
+
     constexpr ComposedLens() = default;
 
     Value get(const Value& v) const {
