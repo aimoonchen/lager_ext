@@ -33,8 +33,9 @@ This document provides a comprehensive overview of the public APIs in the `lager
     - [5.1 DiffEntry](#51-diffentry)
     - [5.2 DiffEntryCollector](#52-diffentrycollector)
     - [5.3 DiffValueCollector (Tree-structured Result)](#53-diffvaluecollector-tree-structured-result)
-    - [5.4 Quick Difference Check](#54-quick-difference-check)
-    - [5.5 Choosing Between Collectors](#55-choosing-between-collectors)
+    - [5.4 DiffNodeView (Optimized Access)](#54-diffnodeview-optimized-access)
+    - [5.5 Quick Difference Check](#55-quick-difference-check)
+    - [5.6 Choosing Between Collectors](#56-choosing-between-collectors)
   - [6. Shared State (Cross-Process)](#6-shared-state-cross-process)
     - [6.1 SharedState](#61-sharedstate)
     - [6.2 Memory Region Operations](#62-memory-region-operations)
@@ -844,7 +845,76 @@ Value diff_tree = diff_as_value(old_val, new_val);
 | `DiffValueCollector::get_old_value(val)` | `Value` | Get the old value from a diff node |
 | `DiffValueCollector::get_new_value(val)` | `Value` | Get the new value from a diff node |
 
-### 5.4 Quick Difference Check
+### 5.4 DiffNodeView (Optimized Access)
+
+`DiffNodeView` is a lightweight accessor that parses a diff node once and provides O(1) access to all fields, avoiding repeated hash lookups. Use this when you need to access the same diff node multiple times.
+
+```cpp
+#include <lager_ext/value_diff.h>
+using namespace lager_ext;
+
+// Get a diff node from DiffValueCollector result
+Value diff_tree = diff_as_value(old_val, new_val);
+Value name_diff = diff_tree.at("user").at("name");
+
+// Parse once, access multiple times (O(1) after parse)
+DiffNodeView view;
+if (view.parse(name_diff)) {
+    // Access type directly (no hash lookup)
+    switch (view.type) {
+        case DiffEntry::Type::Add:
+            std::cout << "Added: " << view.new_value->as_string() << std::endl;
+            break;
+        case DiffEntry::Type::Remove:
+            std::cout << "Removed: " << view.old_value->as_string() << std::endl;
+            break;
+        case DiffEntry::Type::Change:
+            std::cout << "Changed: " << view.old_value->as_string() 
+                      << " -> " << view.new_value->as_string() << std::endl;
+            break;
+    }
+    
+    // Convenience accessors
+    const Value& meaningful = view.value();  // Returns appropriate value based on type
+}
+
+// Batch processing example - parse once per node
+void process_diff_tree(const Value& node) {
+    DiffNodeView view;
+    if (view.parse(node)) {
+        // This is a diff leaf node
+        handle_change(view.type, view.old_value, view.new_value);
+    } else if (auto* m = node.get_if<ValueMap>()) {
+        // This is an intermediate node, recurse
+        for (const auto& [key, child_box] : *m) {
+            process_diff_tree(*child_box);
+        }
+    }
+}
+```
+
+**DiffNodeView Members:**
+
+| Member | Type | Description |
+|--------|------|-------------|
+| `type` | `DiffEntry::Type` | The type of change (Add/Remove/Change) |
+| `old_value` | `const Value*` | Pointer to old value (nullptr if not present) |
+| `new_value` | `const Value*` | Pointer to new value (nullptr if not present) |
+
+**DiffNodeView Methods:**
+
+| Method | Return Type | Description |
+|--------|-------------|-------------|
+| `parse(val)` | `bool` | Parse a Value into this view. Returns true if valid diff node. |
+| `has_old()` | `bool` | Check if old_value is available |
+| `has_new()` | `bool` | Check if new_value is available |
+| `get_old()` | `const Value&` | Get old value (throws if not available) |
+| `get_new()` | `const Value&` | Get new value (throws if not available) |
+| `value()` | `const Value&` | Get meaningful value based on type |
+
+> **Performance Tip:** Use `DiffNodeView` when accessing the same diff node multiple times. A single `parse()` call performs 3 hash lookups, but subsequent access to `type`, `old_value`, and `new_value` is O(1).
+
+### 5.5 Quick Difference Check
 
 For fast detection without collecting details:
 
@@ -863,7 +933,7 @@ if (has_any_difference(old_val, new_val, false)) {
 }
 ```
 
-### 5.5 Choosing Between Collectors
+### 5.6 Choosing Between Collectors
 
 | Collector | Output | Best For |
 |-----------|--------|----------|
