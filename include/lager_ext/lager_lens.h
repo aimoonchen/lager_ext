@@ -5,7 +5,7 @@
 #include <lager_ext/api.h>
 #include <lager_ext/concepts.h>  // C++20 Concepts (StringLike, IndexType, PathElementType, etc.)
 #include <lager_ext/value.h>
-#include <lager_ext/path_utils.h>  // For get_at_path_direct, set_at_path_direct
+#include <lager_ext/path_core.h>  // For get_at_path, set_at_path
 #include <lager/lens.hpp>
 #include <lager/lenses.hpp>
 #include <zug/compose.hpp>
@@ -451,12 +451,12 @@ public:
     
     /// Get the value at the current zoom path
     [[nodiscard]] Value get() const {
-        return get_at_path_direct(*root_, path_);
+        return get_at_path(*root_, path_);
     }
     
     /// Set the value at the current zoom path (returns new root)
     [[nodiscard]] Value set(Value new_val) const {
-        return set_at_path_direct(*root_, path_, std::move(new_val));
+        return set_at_path(*root_, path_, std::move(new_val));
     }
     
     /// Update the value using a function (returns new root)

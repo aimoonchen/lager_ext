@@ -3,7 +3,7 @@
 
 #include <lager_ext/editor_engine.h>
 #include <lager_ext/builders.h>
-#include <lager_ext/path_utils.h>
+#include <lager_ext/path_core.h>
 #include <iostream>
 #include <sstream>
 
@@ -24,9 +24,9 @@ static Path parse_property_path(const std::string& path_str) {
     return result;
 }
 
-// Use shared path_utils.h functions instead of duplicating code
-// get_value_at_path -> get_at_path_direct
-// set_value_at_path -> set_at_path_direct
+// Use shared path_core.h functions instead of duplicating code
+// get_value_at_path -> get_at_path
+// set_value_at_path -> set_at_path
 
 // ============================================================
 // Editor Reducer Implementation
@@ -157,7 +157,7 @@ EditorModel editor_update(EditorModel model, EditorAction action) {
             // Update property using immer::map::set() for immutable update
             Path path = parse_property_path(payload.property_path);
             SceneObject updated_obj = *obj_ptr;
-            updated_obj.data = set_at_path_direct(updated_obj.data, path, payload.new_value);
+            updated_obj.data = set_at_path(updated_obj.data, path, payload.new_value);
             model.scene.objects = model.scene.objects.set(model.scene.selected_id, updated_obj);
             model.scene.version++;
             model.dirty = true;
@@ -186,7 +186,7 @@ EditorModel editor_update(EditorModel model, EditorAction action) {
             SceneObject updated_obj = *obj_ptr;
             for (const auto& [path_str, value] : payload.updates) {
                 Path path = parse_property_path(path_str);
-                updated_obj.data = set_at_path_direct(updated_obj.data, path, value);
+                updated_obj.data = set_at_path(updated_obj.data, path, value);
             }
             model.scene.objects = model.scene.objects.set(model.scene.selected_id, updated_obj);
             model.scene.version++;
@@ -612,7 +612,7 @@ Value EditorController::get_property(const std::string& path) const {
     if (!obj) return Value{};  // null Value indicates no object selected
 
     Path parsed_path = parse_property_path(path);
-    return get_at_path_direct(obj->data, parsed_path);
+    return get_at_path(obj->data, parsed_path);
 }
 
 void EditorController::set_property(const std::string& path, Value value) {

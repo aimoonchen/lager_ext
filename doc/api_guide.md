@@ -22,13 +22,18 @@ This document provides a comprehensive overview of the public APIs in the `lager
   - [3. Serialization](#3-serialization)
     - [3.1 Binary Serialization](#31-binary-serialization)
     - [3.2 JSON Serialization](#32-json-serialization)
-  - [4. Path Operations](#4-path-operations)
-    - [4.1 Path Types](#41-path-types)
-    - [4.2 PathLens](#42-pathlens)
-    - [4.3 Static Path Lens](#43-static-path-lens)
-    - [4.4 Unified Path API (`path::`)](#44-unified-path-api-path)
-    - [4.5 String Path Operations](#45-string-path-operations)
-    - [4.6 Path Utilities](#46-path-utilities)
+  - [4. Lens-Based Path System](#4-lens-based-path-system)
+    - [4.1 Architecture Overview](#41-architecture-overview)
+    - [4.2 Core Types](#42-core-types)
+    - [4.3 Primitive Lenses](#43-primitive-lenses)
+    - [4.4 PathLens (Runtime Paths)](#44-pathlens-runtime-paths)
+    - [4.5 LiteralPath (Compile-Time Paths)](#45-literalpath-compile-time-paths)
+    - [4.6 Unified API (`path::` namespace)](#46-unified-api-path-namespace)
+    - [4.7 ZoomedValue (Focused View)](#47-zoomedvalue-focused-view)
+    - [4.8 PathWatcher (Change Detection)](#48-pathwatcher-change-detection)
+    - [4.9 String Path Parsing (RFC 6901)](#49-string-path-parsing-rfc-6901)
+    - [4.10 Core Path Engine (`path_core.h`)](#410-core-path-engine-path_coreh)
+    - [4.11 Performance Considerations](#411-performance-considerations)
   - [5. Diff Operations](#5-diff-operations)
     - [5.1 DiffEntry](#51-diffentry)
     - [5.2 DiffEntryCollector](#52-diffentrycollector)
@@ -448,28 +453,80 @@ Value parsed2 = from_json(json);
 
 ---
 
-## 4. Path Operations
+## 4. Lens-Based Path System
 
-### 4.1 Path Types
+The path system provides **lens-based access** to deeply nested values in `Value` trees. Built on top of `lager::lenses::getset`, it bridges compile-time type safety with runtime flexibility.
 
-```cpp
-#include <lager_ext/path_utils.h>
-using namespace lager_ext;
+### 4.1 Architecture Overview
 
-// PathElement: either a string key or numeric index
-using PathElement = std::variant<std::string, std::size_t>;
-
-// Path: sequence of path elements
-using Path = std::vector<PathElement>;
-
-// Example paths
-Path p1 = {"users", size_t(0), "name"};     // .users[0].name
-Path p2 = {"config", "settings", "theme"};  // .config.settings.theme
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       User API Layer                            │
+│  path::get/set/over    PathLens    LiteralPath<"/a/b">         │
+├─────────────────────────────────────────────────────────────────┤
+│                      Lens Layer                                 │
+│  key_lens(key)    index_lens(idx)    static_path_lens(...)     │
+├─────────────────────────────────────────────────────────────────┤
+│                    lager Foundation                             │
+│  lager::lenses::getset    lager::view/set/over    zug::comp    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 PathLens
+**Key Design Decisions:**
 
-`PathLens` is a type-erased runtime lens that provides fluent access to nested values. It implements the **lager lens protocol** and can be used directly with `lager::view`, `lager::set`, and `lager::over`.
+| Aspect | Our Lens | `lager::lenses::at` |
+|--------|----------|---------------------|
+| Return type | `Value` (null if missing) | `optional<Value>` |
+| Multi-level path | Native support | Manual nesting |
+| String paths | `parse_string_path()` | Not supported |
+| Compile-time paths | `LiteralPath<"/a/b">` | Not supported |
+
+### 4.2 Core Types
+
+```cpp
+#include <lager_ext/path_core.h>
+using namespace lager_ext;
+
+// PathElement: string key or numeric index
+using PathElement = std::variant<std::string, std::size_t>;
+
+// Path: sequence of elements
+using Path = std::vector<PathElement>;
+
+// Examples
+Path p1 = {"users", size_t(0), "name"};     // /users/0/name
+Path p2 = {"config", "theme"};              // /config/theme
+```
+
+### 4.3 Primitive Lenses
+
+The building blocks for all path access:
+
+```cpp
+#include <lager_ext/lager_lens.h>
+using namespace lager_ext;
+
+// key_lens: access map key
+auto name_lens = key_lens("name");
+Value name = lager::view(name_lens, user);           // Get
+Value updated = lager::set(name_lens, user, "Bob");  // Set
+
+// index_lens: access vector index
+auto first_lens = index_lens(0);
+Value first = lager::view(first_lens, items);
+
+// Composition with zug::comp
+auto deep_lens = zug::comp(
+    key_lens("users"),
+    index_lens(0),
+    key_lens("name")
+);
+Value name = lager::view(deep_lens, root);
+```
+
+### 4.4 PathLens (Runtime Paths)
+
+`PathLens` wraps a runtime `Path` and implements the **lager lens protocol**, enabling direct use with `lager::view/set/over`.
 
 ```cpp
 #include <lager_ext/lager_lens.h>
@@ -478,178 +535,110 @@ using namespace lager_ext;
 // ========== Construction ==========
 
 // From Path vector
-Path path = {"users", size_t(0), "name"};
-PathLens lens1(path);
+PathLens lens1(Path{"users", size_t(0), "name"});
 
-// From string path (JSON Pointer format)
+// From string path (JSON Pointer)
 PathLens lens2(parse_string_path("/users/0/name"));
 
-// Using / operator for fluent building
+// Fluent builder with / operator
 PathLens lens3 = PathLens() / "users" / 0 / "name";
 
-// ========== Direct Access Methods ==========
+// Global root constant
+PathLens from_root = root / "config" / "theme";
 
-// Read value at path
-Value name = lens1.get(root);
+// ========== Operations ==========
 
-// Set value at path (returns new root, immutable)
-Value new_root = lens1.set(root, Value{"NewName"});
-
-// Update value at path with a function
-Value updated = lens1.over(root, [](const Value& v) {
-    return Value{v.as_string("") + "_modified"};
+// Direct methods (recommended)
+Value name = lens1.get(state);
+Value updated = lens1.set(state, Value{"Alice"});
+Value incremented = lens1.over(state, [](Value v) {
+    return Value{v.as_int(0) + 1};
 });
 
-// ========== Lager Integration ==========
-
-// PathLens works directly with lager::view/set/over
-Value name2 = lager::view(lens1, root);
-Value new_root2 = lager::set(lens1, root, Value{"Alice"});
-Value updated2 = lager::over(lens1, root, [](Value v) {
-    return Value{v.as_string() + "!"};
+// Lager integration (also works!)
+Value name2 = lager::view(lens1, state);
+Value updated2 = lager::set(lens1, state, Value{"Alice"});
+Value inc2 = lager::over(lens1, state, [](Value v) {
+    return Value{v.as_int(0) + 1};
 });
 
-// ========== Path Inspection ==========
+// ========== Inspection ==========
 
-// Check if path is empty (root lens)
-bool is_root = lens1.empty();
-
-// Get the underlying path
-const Path& elements = lens1.path();
-
-// Convert to string representation
-std::string str = lens1.to_string();        // ".users[0].name"
-std::string ptr = lens1.to_json_pointer();  // "/users/0/name"
+lens1.empty();           // true if root path
+lens1.depth();           // number of elements
+lens1.path();            // const Path&
+lens1.to_string();       // ".users[0].name"
+lens1.parent();          // PathLens to parent
+lens1.concat(other);     // combine two paths
 ```
 
-**ZoomedValue** - Fluent navigation helper:
+### 4.5 LiteralPath (Compile-Time Paths)
+
+For paths known at compile time, `LiteralPath` provides **zero runtime overhead**:
 
 ```cpp
-// Create a zoomed view at a path
-ZoomedValue zoomed(root, {"users", size_t(0)});
-
-// Navigate further with /
-Value name = (zoomed / "name").get();
-Value age = (zoomed / "age").get();
-
-// Set values
-Value new_root = (zoomed / "name").set(Value{"Alice"});
-
-// Chain operations
-Value new_root2 = ZoomedValue(root) / "config" / "theme"
-    .set(Value{"dark"});
-```
-
-**PathWatcher** - Monitor state changes at a specific path:
-
-```cpp
-#include <lager_ext/lager_lens.h>
+#include <lager_ext/static_path.h>
 using namespace lager_ext;
 
-// Create a watcher for a specific path
-PathWatcher watcher({"users", size_t(0), "name"});
+// ========== Define Path Types ==========
 
-// Or from string path
-PathWatcher watcher2(parse_string_path("/config/theme"));
+// JSON Pointer syntax (C++20 NTTP)
+using UserNamePath = LiteralPath<"/users/0/name">;
+using ConfigTheme = LiteralPath<"/config/theme">;
 
-// Check if value at path has changed
-Value old_state = /* previous state */;
-Value new_state = /* current state */;
+// Segment syntax (more flexible)
+using UserNamePath2 = StaticPath<K<"users">, I<0>, K<"name">>;
 
-if (watcher.has_changed(old_state, new_state)) {
-    Value old_val = watcher.get_old();
-    Value new_val = watcher.get_new();
-    std::cout << "Changed from " << old_val.as_string() 
-              << " to " << new_val.as_string() << std::endl;
+// ========== Use Directly ==========
+
+Value name = UserNamePath::get(state);
+Value updated = UserNamePath::set(state, Value{"Alice"});
+
+// Compile-time depth
+constexpr auto depth = UserNamePath::depth;  // 3
+
+// Convert to runtime Path
+Path runtime = UserNamePath::to_runtime_path();
+
+// ========== Schema Definition Pattern ==========
+
+namespace schema {
+    // Define all paths for your data model
+    using Title = LiteralPath<"/title">;
+    using WindowWidth = LiteralPath<"/window/width">;
+    using WindowHeight = LiteralPath<"/window/height">;
+    
+    template<std::size_t N>
+    using UserName = StaticPath<K<"users">, I<N>, K<"name">>;
+    
+    template<std::size_t N>
+    using UserAge = StaticPath<K<"users">, I<N>, K<"age">>;
 }
 
-// Get current value at path
-Value current = watcher.get(new_state);
+// Type-safe access
+Value title = schema::Title::get(state);
+Value user0_name = schema::UserName<0>::get(state);
+Value user5_age = schema::UserAge<5>::get(state);
 ```
 
-### 4.3 Static Path Lens
-
-Compile-time path composition using `lager::lenses`:
+**Path Composition:**
 
 ```cpp
-#include <lager_ext/lager_lens.h>
-using namespace lager_ext;
-
-// Method 1: Variadic arguments (simple and recommended)
-auto lens = static_path_lens("users", 0, "name");
-
-// Method 2: String literal syntax (C++20 NTTP)
-auto lens = static_path_lens<"/users/0/name">();
-
-// Method 3: Explicit lens composition (full control)
-auto lens = zug::comp(
-    key_lens("users"),
-    index_lens(0),
-    key_lens("name")
-);
-
-// Use with lager::view / lager::set / lager::over
-Value name = lager::view(lens, root);
-Value new_root = lager::set(lens, root, "Alice");
-```
-
-> **Note:** `static_path_lens<"/a/0/b">()` and `static_path_lens("a", 0, "b")` are **functionally equivalent** with identical runtime performance. Both generate the same `RuntimePath` internally. The difference is purely syntactic:
-> - Use `static_path_lens<"/path">()` for JSON Pointer style strings
-> - Use `static_path_lens("a", 0, "b")` for variadic argument style
-
-**Static Path Types (C++20):**
-
-For compile-time path type definitions, use `LiteralPath` or `StaticPath`:
-
-```cpp
-#include <lager_ext/static_path.h>
-using namespace lager_ext;
-
-// Define path using string literal syntax (C++20 NTTP) - Recommended
-using UserNamePath = LiteralPath<"/users/0/name">;
-
-// Use static methods directly
-Value name = UserNamePath::get(root);
-Value new_root = UserNamePath::set(root, Value{"Alice"});
-
-// Convert to runtime path if needed
-Path runtime_path = UserNamePath::to_runtime_path();
-```
-
-> **Note:** Core types are aliased to the `lager_ext` namespace for convenience:
-> - `lager_ext::LiteralPath` (alias for `lager_ext::static_path::LiteralPath`)
-> - `lager_ext::StaticPath`, `lager_ext::K`, `lager_ext::I`
-
-**Advanced: Path Composition with Segments**
-
-For dynamic path construction or extending paths, use `StaticPath` with segment types:
-
-```cpp
-#include <lager_ext/static_path.h>
-using namespace lager_ext;
-
-// Equivalent to LiteralPath<"/users/0/name">
-using UserNamePath = StaticPath<K<"users">, I<0>, K<"name">>;
-
-// Extend an existing path
+// Extend existing path
 using UsersPath = LiteralPath<"/users">;
-using FirstUserPath = ExtendPathT<UsersPath, I<0>>;           // /users/0
-using FirstUserNamePath = ExtendPathT<FirstUserPath, K<"name">>; // /users/0/name
+using FirstUser = ExtendPathT<UsersPath, I<0>>;
+using FirstUserName = ExtendPathT<FirstUser, K<"name">>;
 
 // Concatenate two paths
-using FullPath = ConcatPathT<LiteralPath<"/users">, LiteralPath<"/0/name">>;
-
-// Template with dynamic index (compile-time constant)
-template<std::size_t N>
-using NthUserName = StaticPath<K<"users">, I<N>, K<"name">>;
-
-using User0Name = NthUserName<0>;  // /users/0/name
-using User5Name = NthUserName<5>;  // /users/5/name
+using FullPath = ConcatPathT<
+    LiteralPath<"/users">,
+    LiteralPath<"/0/name">
+>;
 ```
 
-### 4.4 Unified Path API (`path::`)
+### 4.6 Unified API (`path::` namespace)
 
-For a single entry point to all path operations, use the `path` namespace:
+A single entry point for all path operations:
 
 ```cpp
 #include <lager_ext/path.h>
@@ -657,101 +646,222 @@ using namespace lager_ext;
 
 // ========== Create Lenses ==========
 
-// Compile-time string literal (C++20 NTTP)
+// Compile-time (recommended for fixed paths)
 auto lens1 = path::lens<"/users/0/name">();
 
-// Runtime string path
-std::string dynamic_path = "/users/" + std::to_string(user_id) + "/name";
-auto lens2 = path::lens(dynamic_path);
+// Runtime string
+auto lens2 = path::lens("/users/" + std::to_string(id) + "/name");
 
-// Variadic path elements
+// Variadic elements
 auto lens3 = path::lens("users", 0, "name");
 
-// ========== Builder Style ==========
+// ========== Direct Access ==========
 
-auto builder = path::builder() / "users" / 0 / "name";
-Value name = builder.get(root);
-Value updated = builder.set(root, Value{"Alice"});
+// Get
+Value name = path::get(state, "/users/0/name");
+Value name = path::get(state, "users", 0, "name");
 
-// ========== Direct Access (without lens) ==========
+// Set
+Value updated = path::set(state, "/users/0/name", Value{"Alice"});
 
-// Get value at path
-Value name = path::get(root, "/users/0/name");
-Value name = path::get(root, "users", 0, "name");
-
-// Set value at path
-Value updated = path::set(root, "/users/0/name", Value{"Alice"});
-
-// Update with function
-Value updated = path::over(root, "/users/0/age", [](const Value& v) {
+// Over (transform)
+Value inc = path::over(state, "/counter", [](const Value& v) {
     return Value{v.as_int(0) + 1};
 });
 
-// ========== Safe Access (with error handling) ==========
+// ========== Builder Style ==========
 
-Path elements = {"users", size_t(0), "name"};
-PathAccessResult result = path::safe_get(root, elements);
+auto p = path::builder() / "users" / 0 / "name";
+Value name = p.get(state);
+Value updated = p.set(state, Value{"Alice"});
+
+// ========== Safe Access ==========
+
+PathAccessResult result = path::safe_get(state, {"users", size_t(0), "name"});
 if (result) {
-    std::cout << "Found: " << result.value.as_string() << std::endl;
+    use(result.value);
 } else {
-    std::cout << "Error: " << result.error_message << std::endl;
+    log_error(result.error_message);
+    // result.error_code, result.failed_at_index available
 }
 
 // ========== Utilities ==========
 
-// Parse string to path elements
 Path elements = path::parse("/users/0/name");
-
-// Convert path elements to string
-std::string str = path::to_string(elements);      // ".users[0].name"
-std::string ptr = path::to_json_pointer(elements); // "/users/0/name"
+std::string dot_notation = path::to_string(elements);      // ".users[0].name"
+std::string json_pointer = path::to_json_pointer(elements); // "/users/0/name"
 
 // Cache management
 path::clear_cache();
-auto stats = path::cache_stats();
+auto stats = path::cache_stats();  // hits, misses, hit_rate
 ```
 
-### 4.5 String Path Operations
+### 4.7 ZoomedValue (Focused View)
 
-Parse RFC 6901 JSON Pointer style paths:
+A lightweight wrapper for navigating within a `Value` tree:
+
+```cpp
+#include <lager_ext/lager_lens.h>
+using namespace lager_ext;
+
+Value state = /* ... */;
+
+// Create zoomed view
+ZoomedValue users = zoom(state) / "users";
+ZoomedValue first_user = users / 0;
+
+// Read values
+Value name = (first_user / "name").get();
+Value age = (first_user / "age").get();
+
+// Write values (returns new root)
+Value new_state = (first_user / "name").set(Value{"Alice"});
+
+// Continue working with updated state
+ZoomedValue updated_user = first_user.with_root(new_state);
+Value new_name = (updated_user / "name").get();  // "Alice"
+
+// Inspection
+first_user.depth();    // 2
+first_user.at_root();  // false
+first_user.parent();   // ZoomedValue at /users
+first_user.to_lens();  // PathLens{"/users/0"}
+```
+
+### 4.8 PathWatcher (Change Detection)
+
+Monitor specific paths for changes between state snapshots:
+
+```cpp
+#include <lager_ext/lager_lens.h>
+using namespace lager_ext;
+
+PathWatcher watcher;
+
+// Register paths to watch
+watcher.watch("/users/0/name", [](const Value& old_v, const Value& new_v) {
+    std::cout << "Name: " << old_v.as_string() << " -> " << new_v.as_string() << "\n";
+});
+
+watcher.watch("/config/theme", [](const Value& old_v, const Value& new_v) {
+    update_ui_theme(new_v.as_string());
+});
+
+// Check for changes (call after state update)
+Value old_state = /* previous */;
+Value new_state = /* current */;
+
+std::size_t triggered = watcher.check(old_state, new_state);
+std::cout << "Triggered " << triggered << " callbacks\n";
+
+// Management
+watcher.unwatch("/config/theme");
+watcher.clear();
+watcher.size();   // number of watched paths
+watcher.empty();  // true if no watches
+```
+
+### 4.9 String Path Parsing (RFC 6901)
 
 ```cpp
 #include <lager_ext/string_path.h>
 using namespace lager_ext;
 
-// Parse a path string
+// Parse JSON Pointer
 Path path = parse_string_path("/users/0/name");
-// Result: {"users", 0, "name"}
+// Result: {"users", size_t(0), "name"}
 
-// Convert path to string
+// Convert back to string
 std::string str = path_to_string_path(path);
 // Result: "/users/0/name"
 
-// JSON Pointer escape sequences
+// Escape sequences (RFC 6901)
 // ~0 = literal ~
 // ~1 = literal /
-Path escaped = parse_string_path("/a~1b/c~0d");
-// Result: {"a/b", "c~d"}
+Path escaped = parse_string_path("/config/theme~0mode");  // key: "theme~mode"
+Path with_slash = parse_string_path("/tags~1skills/0");   // key: "tags/skills"
 ```
 
-### 4.6 Path Utilities
+### 4.10 Core Path Engine (`path_core.h`)
+
+The low-level path traversal engine used by all higher-level path abstractions.
 
 ```cpp
-#include <lager_ext/path_utils.h>
+#include <lager_ext/path_core.h>
 using namespace lager_ext;
 
-// Get value at path
-Value val = get_at_path(root, {"users", size_t(0), "name"});
+// ========== Core Operations ==========
 
-// Set value at path (returns new root)
-Value new_root = set_at_path(root, {"users", size_t(0), "name"}, "Alice");
+// Get value at path (returns null Value if path doesn't exist)
+Value val = get_at_path(state, {"users", size_t(0), "name"});
 
-// Set with auto-vivification (creates intermediate structures)
-Value new_root = set_at_path_vivify(Value{}, {"a", "b", "c"}, 123);
+// Set value at path (strict mode - fails silently if path doesn't exist)
+Value updated = set_at_path(state, {"users", size_t(0), "name"}, Value{"Alice"});
+
+// Set with auto-vivification (creates intermediate maps/vectors as needed)
+Value new_state = set_at_path_vivify(Value{}, {"a", "b", "c"}, Value{123});
 // Result: {"a": {"b": {"c": 123}}}
 
-// Delete at path
-Value without = delete_at_path(root, {"users", size_t(0)});
+// Erase at path (for maps: removes key, for vectors: sets to null)
+Value without_key = erase_at_path(state, {"users", size_t(0), "email"});
+
+// ========== Path Validation ==========
+
+// Check if a path exists
+bool exists = is_valid_path(state, {"users", size_t(0), "name"});
+
+// Get how deep a path can be traversed (0 to path.size())
+std::size_t depth = valid_path_depth(state, {"users", size_t(99), "name"});
+// Returns 1 if users[99] doesn't exist
+```
+
+**Core API Reference:**
+
+| Function | Description |
+|----------|-------------|
+| `get_at_path(root, path)` | Get value at path, returns null if not found |
+| `set_at_path(root, path, value)` | Set value at path (strict mode) |
+| `set_at_path_vivify(root, path, value)` | Set value with auto-creation of intermediate nodes |
+| `erase_at_path(root, path)` | Erase value at path |
+| `is_valid_path(root, path)` | Check if entire path can be traversed |
+| `valid_path_depth(root, path)` | Get number of path elements that exist |
+
+### 4.11 Performance Considerations
+
+| API | Use Case | Overhead |
+|-----|----------|----------|
+| `LiteralPath<"/a/b">` | Fixed paths in code | **Zero** (compile-time) |
+| `PathLens` + cache | Repeated runtime paths | Low (LRU cache hit) |
+| `PathLens` no cache | One-off access | Medium (lens construction) |
+| `get_at_path()` | Simple traversal | Low (no lens) |
+
+**Best Practices:**
+
+```cpp
+// ✅ Good: Compile-time path for fixed access
+using NamePath = LiteralPath<"/users/0/name">;
+Value name = NamePath::get(state);
+
+// ✅ Good: Reuse PathLens for repeated access
+PathLens user_lens = root / "users" / selected_id;
+Value name = (user_lens / "name").get(state);
+Value age = (user_lens / "age").get(state);
+
+// ✅ Good: Direct access for one-off use
+Value theme = path::get(state, "/config/theme");
+
+// ❌ Avoid: Recreating lens in tight loop
+for (int i = 0; i < 1000; ++i) {
+    auto lens = PathLens() / "items" / i / "value";  // Recreated each iteration!
+    process(lens.get(state));
+}
+
+// ✅ Better: Build path once, reuse
+PathLens items = root / "items";
+for (int i = 0; i < 1000; ++i) {
+    auto lens = items / i / "value";
+    process(lens.get(state));
+}
 ```
 
 ---
@@ -1080,8 +1190,8 @@ release_memory_region(handle);
 | `<lager_ext/builders.h>` | Builder classes for O(n) container construction |
 | `<lager_ext/serialization.h>` | Binary and JSON serialization |
 | `<lager_ext/path.h>` | **Unified Path API** - single entry point for all path operations |
-| `<lager_ext/path_utils.h>` | Path traversal and manipulation |
-| `<lager_ext/lager_lens.h>` | PathLens and static path lens integration |
+| `<lager_ext/path_core.h>` | Core path traversal engine (low-level API) |
+| `<lager_ext/lager_lens.h>` | PathLens and lager lens integration |
 | `<lager_ext/static_path.h>` | Compile-time static path lens (C++20 NTTP) |
 | `<lager_ext/string_path.h>` | RFC 6901 JSON Pointer parsing |
 | `<lager_ext/value_diff.h>` | Value difference detection |

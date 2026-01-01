@@ -20,8 +20,12 @@
 ///
 /// 3. String path parsing:
 ///    @code
-///    PathLens path("/users/0/name");
-///    Value name = path.get(data);
+///    Value name = path::get(data, "/users/0/name");
+///    @endcode
+///
+/// 4. Variadic path elements:
+///    @code
+///    Value name = path::get(data, "users", 0, "name");
 ///    @endcode
 
 #pragma once
@@ -48,19 +52,19 @@ using Builder = PathLens;
 /// Path element (string key or size_t index)
 using Element = PathElement;
 
-/// Path (vector of elements)
-using Elements = Path;
+/// Path container (vector of elements)
+using PathVec = Path;
 
 // ============================================================
 // Unified Lens API
 // ============================================================
 
 /// @brief Create a lens from compile-time string literal (C++20 NTTP)
-/// @tparam Path JSON Pointer style path (e.g., "/users/0/name")
+/// @tparam PathStr JSON Pointer style path (e.g., "/users/0/name")
 /// @return Type-erased LagerValueLens
-template<FixedString Path>
+template<FixedString PathStr>
 [[nodiscard]] Lens lens() {
-    return static_path_lens<Path>();
+    return static_path_lens<PathStr>();
 }
 
 /// @brief Create a lens from runtime string path
@@ -71,9 +75,9 @@ template<FixedString Path>
 }
 
 /// @brief Create a lens from variadic path elements
-template<PathElementType... Elements>
-[[nodiscard]] auto lens(Elements&&... elements) {
-    return static_path_lens(std::forward<Elements>(elements)...);
+template<PathElementType... Elems>
+[[nodiscard]] auto lens(Elems&&... elements) {
+    return static_path_lens(std::forward<Elems>(elements)...);
 }
 
 // ============================================================
@@ -86,62 +90,189 @@ template<PathElementType... Elements>
 }
 
 /// @brief Create a PathLens from variadic elements
-template<PathElementType... Elements>
-[[nodiscard]] Builder make_builder(Elements&&... elements) {
-    return make_path(std::forward<Elements>(elements)...);
+template<PathElementType... Elems>
+[[nodiscard]] Builder make(Elems&&... elements) {
+    return make_path(std::forward<Elems>(elements)...);
 }
 
 // ============================================================
-// Direct Access Functions
+// Get - Read value at path
 // ============================================================
+
+/// @brief Get value at Path container
+[[nodiscard]] inline Value get(const Value& data, const PathVec& path) {
+    return get_at_path(data, path);
+}
 
 /// @brief Get value at string path
 [[nodiscard]] inline Value get(const Value& data, std::string_view path_str) {
-    return PathLens(parse_string_path(path_str)).get(data);
+    return get_at_path(data, parse_string_path(path_str));
 }
 
 /// @brief Get value at variadic path
-template<PathElementType... Elements>
-[[nodiscard]] Value get(const Value& data, Elements&&... path_elements) {
-    return get_at(data, std::forward<Elements>(path_elements)...);
+template<PathElementType... Elems>
+[[nodiscard]] Value get(const Value& data, Elems&&... path_elements) {
+    return get_at_path(data, make_path(std::forward<Elems>(path_elements)...).path());
+}
+
+// ============================================================
+// Set - Write value at path (strict mode)
+// ============================================================
+
+/// @brief Set value at Path container
+[[nodiscard]] inline Value set(const Value& data, const PathVec& path, Value new_value) {
+    return set_at_path(data, path, std::move(new_value));
 }
 
 /// @brief Set value at string path
 [[nodiscard]] inline Value set(const Value& data, std::string_view path_str, Value new_value) {
-    return PathLens(parse_string_path(path_str)).set(data, std::move(new_value));
+    return set_at_path(data, parse_string_path(path_str), std::move(new_value));
 }
 
 /// @brief Set value at variadic path
-template<PathElementType... Elements>
-[[nodiscard]] Value set(const Value& data, Value new_value, Elements&&... path_elements) {
-    return set_at(data, std::move(new_value), std::forward<Elements>(path_elements)...);
+/// @note Parameters: (data, path_elem1, path_elem2, ..., new_value)
+/// @example set(data, "users", 0, "name", Value{"Alice"})
+template<typename... Args>
+    requires (sizeof...(Args) >= 2)  // At least one path element + value
+[[nodiscard]] Value set(const Value& data, Args&&... args) {
+    // Extract the last argument as value, rest as path elements
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        auto args_tuple = std::forward_as_tuple(std::forward<Args>(args)...);
+        constexpr std::size_t N = sizeof...(Args);
+        Path p = make_path(std::get<Is>(std::move(args_tuple))...).path();
+        return set_at_path(data, p, Value{std::get<N-1>(std::move(args_tuple))});
+    }(std::make_index_sequence<sizeof...(Args) - 1>{});
+}
+
+// ============================================================
+// Over - Update value at path using a function
+// ============================================================
+
+/// @brief Update value at Path container using a function
+template<typename Fn>
+[[nodiscard]] Value over(const Value& data, const PathVec& path, Fn&& fn) {
+    return set_at_path(data, path, std::forward<Fn>(fn)(get_at_path(data, path)));
 }
 
 /// @brief Update value at string path using a function
 template<typename Fn>
 [[nodiscard]] Value over(const Value& data, std::string_view path_str, Fn&& fn) {
-    PathLens p(parse_string_path(path_str));
-    return p.over(data, std::forward<Fn>(fn));
+    auto path = parse_string_path(path_str);
+    return set_at_path(data, path, std::forward<Fn>(fn)(get_at_path(data, path)));
 }
 
-/// @brief Update value at variadic path
-template<typename Fn, PathElementType... Elements>
-[[nodiscard]] Value over(const Value& data, Fn&& fn, Elements&&... path_elements) {
-    return over_at(data, std::forward<Fn>(fn), std::forward<Elements>(path_elements)...);
+/// @brief Update value at variadic path using a function
+/// @note Parameters: (data, path_elem1, ..., path_elemN, fn)
+template<typename Fn, PathElementType... Elems>
+[[nodiscard]] Value over(const Value& data, Fn&& fn, Elems&&... path_elements) {
+    auto path = make_path(std::forward<Elems>(path_elements)...).path();
+    return set_at_path(data, path, std::forward<Fn>(fn)(get_at_path(data, path)));
 }
 
 // ============================================================
-// Safe Access (with error handling)
+// Set Vivify - Write with auto-creation of intermediate nodes
+// ============================================================
+
+/// @brief Set value at Path container, creating intermediate nodes as needed
+[[nodiscard]] inline Value set_vivify(const Value& data, const PathVec& path, Value new_value) {
+    return set_at_path_vivify(data, path, std::move(new_value));
+}
+
+/// @brief Set value at string path with auto-vivification
+[[nodiscard]] inline Value set_vivify(const Value& data, std::string_view path_str, Value new_value) {
+    return set_at_path_vivify(data, parse_string_path(path_str), std::move(new_value));
+}
+
+/// @brief Set value at variadic path with auto-vivification
+/// @note Parameters: (data, path_elem1, ..., path_elemN, new_value)
+template<typename... Args>
+    requires (sizeof...(Args) >= 2)
+[[nodiscard]] Value set_vivify(const Value& data, Args&&... args) {
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        auto args_tuple = std::forward_as_tuple(std::forward<Args>(args)...);
+        constexpr std::size_t N = sizeof...(Args);
+        Path p = make_path(std::get<Is>(std::move(args_tuple))...).path();
+        return set_at_path_vivify(data, p, Value{std::get<N-1>(std::move(args_tuple))});
+    }(std::make_index_sequence<sizeof...(Args) - 1>{});
+}
+
+// ============================================================
+// Erase - Remove value at path
+// ============================================================
+
+/// @brief Erase value at Path container
+/// For maps: erases the key. For vectors: sets to null.
+[[nodiscard]] inline Value erase(const Value& data, const PathVec& path) {
+    return erase_at_path(data, path);
+}
+
+/// @brief Erase value at string path
+[[nodiscard]] inline Value erase(const Value& data, std::string_view path_str) {
+    return erase_at_path(data, parse_string_path(path_str));
+}
+
+/// @brief Erase value at variadic path
+template<PathElementType... Elems>
+[[nodiscard]] Value erase(const Value& data, Elems&&... path_elements) {
+    return erase_at_path(data, make_path(std::forward<Elems>(path_elements)...).path());
+}
+
+// ============================================================
+// Exists - Check if path exists
+// ============================================================
+
+/// @brief Check if a Path container exists in the data
+[[nodiscard]] inline bool exists(const Value& data, const PathVec& path) {
+    return is_valid_path(data, path);
+}
+
+/// @brief Check if a string path exists in the data
+[[nodiscard]] inline bool exists(const Value& data, std::string_view path_str) {
+    return is_valid_path(data, parse_string_path(path_str));
+}
+
+/// @brief Check if a variadic path exists in the data
+template<PathElementType... Elems>
+[[nodiscard]] bool exists(const Value& data, Elems&&... path_elements) {
+    return is_valid_path(data, make_path(std::forward<Elems>(path_elements)...).path());
+}
+
+// ============================================================
+// Valid Depth - How far can we traverse?
+// ============================================================
+
+/// @brief Get how deep a path can be traversed
+[[nodiscard]] inline std::size_t valid_depth(const Value& data, const PathVec& path) {
+    return valid_path_depth(data, path);
+}
+
+/// @brief Get how deep a string path can be traversed
+[[nodiscard]] inline std::size_t valid_depth(const Value& data, std::string_view path_str) {
+    return valid_path_depth(data, parse_string_path(path_str));
+}
+
+// ============================================================
+// Safe Access - Operations with detailed error handling
 // ============================================================
 
 /// @brief Safe get with detailed error information
-[[nodiscard]] inline PathAccessResult safe_get(const Value& data, const Elements& path) {
+[[nodiscard]] inline PathAccessResult safe_get(const Value& data, const PathVec& path) {
     return get_at_path_safe(data, path);
 }
 
+/// @brief Safe get at string path with detailed error information
+[[nodiscard]] inline PathAccessResult safe_get(const Value& data, std::string_view path_str) {
+    return get_at_path_safe(data, parse_string_path(path_str));
+}
+
 /// @brief Safe set with detailed error information
-[[nodiscard]] inline PathAccessResult safe_set(const Value& data, const Elements& path, Value new_value) {
+[[nodiscard]] inline PathAccessResult safe_set(const Value& data, const PathVec& path, Value new_value) {
     return set_at_path_safe(data, path, std::move(new_value));
+}
+
+/// @brief Safe set at string path with detailed error information
+[[nodiscard]] inline PathAccessResult safe_set(const Value& data, std::string_view path_str, Value new_value) {
+    return set_at_path_safe(data, parse_string_path(path_str), std::move(new_value));
 }
 
 // ============================================================
@@ -149,17 +280,17 @@ template<typename Fn, PathElementType... Elements>
 // ============================================================
 
 /// @brief Parse a string path into path elements
-[[nodiscard]] inline Elements parse(std::string_view path_str) {
+[[nodiscard]] inline PathVec parse(std::string_view path_str) {
     return parse_string_path(path_str);
 }
 
 /// @brief Convert path elements to string (e.g., ".users[0].name")
-[[nodiscard]] inline std::string to_string(const Elements& path) {
+[[nodiscard]] inline std::string to_string(const PathVec& path) {
     return path_to_string(path);
 }
 
 /// @brief Convert path elements to JSON Pointer string (e.g., "/users/0/name")
-[[nodiscard]] inline std::string to_json_pointer(const Elements& path) {
+[[nodiscard]] inline std::string to_json_pointer(const PathVec& path) {
     return path_to_string_path(path);
 }
 

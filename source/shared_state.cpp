@@ -4,7 +4,7 @@
 // This implementation uses Boost.Interprocess for cross-platform shared memory
 
 #include <lager_ext/shared_state.h>
-#include <lager_ext/path_utils.h>
+#include <lager_ext/path_core.h>
 
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <boost/interprocess/mapped_region.hpp>
@@ -909,24 +909,24 @@ DiffResult decode_diff(const ByteBuffer& data) {
 // Apply Diff
 // ============================================================
 
-// Uses path_utils.h functions: set_at_path_direct, erase_at_path_direct
+// Uses path_core.h functions: set_at_path, erase_at_path
 
 Value apply_diff(const Value& base, const DiffResult& diff) {
     Value result = base;
 
     // Apply removals first (erase from maps or set to null for arrays)
     for (const auto& [path, _] : diff.removed) {
-        result = erase_at_path_direct(result, path);
+        result = erase_at_path(result, path);
     }
 
     // Apply modifications
     for (const auto& mod : diff.modified) {
-        result = set_at_path_direct(result, mod.path, mod.new_value);
+        result = set_at_path(result, mod.path, mod.new_value);
     }
 
     // Apply additions
     for (const auto& [path, value] : diff.added) {
-        result = set_at_path_direct(result, path, value);
+        result = set_at_path(result, path, value);
     }
 
     return result;

@@ -2,7 +2,7 @@
 // Implementation of lager::lens<Value, Value> scheme
 
 #include <lager_ext/lager_lens.h>
-#include <lager_ext/path_utils.h>
+#include <lager_ext/path_core.h>
 #include <lager_ext/string_path.h>  // For parse_string_path
 #include <zug/compose.hpp>
 #include <unordered_map>
@@ -122,10 +122,10 @@ LagerValueLens build_path_lens_uncached(const Path& path)
     // Single lens: capture path once, traverse directly
     return lager::lenses::getset(
         [path](const Value& root) -> Value {
-            return get_at_path_direct(root, path);
+            return get_at_path(root, path);
         },
         [path](Value root, Value new_val) -> Value {
-            return set_at_path_direct(root, path, std::move(new_val));
+            return set_at_path(root, path, std::move(new_val));
         }
     );
 }
@@ -324,7 +324,7 @@ PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new
     result.success = true;
     result.error_code = PathErrorCode::Success;
     result.resolved_path = path;
-    result.value = set_at_path_direct(root, path, std::move(new_val));
+    result.value = set_at_path(root, path, std::move(new_val));
     return result;
 }
 
@@ -333,11 +333,11 @@ PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new
 // ============================================================
 
 Value PathLens::get(const Value& root) const {
-    return get_at_path_direct(root, path_);
+    return get_at_path(root, path_);
 }
 
 Value PathLens::set(const Value& root, Value new_val) const {
-    return set_at_path_direct(root, path_, std::move(new_val));
+    return set_at_path(root, path_, std::move(new_val));
 }
 
 // ============================================================
@@ -378,8 +378,8 @@ std::size_t PathWatcher::check(const Value& old_state, const Value& new_state) {
     std::size_t triggered = 0;
     
     for (const auto& entry : watches_) {
-        Value old_val = get_at_path_direct(old_state, entry.path);
-        Value new_val = get_at_path_direct(new_state, entry.path);
+        Value old_val = get_at_path(old_state, entry.path);
+        Value new_val = get_at_path(new_state, entry.path);
         
         if (old_val != new_val) {
             entry.callback(old_val, new_val);
