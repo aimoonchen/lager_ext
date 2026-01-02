@@ -312,10 +312,10 @@ builder.upsert("items", [](const Value& current) {
 });
 
 // Set at nested path with auto-vivification
-builder.set_in({"users", size_t(0), "name"}, "Alice");
+builder.set_at_path({"users", size_t(0), "name"}, "Alice");
 
 // Update at nested path
-builder.update_in({"users", size_t(0), "age"}, [](const Value& v) {
+builder.update_at_path({"users", size_t(0), "age"}, [](const Value& v) {
     return Value{v.as_int(0) + 1};
 });
 

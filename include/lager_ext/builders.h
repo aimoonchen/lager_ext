@@ -148,7 +148,7 @@ public:
     /// @param val The value to set
     /// @return Reference to this builder for chaining
     template <typename T>
-    BasicMapBuilder& set_in(const Path& path, T&& val) {
+    BasicMapBuilder& set_at_path(const Path& path, T&& val) {
         if (path.empty()) return *this;
         
         // Get first key (must be string for map)
@@ -177,7 +177,7 @@ public:
     /// @param fn Function taking value_type and returning value_type
     /// @return Reference to this builder for chaining
     template<typename Fn>
-    BasicMapBuilder& update_in(const Path& path, Fn&& fn) {
+    BasicMapBuilder& update_at_path(const Path& path, Fn&& fn) {
         if (path.empty()) return *this;
         
         auto* first_key = std::get_if<std::string>(&path[0]);
@@ -343,7 +343,7 @@ public:
 
     /// Set value at a nested path with auto-vivification
     template <typename T>
-    BasicVectorBuilder& set_in(const Path& path, T&& val) {
+    BasicVectorBuilder& set_at_path(const Path& path, T&& val) {
         if (path.empty()) return *this;
         
         auto* first_idx = std::get_if<std::size_t>(&path[0]);
@@ -363,7 +363,7 @@ public:
     /// Update value at a nested path using a function
     template<typename Fn>
     requires ValueTransformer<Fn, value_type>
-    BasicVectorBuilder& update_in(const Path& path, Fn&& fn) {
+    BasicVectorBuilder& update_at_path(const Path& path, Fn&& fn) {
         if (path.empty()) return *this;
         
         auto* first_idx = std::get_if<std::size_t>(&path[0]);
