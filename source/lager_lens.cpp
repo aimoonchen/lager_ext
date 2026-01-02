@@ -340,54 +340,5 @@ Value PathLens::set(const Value& root, Value new_val) const {
     return set_at_path(root, path_, std::move(new_val));
 }
 
-// ============================================================
-// PathWatcher implementation
-// ============================================================
-
-void PathWatcher::watch(const std::string& path_str, ChangeCallback callback) {
-    watch(parse_string_path(path_str), std::move(callback));
-}
-
-void PathWatcher::watch(Path path, ChangeCallback callback) {
-    for (auto& entry : watches_) {
-        if (entry.path == path) {
-            entry.callback = std::move(callback);
-            return;
-        }
-    }
-    watches_.push_back(WatchEntry{std::move(path), std::move(callback)});
-}
-
-void PathWatcher::unwatch(const std::string& path_str) {
-    unwatch(parse_string_path(path_str));
-}
-
-void PathWatcher::unwatch(const Path& path) {
-    watches_.erase(
-        std::remove_if(watches_.begin(), watches_.end(),
-            [&path](const WatchEntry& entry) { return entry.path == path; }),
-        watches_.end()
-    );
-}
-
-void PathWatcher::clear() {
-    watches_.clear();
-}
-
-std::size_t PathWatcher::check(const Value& old_state, const Value& new_state) {
-    std::size_t triggered = 0;
-    
-    for (const auto& entry : watches_) {
-        Value old_val = get_at_path(old_state, entry.path);
-        Value new_val = get_at_path(new_state, entry.path);
-        
-        if (old_val != new_val) {
-            entry.callback(old_val, new_val);
-            ++triggered;
-        }
-    }
-    
-    return triggered;
-}
 
 } // namespace lager_ext

@@ -48,6 +48,7 @@ set(LAGER_EXT_SOURCES
     source/lager_lens.cpp
     source/multi_store.cpp
     source/path_core.cpp
+    source/path_watcher.cpp
     source/shared_state.cpp
     source/shared_value_region.cpp
     source/string_path.cpp
@@ -66,6 +67,7 @@ set(LAGER_EXT_HEADERS
     include/lager_ext/multi_store.h
     include/lager_ext/path.h
     include/lager_ext/path_core.h
+    include/lager_ext/path_watcher.h
     include/lager_ext/scene_types.h
     include/lager_ext/shared_state.h
     include/lager_ext/shared_value.h

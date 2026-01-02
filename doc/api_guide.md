@@ -730,10 +730,20 @@ first_user.to_lens();  // PathLens{"/users/0"}
 
 ### 4.8 PathWatcher (Change Detection)
 
-Monitor specific paths for changes between state snapshots:
+Monitor specific paths for changes between state snapshots. Optimized with **trie-based indexing** and **structural sharing pruning** for high performance.
+
+> **Note:** `PathWatcher` is a standalone module in `<lager_ext/path_watcher.h>`. It is **independent of lager's cursor.watch()** system and does not require a lager store. This makes it suitable for:
+> - Runtime-determined paths (e.g., from configuration or user input)
+> - Cross-process state synchronization (`SharedState`)
+> - Comparing arbitrary `Value` trees without a lager store
+
+**Performance Optimizations:**
+1. **Fast path equality**: Skips check entirely if states are identical
+2. **Trie structure**: Shared path prefixes are only traversed once
+3. **Structural sharing**: Uses immer's pointer identity for early pruning of unchanged subtrees
 
 ```cpp
-#include <lager_ext/lager_lens.h>
+#include <lager_ext/path_watcher.h>
 using namespace lager_ext;
 
 PathWatcher watcher;
@@ -741,6 +751,10 @@ PathWatcher watcher;
 // Register paths to watch
 watcher.watch("/users/0/name", [](const Value& old_v, const Value& new_v) {
     std::cout << "Name: " << old_v.as_string() << " -> " << new_v.as_string() << "\n";
+});
+
+watcher.watch("/users/0/age", [](const Value& old_v, const Value& new_v) {
+    std::cout << "Age changed\n";
 });
 
 watcher.watch("/config/theme", [](const Value& old_v, const Value& new_v) {
@@ -759,7 +773,46 @@ watcher.unwatch("/config/theme");
 watcher.clear();
 watcher.size();   // number of watched paths
 watcher.empty();  // true if no watches
+
+// ========== Performance Statistics ==========
+
+// Get statistics for monitoring and tuning
+const auto& stats = watcher.stats();
+
+std::cout << "Total checks: " << stats.total_checks << "\n";
+std::cout << "Skipped (equal): " << stats.skipped_equal << "\n";
+std::cout << "Trie nodes visited: " << stats.nodes_visited << "\n";
+std::cout << "Nodes pruned: " << stats.nodes_pruned << "\n";
+std::cout << "Callbacks triggered: " << stats.callbacks_triggered << "\n";
+
+// Reset statistics
+watcher.reset_stats();
 ```
+
+**PathWatcher API Reference:**
+
+| Method | Description |
+|--------|-------------|
+| `watch(path, callback)` | Register a callback for path changes |
+| `unwatch(path)` | Remove all callbacks for a path |
+| `clear()` | Remove all watches |
+| `check(old, new)` | Compare states and trigger callbacks |
+| `size()` | Number of registered watches |
+| `empty()` | Check if no watches registered |
+| `stats()` | Get performance statistics |
+| `reset_stats()` | Reset statistics counters |
+
+**Stats Structure:**
+
+| Field | Description |
+|-------|-------------|
+| `total_checks` | Total number of `check()` calls |
+| `skipped_equal` | Checks skipped due to equal states |
+| `nodes_visited` | Trie nodes visited during checks |
+| `nodes_pruned` | Subtrees pruned via structural sharing |
+| `callbacks_triggered` | Total callbacks invoked |
+
+> **Performance Tip:** When watching many paths with shared prefixes (e.g., `/users/0/name`, `/users/0/age`, `/users/0/email`), PathWatcher's trie structure ensures `/users/0` is only traversed once. Combined with structural sharing pruning, unchanged subtrees are skipped entirely.
 
 ### 4.9 String Path Parsing (RFC 6901)
 
@@ -1191,7 +1244,8 @@ release_memory_region(handle);
 | `<lager_ext/serialization.h>` | Binary and JSON serialization |
 | `<lager_ext/path.h>` | **Unified Path API** - single entry point for all path operations |
 | `<lager_ext/path_core.h>` | Core path traversal engine (low-level API) |
-| `<lager_ext/lager_lens.h>` | PathLens and lager lens integration |
+| `<lager_ext/path_watcher.h>` | Path change detection with trie-based optimization |
+| `<lager_ext/lager_lens.h>` | PathLens, ZoomedValue and lager lens integration |
 | `<lager_ext/static_path.h>` | Compile-time static path lens (C++20 NTTP) |
 | `<lager_ext/string_path.h>` | RFC 6901 JSON Pointer parsing |
 | `<lager_ext/value_diff.h>` | Value difference detection |
