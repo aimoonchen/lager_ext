@@ -262,12 +262,14 @@ using namespace lager_ext;
 
 **Available Builders:**
 
-| Builder | Output Type | Thread-Safe Variant |
-|---------|-------------|---------------------|
+| Single-Threaded Builder | Output Type | Thread-Safe Variant |
+|-------------------------|-------------|---------------------|
 | `MapBuilder` | `Value` containing `ValueMap` | `SyncMapBuilder` |
 | `VectorBuilder` | `Value` containing `ValueVector` | `SyncVectorBuilder` |
 | `ArrayBuilder` | `Value` containing `ValueArray` | `SyncArrayBuilder` |
 | `TableBuilder` | `Value` containing `ValueTable` | `SyncTableBuilder` |
+
+> **Note:** Use the single-threaded builders (`MapBuilder`, etc.) with `Value` for best performance. Use `Sync*` variants with `SyncValue` when thread safety is required.
 
 ### 2.2 MapBuilder
 
