@@ -561,6 +561,11 @@ struct BasicValue
         return set(std::string_view{key}, std::move(val));
     }
 
+    /// Set value by const string& key (disambiguation for string lvalue)
+    [[nodiscard]] BasicValue set(const std::string& key, BasicValue val) const {
+        return set(std::string_view{key}, std::move(val));
+    }
+
     /// Set value by rvalue string key (zero-copy key transfer)
     /// @note Use this overload when you have a std::string that can be moved.
     [[nodiscard]] BasicValue set(std::string&& key, BasicValue val) const {
@@ -593,6 +598,11 @@ struct BasicValue
 
     /// Set value by const char* key with auto-vivification (disambiguation for string literals)
     [[nodiscard]] BasicValue set_vivify(const char* key, BasicValue val) const {
+        return set_vivify(std::string_view{key}, std::move(val));
+    }
+
+    /// Set value by const string& key with auto-vivification (disambiguation for string lvalue)
+    [[nodiscard]] BasicValue set_vivify(const std::string& key, BasicValue val) const {
         return set_vivify(std::string_view{key}, std::move(val));
     }
 

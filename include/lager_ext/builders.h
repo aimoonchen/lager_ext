@@ -97,6 +97,17 @@ public:
         return set(std::string_view{key}, std::move(val));
     }
 
+    /// Set with const string& key (disambiguation for string lvalue)
+    template <typename T>
+    BasicMapBuilder& set(const std::string& key, T&& val) {
+        return set(std::string_view{key}, std::forward<T>(val));
+    }
+
+    /// Set with const string& key (disambiguation for string lvalue)
+    BasicMapBuilder& set(const std::string& key, value_type val) {
+        return set(std::string_view{key}, std::move(val));
+    }
+
     /// Set with rvalue string key (zero-copy key transfer)
     template <typename T>
     BasicMapBuilder& set(std::string&& key, T&& val) {
@@ -542,6 +553,17 @@ public:
 
     /// Insert with const char* id (disambiguation for string literals)
     BasicTableBuilder& insert(const char* id, value_type val) {
+        return insert(std::string_view{id}, std::move(val));
+    }
+
+    /// Insert with const string& id (disambiguation for string lvalue)
+    template <typename T>
+    BasicTableBuilder& insert(const std::string& id, T&& val) {
+        return insert(std::string_view{id}, std::forward<T>(val));
+    }
+
+    /// Insert with const string& id (disambiguation for string lvalue)
+    BasicTableBuilder& insert(const std::string& id, value_type val) {
         return insert(std::string_view{id}, std::move(val));
     }
 
