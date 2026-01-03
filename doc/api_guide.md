@@ -486,19 +486,35 @@ The path system provides **lens-based access** to deeply nested values in `Value
 ### 4.2 Core Types
 
 ```cpp
-#include <lager_ext/path_core.h>
+#include <lager_ext/path_types.h>
 using namespace lager_ext;
+using namespace std::string_view_literals;
 
-// PathElement: string key or numeric index
-using PathElement = std::variant<std::string, std::size_t>;
+// PathElement: string_view key or numeric index (compact: ~24 bytes)
+using PathElement = std::variant<std::string_view, std::size_t>;
 
-// Path: sequence of elements
-using Path = std::vector<PathElement>;
+// PathView: Zero-allocation path (non-owning, for static/literal paths)
+PathView pv = {{"users"sv, size_t(0), "name"sv}};
 
-// Examples
-Path p1 = {"users", size_t(0), "name"};     // /users/0/name
-Path p2 = {"config", "theme"};              // /config/theme
+// Path: Owning path (for dynamic/runtime paths, implicit conversion to PathView)
+Path p;
+p.push_back(get_user_input());  // Copies into internal storage
+p.push_back(0);
+auto val = get_at_path(root, p);  // Path implicitly converts to PathView
 ```
+
+**Path Types Comparison:**
+
+| Type | Ownership | Best For | Memory |
+|------|-----------|----------|--------|
+| `PathView` | Non-owning | Static/literal paths | Zero allocation |
+| `Path` | Owning | Dynamic/runtime paths | Single contiguous buffer |
+
+**Design Notes:**
+- `PathElement` uses `std::string_view` (16 bytes) instead of `std::string` (32 bytes) for compact size
+- `PathView` is a non-owning span - perfect for string literals and compile-time paths
+- `Path` stores all keys in a contiguous buffer, avoiding per-key heap allocations
+- All path functions accept `PathView`; `Path` implicitly converts to `PathView`
 
 ### 4.3 Primitive Lenses
 
@@ -841,33 +857,49 @@ Path with_slash = parse_string_path("/tags~1skills/0");   // key: "tags/skills"
 
 The low-level path traversal engine used by all higher-level path abstractions.
 
+**Key Optimizations (C++20):**
+- **Zero-allocation traversal**: All functions accept `PathView`, avoiding heap allocations for literal paths
+- **Transparent hashing**: Uses `is_transparent` in `TransparentStringHash` to query `immer::map` with `string_view` without creating temporary `std::string`
+- **Branch prediction hints**: `[[unlikely]]` on null checks for early exit optimization
+- **Inline functions**: Core traversal is inlined for maximum performance
+
 ```cpp
 #include <lager_ext/path_core.h>
 using namespace lager_ext;
+using namespace std::string_view_literals;
 
-// ========== Core Operations ==========
+// ========== Zero-Allocation Core Operations ==========
 
 // Get value at path (returns null Value if path doesn't exist)
-Value val = get_at_path(state, {"users", size_t(0), "name"});
+// Uses string_view literals for zero heap allocation
+Value val = get_at_path(state, {{"users"sv, size_t(0), "name"sv}});
 
 // Set value at path (strict mode - fails silently if path doesn't exist)
-Value updated = set_at_path(state, {"users", size_t(0), "name"}, Value{"Alice"});
+Value updated = set_at_path(state, {{"users"sv, size_t(0), "name"sv}}, Value{"Alice"});
 
 // Set with auto-vivification (creates intermediate maps/vectors as needed)
-Value new_state = set_at_path_vivify(Value{}, {"a", "b", "c"}, Value{123});
+Value new_state = set_at_path_vivify(Value{}, {{"a"sv, "b"sv, "c"sv}}, Value{123});
 // Result: {"a": {"b": {"c": 123}}}
 
 // Erase at path (for maps: removes key, for vectors: sets to null)
-Value without_key = erase_at_path(state, {"users", size_t(0), "email"});
+Value without_key = erase_at_path(state, {{"users"sv, size_t(0), "email"sv}});
 
 // ========== Path Validation ==========
 
 // Check if a path exists
-bool exists = is_valid_path(state, {"users", size_t(0), "name"});
+bool exists = is_valid_path(state, {{"users"sv, size_t(0), "name"sv}});
 
 // Get how deep a path can be traversed (0 to path.size())
-std::size_t depth = valid_path_depth(state, {"users", size_t(99), "name"});
+std::size_t depth = valid_path_depth(state, {{"users"sv, size_t(99), "name"sv}});
 // Returns 1 if users[99] doesn't exist
+
+// ========== Dynamic Path Example ==========
+
+// When keys come from runtime, use Path (owns its strings)
+Path dynamic_path;
+dynamic_path.push_back(user_input_key);  // Copied into internal buffer
+dynamic_path.push_back(0);
+Value val = get_at_path(state, dynamic_path);  // Implicit PathView conversion
 ```
 
 **Core API Reference:**
@@ -880,6 +912,11 @@ std::size_t depth = valid_path_depth(state, {"users", size_t(99), "name"});
 | `erase_at_path(root, path)` | Erase value at path |
 | `is_valid_path(root, path)` | Check if entire path can be traversed |
 | `valid_path_depth(root, path)` | Get number of path elements that exist |
+
+> **Note:** All functions accept `PathView` as the path parameter. You can pass:
+> - An initializer list with `string_view` literals: `{{"users"sv, 0, "name"sv}}`
+> - A `Path` object (implicit conversion to `PathView`)
+> - Any container with `data()` and `size()` returning `PathElement*` and `size_t`
 
 ### 4.11 Performance Considerations
 
@@ -1245,6 +1282,7 @@ release_memory_region(handle);
 | `<lager_ext/builders.h>` | Builder classes for O(n) container construction |
 | `<lager_ext/serialization.h>` | Binary and JSON serialization |
 | `<lager_ext/path.h>` | **Unified Path API** - single entry point for all path operations |
+| `<lager_ext/path_types.h>` | `PathView` (zero-allocation) and `Path` (owning) types |
 | `<lager_ext/path_core.h>` | Core path traversal engine (low-level API) |
 | `<lager_ext/path_watcher.h>` | Path change detection with trie-based optimization |
 | `<lager_ext/lager_lens.h>` | PathLens, ZoomedValue and lager lens integration |
@@ -1253,7 +1291,7 @@ release_memory_region(handle);
 | `<lager_ext/value_diff.h>` | Value difference detection |
 | `<lager_ext/shared_state.h>` | Cross-process shared state |
 | `<lager_ext/shared_value.h>` | Low-level shared memory operations |
-| `<lager_ext/concepts.h>` | C++20 concepts for type constraints |
+| `<lager_ext/concepts.h>` | C++20 concepts and math type aliases (`Vec2`, `Vec3`, etc.) |
 | `<lager_ext/editor_engine.h>` | Scene-like editor state management |
 | `<lager_ext/delta_undo.h>` | Delta-based undo/redo system |
 | `<lager_ext/multi_store.h>` | Multi-document state management |

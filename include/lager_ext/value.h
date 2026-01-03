@@ -1,4 +1,4 @@
-// Copyright (c) 2024 chenmou. All rights reserved.
+// Copyright (c) 2024-2025 chenmou. All rights reserved.
 // Licensed under the MIT License. See LICENSE file in the project root.
 
 /// @file value.h
@@ -12,6 +12,14 @@
 ///
 /// The Value type is templated on a memory policy, allowing users to
 /// customize memory allocation strategies for the underlying immer containers.
+///
+/// ## C++20 Features Used
+/// - Concepts for type constraints
+/// - std::source_location for error diagnostics
+/// - std::span for contiguous data views
+/// - std::ranges for algorithms
+/// - [[nodiscard]] and [[likely]]/[[unlikely]] attributes
+/// - Defaulted comparison operators (operator<=>)
 
 #pragma once
 
@@ -130,13 +138,8 @@ inline void log_index_error(
 
 namespace lager_ext {
 
-// Math type aliases (row-major matrices)
-using Vec2 = std::array<float, 2>;
-using Vec3 = std::array<float, 3>;
-using Vec4 = std::array<float, 4>;
-using Mat3 = std::array<float, 9>;
-using Mat4x3 = std::array<float, 12>;
-using Mat4 = std::array<float, 16>;
+// Note: Vec2, Vec3, Vec4, Mat3, Mat4x3, Mat4 are defined in concepts.h
+// They are already available here via the #include above.
 
 // ============================================================
 // Transparent Hash and Comparator
@@ -207,13 +210,9 @@ struct BasicTableEntry {
     std::string id;
     BasicValueBox<MemoryPolicy> value;
 
-    bool operator==(const BasicTableEntry& other) const {
-        return id == other.id && value == other.value;
-    }
-
-    bool operator!=(const BasicTableEntry& other) const {
-        return !(*this == other);
-    }
+    /// C++20 defaulted equality comparison
+    /// Compiler generates operator== and operator!= automatically
+    bool operator==(const BasicTableEntry&) const = default;
 };
 
 /// Table container with transparent lookup support
@@ -277,24 +276,29 @@ struct BasicValue
                  std::monostate>
         data;
 
-    constexpr BasicValue() noexcept : data(std::monostate{}) {}
-    constexpr BasicValue(int8_t v) noexcept : data(v) {}
-    constexpr BasicValue(int16_t v) noexcept : data(v) {}
-    constexpr BasicValue(int32_t v) noexcept : data(v) {}
-    constexpr BasicValue(int64_t v) noexcept : data(v) {}
-    constexpr BasicValue(uint8_t v) noexcept : data(v) {}
-    constexpr BasicValue(uint16_t v) noexcept : data(v) {}
-    constexpr BasicValue(uint32_t v) noexcept : data(v) {}
-    constexpr BasicValue(uint64_t v) noexcept : data(v) {}
-    constexpr BasicValue(float v) noexcept : data(v) {}
-    constexpr BasicValue(double v) noexcept : data(v) {}
-    constexpr BasicValue(bool v) noexcept : data(v) {}
+    // Constructors for primitive and math types
+    // Note: constexpr is intentionally omitted because:
+    //   1. Container types (map, vector, etc.) are not constexpr-constructible
+    //   2. Value is designed for runtime dynamic data (like JSON), not compile-time constants
+    //   3. Consistency: most constructors can't be constexpr anyway
+    BasicValue() noexcept : data(std::monostate{}) {}
+    BasicValue(int8_t v) noexcept : data(v) {}
+    BasicValue(int16_t v) noexcept : data(v) {}
+    BasicValue(int32_t v) noexcept : data(v) {}
+    BasicValue(int64_t v) noexcept : data(v) {}
+    BasicValue(uint8_t v) noexcept : data(v) {}
+    BasicValue(uint16_t v) noexcept : data(v) {}
+    BasicValue(uint32_t v) noexcept : data(v) {}
+    BasicValue(uint64_t v) noexcept : data(v) {}
+    BasicValue(float v) noexcept : data(v) {}
+    BasicValue(double v) noexcept : data(v) {}
+    BasicValue(bool v) noexcept : data(v) {}
     BasicValue(const std::string& v) : data(v) {}
     BasicValue(std::string&& v) noexcept : data(std::move(v)) {}
     BasicValue(const char* v) : data(std::in_place_type<std::string>, v) {}
-    constexpr BasicValue(Vec2 v) noexcept : data(v) {}
-    constexpr BasicValue(Vec3 v) noexcept : data(v) {}
-    constexpr BasicValue(Vec4 v) noexcept : data(v) {}
+    BasicValue(Vec2 v) noexcept : data(v) {}
+    BasicValue(Vec3 v) noexcept : data(v) {}
+    BasicValue(Vec4 v) noexcept : data(v) {}
     BasicValue(const Mat3& v) : data(boxed_mat3{v}) {}
     BasicValue(const Mat4x3& v) : data(boxed_mat4x3{v}) {}
     BasicValue(const Mat4& v) : data(boxed_mat4{v}) {}
@@ -401,7 +405,9 @@ struct BasicValue
         return mat4x3(std::span<const float, 12>{ptr, 12});
     }
 
-    static constexpr BasicValue identity_mat3() {
+    /// Create a 3x3 identity matrix
+    /// @note Not constexpr because BasicValue(Mat3) involves immer::box allocation
+    static BasicValue identity_mat3() {
         return BasicValue{Mat3{
             1.0f, 0.0f, 0.0f,
             0.0f, 1.0f, 0.0f,
@@ -409,20 +415,29 @@ struct BasicValue
         }};
     }
 
+    /// Get pointer to contained value of type T, or nullptr if type mismatch
     template <typename T>
-    [[nodiscard]] const T* get_if() const { return std::get_if<T>(&data); }
+    [[nodiscard]] constexpr const T* get_if() const noexcept { 
+        return std::get_if<T>(&data); 
+    }
 
+    /// Check if contained value is of type T
     template <typename T>
-    [[nodiscard]] bool is() const { return std::holds_alternative<T>(data); }
+    [[nodiscard]] constexpr bool is() const noexcept { 
+        return std::holds_alternative<T>(data); 
+    }
 
-    [[nodiscard]] std::size_t type_index() const noexcept { return data.index(); }
-    [[nodiscard]] bool is_null() const noexcept { return std::holds_alternative<std::monostate>(data); }
-    [[nodiscard]] bool is_vec2() const noexcept { return is<Vec2>(); }
-    [[nodiscard]] bool is_vec3() const noexcept { return is<Vec3>(); }
-    [[nodiscard]] bool is_vec4() const noexcept { return is<Vec4>(); }
-    [[nodiscard]] bool is_mat3() const noexcept { return is<boxed_mat3>(); }
-    [[nodiscard]] bool is_mat4x3() const noexcept { return is<boxed_mat4x3>(); }
-    [[nodiscard]] bool is_math_type() const noexcept {
+    /// Get the type index in the variant
+    [[nodiscard]] constexpr std::size_t type_index() const noexcept { return data.index(); }
+    
+    /// Type predicates (constexpr for compile-time usage)
+    [[nodiscard]] constexpr bool is_null() const noexcept { return std::holds_alternative<std::monostate>(data); }
+    [[nodiscard]] constexpr bool is_vec2() const noexcept { return is<Vec2>(); }
+    [[nodiscard]] constexpr bool is_vec3() const noexcept { return is<Vec3>(); }
+    [[nodiscard]] constexpr bool is_vec4() const noexcept { return is<Vec4>(); }
+    [[nodiscard]] constexpr bool is_mat3() const noexcept { return is<boxed_mat3>(); }
+    [[nodiscard]] constexpr bool is_mat4x3() const noexcept { return is<boxed_mat4x3>(); }
+    [[nodiscard]] constexpr bool is_math_type() const noexcept {
         return is_vec2() || is_vec3() || is_vec4() || is_mat3() || is_mat4x3();
     }
 
@@ -572,9 +587,12 @@ struct BasicValue
         return false;
     }
 
-    [[nodiscard]] BasicValue set(const std::string& key, BasicValue val) const {
-        if (auto* m = get_if<value_map>()) return m->set(key, value_box{std::move(val)});
-        if (auto* t = get_if<value_table>()) return t->insert(table_entry{key, value_box{std::move(val)}});
+    /// Set value by string_view key (zero-copy API, internally converts to string)
+    /// @note Allocation is unavoidable since immer::map needs owned keys for persistence.
+    ///       This overload provides API consistency with at(string_view).
+    [[nodiscard]] BasicValue set(std::string_view key, BasicValue val) const {
+        if (auto* m = get_if<value_map>()) return m->set(std::string{key}, value_box{std::move(val)});
+        if (auto* t = get_if<value_table>()) return t->insert(table_entry{std::string{key}, value_box{std::move(val)}});
         detail::log_key_error("Value::set", key, "cannot set on non-map type");
         return *this;
     }

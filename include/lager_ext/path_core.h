@@ -51,10 +51,11 @@ namespace detail {
 
 /// Get value at a single path element (key or index)
 /// @note Internal helper - prefer get_at_path() for public use
+/// @note Uses transparent lookup for zero-allocation string_view access
 [[nodiscard]] inline Value get_at_path_element(const Value& current, const PathElement& elem)
 {
     if (auto* key = std::get_if<std::string_view>(&elem)) {
-        return current.at(std::string{*key});
+        return current.at(*key);  // Zero-allocation: uses transparent lookup
     } else {
         return current.at(std::get<std::size_t>(elem));
     }
@@ -62,10 +63,11 @@ namespace detail {
 
 /// Set value at a single path element (key or index)
 /// @note Internal helper - prefer set_at_path() for public use
+/// @note Now uses Value::set(string_view) overload for cleaner code
 [[nodiscard]] inline Value set_at_path_element(const Value& current, const PathElement& elem, Value new_val)
 {
     if (auto* key = std::get_if<std::string_view>(&elem)) {
-        return current.set(std::string{*key}, std::move(new_val));
+        return current.set(*key, std::move(new_val));  // Uses set(string_view) overload
     } else {
         return current.set(std::get<std::size_t>(elem), std::move(new_val));
     }
@@ -83,11 +85,12 @@ namespace detail {
 
 /// Check if a path element can be accessed in the given value
 /// @note Internal helper - prefer is_valid_path() for public use
+/// @note Uses transparent lookup for zero-allocation string_view access
 [[nodiscard]] inline bool can_access_element(const Value& val, const PathElement& elem)
 {
     if (auto* key = std::get_if<std::string_view>(&elem)) {
         if (const auto* map = val.get_if<ValueMap>()) {
-            return map->count(std::string{*key}) > 0;
+            return map->count(*key) > 0;  // Zero-allocation: uses transparent lookup
         }
         return false;
     } else {
@@ -118,8 +121,8 @@ namespace detail {
     Value current = root;
     for (const auto& elem : path) {
         current = detail::get_at_path_element(current, elem);
-        if (current.is_null()) {
-            break;  // Early exit on null
+        if (current.is_null()) [[unlikely]] {
+            break;  // Early exit on null (path errors are uncommon)
         }
     }
     return current;

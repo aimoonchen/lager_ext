@@ -3,6 +3,8 @@
 
 本文档介绍 lager 库中的所有核心概念：store、cursor、sensor、state、lens、effects、deps、context，以及它们如何协同工作。
 
+> **基于源码的深入分析** - 本指南结合 Lager 源码实现，提供准确的技术细节。
+
 ## 架构概览
 
 ```
@@ -436,3 +438,435 @@ UI update    ctx.dispatch()
 5. **State 和 Sensor 是独立于 Store 的**，适用于不需要 Redux 模式的简单场景
 
 6. **Lens 是函数式的聚焦工具**，可以组合使用访问深层嵌套结构
+
+---
+
+## 深入：Lens 的 van Laarhoven 实现
+
+Lager 的 Lens 实现基于 **van Laarhoven 表示法**，这是函数式编程中的标准 Lens 表示。
+
+### 核心思想
+
+```
+Lens s a = ∀f. Functor f ⇒ (a → f a) → s → f s
+```
+
+一个 Lens 本质上是一个函数，它接受一个 "聚焦函数" 和一个 "整体"，返回一个 "包装在 Functor 中的整体"。
+
+### 两个关键 Functor
+
+Lager 使用两种不同的 Functor 来实现 `view`、`set`、`over` 操作：
+
+```cpp
+// 1. const_functor - 用于 view 操作（只读取，忽略修改）
+template <typename T>
+struct const_functor {
+    T value;
+    
+    // fmap: 忽略函数，保持原值
+    template <typename Fn>
+    const_functor operator()(Fn&&) && {
+        return std::move(*this);  // 不调用 Fn，直接返回
+    }
+};
+
+// 2. identity_functor - 用于 set/over 操作（应用修改）
+template <typename T>
+struct identity_functor {
+    T value;
+    
+    // fmap: 应用函数
+    template <typename Fn>
+    auto operator()(Fn&& f) && {
+        return make_identity_functor(f(std::forward<T>(value)));
+    }
+};
+```
+
+### 操作实现
+
+```cpp
+// view: 使用 const_functor 提取值
+template <typename Lens, typename Whole>
+auto view(Lens lens, Whole&& whole) {
+    return lens([](auto&& x) { 
+        return const_functor<std::decay_t<decltype(x)>>{x}; 
+    })(whole).value;
+}
+
+// set: 使用 identity_functor 替换值
+template <typename Lens, typename Whole, typename Part>
+auto set(Lens lens, Whole&& whole, Part&& part) {
+    return lens([&](auto&&) { 
+        return identity_functor<std::decay_t<Part>>{part}; 
+    })(whole).value;
+}
+
+// over: 使用 identity_functor 应用函数
+template <typename Lens, typename Whole, typename Fn>
+auto over(Lens lens, Whole&& whole, Fn&& fn) {
+    return lens([&](auto&& x) { 
+        return identity_functor{fn(x)}; 
+    })(whole).value;
+}
+```
+
+### Lens 组合
+
+Lens 可以用 `|` 运算符组合，实现深层嵌套访问：
+
+```cpp
+// 从左到右组合
+auto street_lens = attr(&Person::address) | attr(&Address::street);
+
+// 等价于函数组合
+auto street_lens = [](auto f) {
+    return attr(&Person::address)([&](auto& addr) {
+        return attr(&Address::street)(f)(addr);
+    });
+};
+```
+
+**为什么这样可以组合？** 因为 Functor 满足结合律：
+
+```
+(L1 | L2)(f) = L1(L2(f))
+```
+
+---
+
+## 深入：Tags 和通知策略
+
+Lager 的 `state` 支持两种通知策略，通过 Tag 类型参数控制。
+
+### automatic_tag vs transactional_tag
+
+| Tag | 行为 | 源码位置 |
+|-----|------|---------|
+| `automatic_tag` | 每次 `set()` 后立即通知所有 watchers | `lager/tags.hpp` |
+| `transactional_tag` | 累积修改，直到调用 `commit()` 才通知 | `lager/tags.hpp` |
+
+### 实现原理
+
+```cpp
+// state_node 根据 Tag 类型选择不同行为
+template <typename T, typename TagT = transactional_tag>
+class state_node : public reader_node<T> {
+    void send_up(const value_type& value) final {
+        this->push_down(value);  // 更新内部值
+        
+        if constexpr (std::is_same_v<TagT, automatic_tag>) {
+            this->send_down();   // 立即传播给子节点
+            this->notify();       // 立即通知 watchers
+        }
+        // transactional_tag: 什么都不做，等待 commit()
+    }
+};
+
+// commit() 触发延迟的通知
+template <typename Node>
+void commit(Node& node) {
+    node.send_down();  // 传播到子节点
+    node.notify();      // 通知所有 watchers
+}
+```
+
+### 使用场景
+
+```cpp
+// 场景1：实时响应（如滑块控件）
+lager::state<int, lager::automatic_tag> slider_value{50};
+slider_value.set(60);  // 立即触发 UI 更新
+
+// 场景2：批量更新（如表单提交）
+lager::state<FormData, lager::transactional_tag> form_data{};
+form_data.set(updated_name);     // 不触发
+form_data.set(updated_email);    // 不触发
+form_data.set(updated_phone);    // 不触发
+lager::commit(form_data);        // 一次性通知，避免多次重绘
+```
+
+---
+
+## 深入：节点层次结构
+
+Lager 内部使用节点树来管理状态传播。
+
+### 节点类型
+
+```
+                    ┌──────────────────┐
+                    │   root_node      │  ← 抽象基类
+                    └────────┬─────────┘
+                             │
+           ┌─────────────────┼─────────────────┐
+           │                 │                 │
+           ▼                 ▼                 ▼
+    ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+    │ reader_node │   │ cursor_node │   │ sensor_node │
+    │ <T>         │   │ <T>         │   │ <T>         │
+    └──────┬──────┘   └──────┬──────┘   └─────────────┘
+           │                 │
+           ▼                 ▼
+    ┌─────────────┐   ┌─────────────┐
+    │ state_node  │   │ store_node  │
+    │ <T, Tag>    │   │ <Action,    │
+    │             │   │  Model,     │
+    │             │   │  Deps>      │
+    └─────────────┘   └─────────────┘
+```
+
+### 数据传播方向
+
+```
+       send_up()          send_down()
+    ──────────────►    ◄──────────────
+    
+    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+    │  Parent     │───►│   Node      │───►│   Child     │
+    │  Node       │◄───│             │◄───│   Node      │
+    └─────────────┘    └─────────────┘    └─────────────┘
+    
+    push_down(): 更新自身的值（不通知）
+    send_down(): 传播到子节点 + 通知 watchers
+    send_up():   传播到父节点
+```
+
+### 为什么需要这种设计？
+
+1. **Cursor.zoom()** 创建子节点，形成树结构
+2. **值传播** 需要双向：父 → 子（读取），子 → 父（写入）
+3. **通知优化** 通过 `transactional_tag` 可以批量处理
+
+---
+
+## 深入：Effect 的执行机制
+
+### Effect 类型签名
+
+```cpp
+template <typename Action, typename Deps = lager::deps<>>
+using effect = std::function<void(const context<Action, Deps>&)>;
+```
+
+### Effect 执行时机
+
+```
+dispatch(action)
+    │
+    ▼
+┌─────────────────────────────────────────┐
+│              Event Loop                  │
+│                                          │
+│  1. 调用 reducer(model, action)          │
+│     → (new_model, effect)                │
+│                                          │
+│  2. 更新内部状态为 new_model             │
+│                                          │
+│  3. 通知所有 watchers                    │
+│                                          │
+│  4. 执行 effect(context)      ◄─── 异步  │
+│     effect 内部可以:                     │
+│     - ctx.dispatch(new_action)           │
+│     - ctx.get<Dep>() 访问依赖            │
+│                                          │
+└─────────────────────────────────────────┘
+```
+
+### Effect 组合
+
+```cpp
+// 多个 effect 可以组合
+auto effect1 = [](auto& ctx) { /* ... */ };
+auto effect2 = [](auto& ctx) { /* ... */ };
+
+// 使用 sequence 组合
+auto combined = lager::sequence(effect1, effect2);
+
+// 使用 batch 组合多个相同类型的 effect
+std::vector<lager::effect<Action>> effects = {...};
+auto batched = lager::batch(effects);
+```
+
+### noop vs 空 lambda
+
+```cpp
+// 推荐：使用 lager::noop 表示无副作用
+return {model, lager::noop};
+
+// 不推荐：空 lambda 也可以工作，但语义不清晰
+return {model, [](auto&) {}};
+```
+
+---
+
+## 深入：Context 的能力
+
+Context 是 Effect 的执行环境，提供两个核心能力：
+
+### 1. dispatch - 派发新 Action
+
+```cpp
+// 在 Effect 中派发新 Action
+auto effect = [](auto& ctx) {
+    // 异步操作完成后
+    ctx.dispatch(DataLoaded{result});
+};
+```
+
+**注意**: `dispatch` 是异步的，Action 会被放入事件队列，不会立即执行。
+
+### 2. get<T>() - 获取依赖
+
+```cpp
+// 获取注入的依赖
+auto effect = [](auto& ctx) {
+    auto& logger = ctx.template get<Logger&>();
+    auto& http = ctx.template get<HttpClient&>();
+    
+    logger.log("Fetching data...");
+    http.get("/api/data").then([&ctx](auto data) {
+        ctx.dispatch(DataReceived{data});
+    });
+};
+```
+
+### Context 的类型
+
+```cpp
+template <typename Action, typename Deps = lager::deps<>>
+class context {
+public:
+    // 派发 Action
+    void dispatch(Action action) const;
+    
+    // 获取依赖（编译时检查类型是否在 Deps 中）
+    template <typename T>
+    T& get() const;
+};
+```
+
+---
+
+## 深入：Event Loop 集成
+
+### 支持的 Event Loop
+
+| Event Loop | 头文件 | 用途 |
+|------------|--------|------|
+| `with_manual_event_loop` | `event_loop/manual.hpp` | 测试、控制台应用 |
+| `with_boost_asio_event_loop` | `event_loop/boost_asio.hpp` | 服务器应用 |
+| `with_qt_event_loop` | `event_loop/qt.hpp` | Qt GUI 应用 |
+| `with_sdl_event_loop` | `event_loop/sdl.hpp` | 游戏开发 |
+
+### Event Loop 接口
+
+```cpp
+struct event_loop_interface {
+    // 将任务放入队列，在当前帧处理
+    virtual void post(std::function<void()>) = 0;
+    
+    // 异步执行（可能在另一个线程）
+    virtual void async(std::function<void()>) = 0;
+    
+    // 结束事件循环
+    virtual void finish() = 0;
+    
+    // 暂停/恢复
+    virtual void pause() = 0;
+    virtual void resume() = 0;
+};
+```
+
+### Manual Event Loop 示例
+
+```cpp
+auto loop = lager::with_manual_event_loop{};
+auto store = lager::make_store<Action>(initial, loop, ...);
+
+// 手动驱动事件循环
+store.dispatch(action1);
+store.dispatch(action2);
+
+// 处理所有待处理的 action
+while (loop.step()) {
+    // 每次 step() 处理一个 action
+}
+
+// 或者一次性处理所有
+loop.step();  // 处理 action1
+loop.step();  // 处理 action2
+```
+
+---
+
+## 最佳实践
+
+### 1. Reducer 设计
+
+```cpp
+// ✅ 好：纯函数，无副作用
+Model update(Model m, Action a) {
+    return std::visit(visitor{...}, a);
+}
+
+// ❌ 差：在 reducer 中产生副作用
+Model update(Model m, Action a) {
+    std::cout << "Action received";  // 副作用！
+    return m;
+}
+```
+
+### 2. Effect 设计
+
+```cpp
+// ✅ 好：Effect 处理所有副作用
+return {model, [](auto& ctx) {
+    ctx.get<Logger&>().log("Action processed");
+}};
+
+// ✅ 好：异步操作完成后 dispatch 新 Action
+return {model, [](auto& ctx) {
+    fetch_data_async().then([&](auto data) {
+        ctx.dispatch(DataReceived{data});
+    });
+}};
+```
+
+### 3. 依赖注入
+
+```cpp
+// ✅ 好：通过 Deps 注入，便于测试
+using Deps = lager::deps<IHttpClient&, ILogger&>;
+
+// 生产环境
+auto store = make_store<Action>(
+    model, loop,
+    lager::with_deps(real_http_client, real_logger)
+);
+
+// 测试环境
+auto store = make_store<Action>(
+    model, loop,
+    lager::with_deps(mock_http_client, mock_logger)
+);
+```
+
+### 4. Lens 组合
+
+```cpp
+// ✅ 好：使用 lens 访问深层嵌套
+auto email_lens = 
+    attr(&AppState::user) 
+    | attr(&User::profile) 
+    | attr(&Profile::email);
+
+auto email = view(email_lens, state);
+
+// ❌ 差：手动解构
+auto email = state.user.profile.email;  // 无法组合，无法复用
+```
+
+---
+
+*最后更新: 2026年1月 - 添加 van Laarhoven Lens、Tags、节点层次结构等深入分析*

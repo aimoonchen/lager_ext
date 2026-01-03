@@ -1,16 +1,39 @@
-// concepts.h - C++20 Concepts for lager_ext type constraints
+// Copyright (c) 2024-2025 chenmou. All rights reserved.
+// Licensed under the MIT License. See LICENSE file in the project root.
+
+/// @file concepts.h
+/// @brief C++20 Concepts for lager_ext type constraints.
+///
+/// This file defines concept constraints for Value types, enabling
+/// compile-time type checking and better error messages.
 
 #pragma once
 
 #include <array>
 #include <concepts>
+#include <cstdint>
 #include <string>
 #include <type_traits>
 #include <variant>
 
 namespace lager_ext {
 
-// Primitive types: int8/16/32/64, uint8/16/32/64, float, double, bool
+// ============================================================
+// Math Type Aliases (Row-major matrices)
+// ============================================================
+
+using Vec2 = std::array<float, 2>;
+using Vec3 = std::array<float, 3>;
+using Vec4 = std::array<float, 4>;
+using Mat3 = std::array<float, 9>;
+using Mat4x3 = std::array<float, 12>;
+using Mat4 = std::array<float, 16>;
+
+// ============================================================
+// Primitive Type Concepts
+// ============================================================
+
+/// @brief Concept for primitive numeric and boolean types supported by Value
 template<typename T>
 concept PrimitiveType = std::is_same_v<std::decay_t<T>, int8_t> ||
                         std::is_same_v<std::decay_t<T>, int16_t> ||
@@ -24,17 +47,11 @@ concept PrimitiveType = std::is_same_v<std::decay_t<T>, int8_t> ||
                         std::is_same_v<std::decay_t<T>, double> ||
                         std::is_same_v<std::decay_t<T>, bool>;
 
+/// @brief Concept for string-like types
 template<typename T>
 concept StringLike = std::is_same_v<std::decay_t<T>, std::string> ||
                      std::is_same_v<std::decay_t<T>, const char*> ||
                      std::is_convertible_v<T, std::string_view>;
-
-using Vec2 = std::array<float, 2>;
-using Vec3 = std::array<float, 3>;
-using Vec4 = std::array<float, 4>;
-using Mat3 = std::array<float, 9>;
-using Mat4x3 = std::array<float, 12>;
-using Mat4 = std::array<float, 16>;
 
 template<typename T>
 concept VectorMathType = std::is_same_v<std::decay_t<T>, Vec2> ||
@@ -48,12 +65,6 @@ concept MatrixMathType = std::is_same_v<std::decay_t<T>, Mat3> ||
 
 template<typename T>
 concept MathType = VectorMathType<T> || MatrixMathType<T>;
-
-template<typename T>
-concept SmallMathType = VectorMathType<T>;
-
-template<typename T>
-concept LargeMathType = MatrixMathType<T>;
 
 template<typename T>
 concept ValueConstructible = PrimitiveType<T> || StringLike<T> || MathType<T>;

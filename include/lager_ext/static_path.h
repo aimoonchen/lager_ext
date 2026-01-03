@@ -34,29 +34,37 @@ namespace static_path {
 // Fixed-size string for non-type template parameters (C++20 NTTP)
 // ============================================================
 
+/// @brief Fixed-size string for C++20 NTTP (Non-Type Template Parameters)
+/// 
+/// Enables string literals as template parameters:
+///   LiteralPath<"/users/0/name">
+/// 
+/// @note Uses consteval constructor to ensure compile-time construction
 template<std::size_t N>
 struct FixedString {
     char data[N]{};
 
     constexpr FixedString() = default;
 
-    constexpr FixedString(const char (&str)[N]) {
+    /// @brief Construct from string literal (compile-time only)
+    /// @note consteval ensures this is always evaluated at compile time
+    consteval FixedString(const char (&str)[N]) {
         std::copy_n(str, N, data);
     }
 
-    constexpr std::size_t size() const noexcept { return N - 1; }
-    constexpr const char* c_str() const noexcept { return data; }
-    constexpr std::string_view view() const noexcept { return {data, N - 1}; }
-    constexpr operator std::string_view() const noexcept { return view(); }
-    std::string to_string() const { return std::string{view()}; }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return N - 1; }
+    [[nodiscard]] constexpr const char* c_str() const noexcept { return data; }
+    [[nodiscard]] constexpr std::string_view view() const noexcept { return {data, N - 1}; }
+    [[nodiscard]] constexpr operator std::string_view() const noexcept { return view(); }
+    [[nodiscard]] std::string to_string() const { return std::string{view()}; }
 
     // Comparison operators for compile-time path comparison
     template<std::size_t M>
-    constexpr bool operator==(const FixedString<M>& other) const noexcept {
+    [[nodiscard]] constexpr bool operator==(const FixedString<M>& other) const noexcept {
         return view() == other.view();
     }
 
-    constexpr bool operator==(std::string_view sv) const noexcept {
+    [[nodiscard]] constexpr bool operator==(std::string_view sv) const noexcept {
         return view() == sv;
     }
 };
@@ -325,15 +333,6 @@ using ExtendPathT = typename ExtendPath<BasePath, Segment>::type;
 // Define a complete path
 #define STATIC_PATH(...) \
     lager_ext::static_path::StaticPath<__VA_ARGS__>
-
-// ============================================================
-// PathRegistry - For organizing paths by schema
-// ============================================================
-
-template<typename Schema>
-struct PathRegistry {
-    // Override this in derived types to define paths
-};
 
 // ============================================================
 // String Literal Static Path

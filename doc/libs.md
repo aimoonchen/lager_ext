@@ -156,6 +156,34 @@ int count = counter_cursor.get();
 // counter_cursor.set(42);  // 如果定义了相应的 setter 逻辑
 ```
 
+**Lens 的数学基础（van Laarhoven 表示）：**
+
+Lager 的 lens 使用基于 Functor 的 van Laarhoven 表示法：
+
+```cpp
+// lens 的类型签名（概念上）
+// Lens s a = forall f. Functor f => (a -> f a) -> s -> f s
+
+// 内部实现使用两种 Functor:
+// 1. const_functor: 用于 view 操作
+template <typename T>
+struct const_functor {
+    T value;
+    template <typename Fn>
+    const_functor operator()(Fn&&) && { return std::move(*this); }
+};
+
+// 2. identity_functor: 用于 set/over 操作
+template <typename T>
+struct identity_functor {
+    T value;
+    template <typename Fn>
+    auto operator()(Fn&& f) && {
+        return make_identity_functor(f(std::forward<T>(value)));
+    }
+};
+```
+
 **Lens 的核心操作：**
 
 | 操作 | 说明 |
@@ -240,7 +268,119 @@ auto store = lager::make_store<action>(
 );
 ```
 
-### 8. Event Loops 集成
+### 8. Tags 和通知策略
+
+Lager 支持两种通知策略，通过 Tag 类型控制：
+
+| Tag | 行为 | 用途 |
+|-----|------|------|
+| `automatic_tag` | 每次 `set` 后立即通知 watchers | 实时响应场景 |
+| `transactional_tag` | 需要显式 `commit()` 才通知 | 批量更新场景 |
+
+```cpp
+#include <lager/state.hpp>
+#include <lager/commit.hpp>
+
+// automatic 模式：每次 set 都触发通知
+auto auto_state = lager::state<int>{0, lager::automatic_tag{}};
+auto_state.set(1);  // 立即通知 watchers
+
+// transactional 模式：延迟通知
+auto trans_state = lager::state<int>{0, lager::transactional_tag{}};
+trans_state.set(1);  // 不触发通知
+trans_state.set(2);  // 仍不触发
+lager::commit(trans_state);  // 现在触发通知，watchers 看到最终值 2
+```
+
+**实现原理：**
+
+```cpp
+// state_node 内部根据 Tag 类型决定行为
+template <typename T, typename TagT = transactional_tag>
+class state_node : public state_base<T> {
+    void send_up(const value_type& value) final {
+        this->push_down(value);
+        if constexpr (std::is_same_v<TagT, automatic_tag>) {
+            this->send_down();  // 立即传播
+            this->notify();      // 立即通知
+        }
+        // transactional_tag: 等待显式 commit
+    }
+};
+```
+
+### 9. 节点层次结构与数据传播
+
+Lager 内部使用节点树来管理状态传播，这是理解其工作原理的关键：
+
+**节点继承关系：**
+
+```
+                    ┌──────────────────┐
+                    │   root_node      │  ← 抽象基类
+                    └────────┬─────────┘
+                             │
+           ┌─────────────────┼─────────────────┐
+           │                 │                 │
+           ▼                 ▼                 ▼
+    ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+    │ reader_node │   │ cursor_node │   │ sensor_node │
+    │ <T>         │   │ <T>         │   │ <T>         │
+    └──────┬──────┘   └──────┬──────┘   └─────────────┘
+           │                 │
+           ▼                 ▼
+    ┌─────────────┐   ┌─────────────┐
+    │ state_node  │   │ store_node  │
+    │ <T, Tag>    │   │ <Action,    │
+    │             │   │  Model,Deps>│
+    └─────────────┘   └─────────────┘
+```
+
+**数据传播方向：**
+
+| 方法 | 方向 | 作用 |
+|------|------|------|
+| `push_down(value)` | 自身 | 更新自身的值（不通知） |
+| `send_down()` | 向下 | 传播到子节点 + 通知 watchers |
+| `send_up(value)` | 向上 | 传播到父节点 |
+
+这种设计使得 `cursor.zoom()` 可以创建子节点，形成树结构，实现双向的值传播。
+
+### 10. Effect 组合与执行
+
+**Effect 组合方式：**
+
+```cpp
+// 使用 sequence 顺序执行多个 effect
+auto effect1 = [](auto& ctx) { /* ... */ };
+auto effect2 = [](auto& ctx) { /* ... */ };
+auto combined = lager::sequence(effect1, effect2);
+
+// 使用 batch 批量执行
+std::vector<lager::effect<Action>> effects = {...};
+auto batched = lager::batch(effects);
+
+// 使用 noop 表示无副作用（推荐）
+return {model, lager::noop};
+```
+
+**Effect 执行时机：**
+
+```
+dispatch(action)
+    │
+    ▼
+Event Loop 接收
+    │
+    ├─► 1. 调用 reducer(model, action) → (new_model, effect)
+    ├─► 2. 更新内部状态为 new_model
+    ├─► 3. 通知所有 watchers
+    └─► 4. 执行 effect(context)  ← 最后执行副作用
+            │
+            └─► effect 内可调用 ctx.dispatch(new_action)
+```
+
+### 11. Event Loops 集成
 
 Lager 支持多种事件循环：
 
@@ -250,6 +390,19 @@ Lager 支持多种事件循环：
 | `with_boost_asio_event_loop` | Boost.Asio 集成 |
 | `with_qt_event_loop` | Qt 框架集成 |
 | `with_sdl_event_loop` | SDL 游戏开发集成 |
+
+**Event Loop 接口：**
+
+```cpp
+// lager 内部的 event loop 抽象接口
+struct event_loop_iface {
+    virtual void post(std::function<void()>)  = 0;  // 同步队列
+    virtual void async(std::function<void()>) = 0;  // 异步执行
+    virtual void finish() = 0;  // 结束事件循环
+    virtual void pause()  = 0;  // 暂停处理
+    virtual void resume() = 0;  // 恢复处理
+};
+```
 
 ```cpp
 // Qt 集成示例
@@ -262,7 +415,7 @@ auto store = lager::make_store<action>(
 );
 ```
 
-### 9. 调试支持
+### 12. 调试支持
 
 **Time-Travel Debugging:**
 
@@ -291,7 +444,7 @@ lager::debug::http_server server{store, 8080};
 // 访问 http://localhost:8080 查看状态变化
 ```
 
-### 10. 与 pathlens 项目的关系
+### 13. 与 pathlens 项目的关系
 
 `pathlens` 扩展了 `lager` 的核心概念，使其能够：
 
@@ -422,6 +575,110 @@ struct tree_node {
 ```
 
 `box` 是一个轻量级的堆分配、引用计数的智能指针，使递归数据结构成为可能。
+
+### 8. Transparent Lookup (异构查找)
+
+**问题:** 使用 `std::string` 作为键时，查询时传入 `const char*` 或 `std::string_view` 会导致临时 `std::string` 的构造，产生不必要的内存分配。
+
+**解决方案:** C++14 引入的 Transparent Comparators/Hash，Immer 完全支持：
+
+```cpp
+// 定义透明 Hash
+struct string_hash {
+    using is_transparent = void;  // 关键标记！
+
+    std::size_t operator()(std::string_view sv) const noexcept {
+        return std::hash<std::string_view>{}(sv);
+    }
+    std::size_t operator()(const std::string& s) const noexcept {
+        return (*this)(std::string_view{s});
+    }
+    std::size_t operator()(const char* s) const noexcept {
+        return (*this)(std::string_view{s});
+    }
+};
+
+// 定义透明 Equal
+struct string_equal {
+    using is_transparent = void;
+
+    bool operator()(std::string_view a, std::string_view b) const noexcept {
+        return a == b;
+    }
+};
+
+// 使用透明查找的 map
+using TransparentMap = immer::map<std::string, int, string_hash, string_equal>;
+
+TransparentMap m;
+m = m.set("hello", 42);
+
+// 零分配查询！
+const int* val = m.find(std::string_view{"hello"});  // 不构造 std::string
+const int* val2 = m.find("hello");                   // const char* 也可以
+```
+
+**支持透明查找的 Immer 方法：**
+
+| 容器 | 方法 |
+|------|------|
+| `map<K,V,H,E>` | `find()`, `count()`, `operator[]`, `at()` |
+| `set<T,H,E>` | `find()`, `count()` |
+| `table<T,H,E,ID>` | `find()`, `count()`, `operator[]` |
+| `map_transient` | 同上 |
+| `set_transient` | 同上 |
+
+**实现原理（CHAMP 内部）：**
+
+```cpp
+// immer/detail/hamts/champ.hpp 中的 get 方法
+template <typename Project, typename Default, typename Key>
+decltype(auto) get(const Key& k) const {
+    // Key 可以是任何类型，只要 Hash 和 Equal 支持透明比较
+    auto hash = Hash{}(k);  // 调用 Hash::operator()(const Key&)
+    // ... 在树中查找 ...
+    if (Equal{}(stored_key, k)) {  // 透明比较
+        return Project{}(*found);
+    }
+    return Default{}();
+}
+```
+
+### 9. CHAMP 数据结构深入
+
+**CHAMP** (Compressed Hash-Array Mapped Prefix-tree) 是 Immer `map`/`set`/`table` 的底层实现：
+
+```
+                    Root Node
+                   ┌─────────┐
+                   │ bitmap  │ datamap=0b0101, nodemap=0b1010
+                   ├─────────┤
+                   │ data[0] │ → (key1, val1)  @ hash prefix 00
+                   │ data[1] │ → (key2, val2)  @ hash prefix 10
+                   │ node[0] │ → Child Node    @ hash prefix 01
+                   │ node[1] │ → Child Node    @ hash prefix 11
+                   └─────────┘
+
+              datamap: 哪些 slot 存储数据
+              nodemap: 哪些 slot 指向子节点
+              popcount(bitmap & (bit - 1)) 计算实际数组索引
+```
+
+**关键优化：**
+
+1. **位图压缩:** 只为实际使用的 slot 分配空间
+2. **浅层树:** 32-way 分支因子，大多数操作在 1-7 层完成
+3. **内联小节点:** 减少指针追踪
+4. **结构共享:** 修改只复制从根到修改点的路径
+
+**复杂度分析：**
+
+| 操作 | 时间复杂度 | 说明 |
+|------|-----------|------|
+| `find` | $O(\log_{32} n)$ | 实际 ≈ $O(1)$，最多 7 次哈希比较 |
+| `set`/`insert` | $O(\log_{32} n)$ | 路径复制 |
+| `erase` | $O(\log_{32} n)$ | 路径复制 |
+| `size` | $O(1)$ | 缓存在根节点 |
 
 ---
 
@@ -559,6 +816,125 @@ auto result = zug::into(
     input
 );
 // result = {2, 6, 10}
+```
+
+### 10. 与 Clojure Transducers 的对比
+
+Zug 是 Clojure Transducers 概念的 C++ 实现，但有一些关键差异：
+
+| 特性 | Clojure | Zug (C++) |
+|------|---------|-----------|
+| **状态管理** | 可变闭包 | `state_wrapper` + 不可变协议 |
+| **早期终止** | `reduced` 包装器 | `state_traits::is_reduced` |
+| **跳过元素** | 不调用 inner step | `skip()` 返回特殊状态包装 |
+| **类型安全** | 动态类型 | 编译时类型推导 |
+| **变体支持** | N/A | `boost::variant` / `std::variant` |
+
+**C++ 特有的类型挑战：**
+
+```cpp
+// 问题：filter 可能调用也可能不调用 step
+// 在动态类型语言中这不是问题，但 C++ 需要统一的返回类型
+
+template <typename Pred>
+auto filter(Pred pred) {
+    return comp([=](auto step) {
+        return [=](auto s, auto... is) {
+            // 如果 pred 为 true: 返回 step(s, is...)
+            // 如果 pred 为 false: 返回 s（未修改）
+            // 但这两个可能有不同的类型！
+            
+            return pred(is...)
+                ? call(step, s, is...)     // 可能返回包装类型
+                : skip(step, s, is...);    // 返回兼容的 skip_state
+        };
+    });
+}
+```
+
+**`skip_state` 的实现：**
+
+```cpp
+// skip_state 使用 variant 来统一类型
+template <typename S, typename R>
+using skip_state = std::variant<S, R>;
+
+// skip 函数确保类型兼容
+template <typename Step, typename State, typename... Inputs>
+auto skip(Step&& step, State&& state, Inputs&&... inputs) {
+    using result_t = decltype(step(state, inputs...));
+    using state_t = std::decay_t<State>;
+    
+    // 返回一个可以容纳两种可能性的 variant
+    return skip_result<state_t, result_t>{std::forward<State>(state)};
+}
+```
+
+### 11. 惰性求值 vs 及时求值
+
+Zug 支持两种求值策略：
+
+| 函数 | 策略 | 返回类型 | 用途 |
+|------|------|---------|------|
+| `into` | 及时 (Eager) | 填充后的容器 | 需要完整结果 |
+| `transduce` | 及时 | 最终归约值 | 聚合计算 |
+| `sequence` | 惰性 (Lazy) | 迭代器范围 | 按需处理/无限序列 |
+
+```cpp
+// 及时求值：立即处理所有元素
+auto vec = zug::into(
+    std::vector<int>{},
+    zug::map([](int x) { return x * 2; }),
+    input
+);
+
+// 惰性求值：返回迭代器范围，按需计算
+auto lazy_range = zug::sequence(
+    zug::map([](int x) { return x * 2; }),
+    input
+);
+
+for (int x : lazy_range) {
+    // 每次迭代时才计算
+    std::cout << x << '\n';
+}
+```
+
+### 12. Type-Erased Transducer
+
+对于需要存储在容器中或作为函数参数传递的场景，Zug 提供类型擦除的 transducer：
+
+```cpp
+#include <zug/transducer/transducer.hpp>
+
+// 类型擦除的 transducer
+zug::transducer<int, std::string> xf = 
+    zug::filter([](int x) { return x > 0; })
+  | zug::map([](int x) { return std::to_string(x); });
+
+// 可以存储在容器中
+std::vector<zug::transducer<int, int>> transducers;
+transducers.push_back(zug::map([](int x) { return x * 2; }));
+transducers.push_back(zug::filter([](int x) { return x > 10; }));
+```
+
+**实现原理：**
+
+```cpp
+template <typename InputT = meta::pack<>, typename OutputT = InputT>
+class transducer : detail::pipeable {
+    // 使用 std::function 进行类型擦除
+    using xform_t = std::function<in_step_t(out_step_t)>;
+    xform_t xform_;
+    
+public:
+    template <typename XformT>
+    transducer(XformT&& xf)
+        : xform_{[xf = std::forward<XformT>(xf)](auto step) {
+            return xf(std::move(step));
+        }}
+    {}
+};
 ```
 
 ---
@@ -840,10 +1216,11 @@ using SharedValue = BasicValue<shared_memory_policy>;
 |------|--------|
 | 单向数据流 | Action → Reducer → State → View |
 | Store | 组合状态、reducer、事件循环的核心容器 |
-| Effect | 副作用的延迟执行机制 |
-| Cursor | 状态子部分的透镜视图 |
+| Effect | 副作用的延迟执行机制，返回 `future` |
+| Cursor | 状态子部分的透镜视图（基于 van Laarhoven lens） |
 | Reader/Writer | 读写能力的分离抽象 |
-| Context | 依赖注入机制 |
+| Context | 依赖注入机制，支持多 Action 类型 |
+| Tags | `automatic_tag` vs `transactional_tag` 控制通知时机 |
 
 ### Immer
 
@@ -851,20 +1228,24 @@ using SharedValue = BasicValue<shared_memory_policy>;
 |------|--------|
 | 不可变性 | 所有方法返回新值，原值不变 |
 | 结构共享 | 通过共享内部节点避免深拷贝 |
-| Transient | 批量更新时的临时可变视图 |
-| Memory Policy | 可定制的内存管理策略 |
+| Transient | 批量更新时的临时可变视图（owner 机制） |
+| Memory Policy | 可定制的内存管理策略（Heap/Refcount/Lock/Transience） |
 | Box | 实现递归数据结构的关键 |
 | Atom | 线程安全的状态容器 |
+| Transparent Lookup | 支持异构键查询，避免临时对象构造 |
+| CHAMP | map/set/table 的底层数据结构，$O(\log_{32} n)$ 操作 |
 
 ### Zug
 
 | 概念 | 关键点 |
 |------|--------|
 | Transducer | 对 reducing function 的高阶变换 |
-| 组合 | 使用 `\|` 从左到右组合 |
-| Skip | 条件跳过时保持类型一致的机制 |
-| State | 有状态 transducer 的状态管理 |
+| 组合 | 使用 `\|` 从左到右组合（数据流向） |
+| Skip | 条件跳过时保持类型一致的机制（`skip_state`） |
+| State | 有状态 transducer 的状态管理（`state_wrap`/`state_data`） |
 | 源无关 | 同一 transducer 适用于任何序列类型 |
+| 惰性/及时 | `sequence` (lazy) vs `into`/`transduce` (eager) |
+| Type-Erased | `zug::transducer<In, Out>` 支持存储在容器中 |
 
 ### Boost.Interprocess
 
@@ -884,7 +1265,11 @@ using SharedValue = BasicValue<shared_memory_policy>;
 - [Zug 官方文档](https://sinusoid.es/zug/)
 - [Boost.Interprocess 文档](https://www.boost.org/doc/libs/release/doc/html/interprocess.html)
 - [Lager 官方文档](https://sinusoid.es/lager/)
+- [Lager GitHub](https://github.com/arximboldi/lager)
+- [Immer GitHub](https://github.com/arximboldi/immer)
+- [Zug GitHub](https://github.com/arximboldi/zug)
 
 ---
 
 *文档生成日期: 2024年12月*
+*最后更新: 2026年1月 - 深入学习后补充 Transparent Lookup、CHAMP、Tags、Type-Erased Transducer 等高级特性*
