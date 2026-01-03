@@ -71,10 +71,12 @@ set(LAGER_EXT_HEADERS
     include/lager_ext/path_types.h
     include/lager_ext/path_watcher.h
     include/lager_ext/scene_types.h
+    include/lager_ext/serialization.h
     include/lager_ext/shared_state.h
     include/lager_ext/shared_value.h
     include/lager_ext/static_path.h
     include/lager_ext/string_path.h
+    include/lager_ext/undo.h
     include/lager_ext/value.h
     include/lager_ext/value_diff.h
 )
