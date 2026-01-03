@@ -71,23 +71,47 @@ public:
     BasicMapBuilder& operator=(const BasicMapBuilder&) = delete;
 
     /// Set a key-value pair
-    /// @param key The key
+    /// @param key The key (string_view to avoid allocation on lookup, but key is copied internally)
     /// @param val The value (any type convertible to BasicValue)
     /// @return Reference to this builder for chaining
     template <typename T>
-    BasicMapBuilder& set(const std::string& key, T&& val) {
-        transient_.set(key, value_box{value_type{std::forward<T>(val)}});
+    BasicMapBuilder& set(std::string_view key, T&& val) {
+        transient_.set(std::string{key}, value_box{value_type{std::forward<T>(val)}});
         return *this;
     }
 
     /// Set a key with an already constructed BasicValue
-    BasicMapBuilder& set(const std::string& key, value_type val) {
-        transient_.set(key, value_box{std::move(val)});
+    BasicMapBuilder& set(std::string_view key, value_type val) {
+        transient_.set(std::string{key}, value_box{std::move(val)});
+        return *this;
+    }
+
+    /// Set with const char* key (disambiguation for string literals)
+    template <typename T>
+    BasicMapBuilder& set(const char* key, T&& val) {
+        return set(std::string_view{key}, std::forward<T>(val));
+    }
+
+    /// Set with const char* key (disambiguation for string literals)
+    BasicMapBuilder& set(const char* key, value_type val) {
+        return set(std::string_view{key}, std::move(val));
+    }
+
+    /// Set with rvalue string key (zero-copy key transfer)
+    template <typename T>
+    BasicMapBuilder& set(std::string&& key, T&& val) {
+        transient_.set(std::move(key), value_box{value_type{std::forward<T>(val)}});
+        return *this;
+    }
+
+    /// Set with rvalue string key (zero-copy key transfer)
+    BasicMapBuilder& set(std::string&& key, value_type val) {
+        transient_.set(std::move(key), value_box{std::move(val)});
         return *this;
     }
 
     /// Check if the builder contains a key
-    [[nodiscard]] bool contains(const std::string& key) const {
+    [[nodiscard]] bool contains(std::string_view key) const {
         return transient_.count(key) > 0;
     }
 
@@ -104,7 +128,7 @@ public:
     /// @param key The key to look up
     /// @param default_val Value to return if key doesn't exist (default: null)
     /// @return The value, or default_val if not found
-    [[nodiscard]] value_type get(const std::string& key, value_type default_val = value_type{}) const {
+    [[nodiscard]] value_type get(std::string_view key, value_type default_val = value_type{}) const {
         if (auto* found = transient_.find(key)) {
             return found->get();
         }
@@ -118,10 +142,10 @@ public:
     /// @note If key doesn't exist, no change is made
     template<typename Fn>
     requires ValueTransformer<Fn, value_type>
-    BasicMapBuilder& update_at(const std::string& key, Fn&& fn) {
+    BasicMapBuilder& update_at(std::string_view key, Fn&& fn) {
         if (auto* found = transient_.find(key)) {
             auto new_val = std::forward<Fn>(fn)(found->get());
-            transient_.set(key, value_box{std::move(new_val)});
+            transient_.set(std::string{key}, value_box{std::move(new_val)});
         }
         return *this;
     }
@@ -132,13 +156,13 @@ public:
     /// @return Reference to this builder for chaining
     template<typename Fn>
     requires ValueTransformer<Fn, value_type>
-    BasicMapBuilder& upsert(const std::string& key, Fn&& fn) {
+    BasicMapBuilder& upsert(std::string_view key, Fn&& fn) {
         value_type current{};
         if (auto* found = transient_.find(key)) {
             current = found->get();
         }
         auto new_val = std::forward<Fn>(fn)(std::move(current));
-        transient_.set(key, value_box{std::move(new_val)});
+        transient_.set(std::string{key}, value_box{std::move(new_val)});
         return *this;
     }
 
@@ -157,7 +181,7 @@ public:
         
         if (path.size() == 1) {
             // Single element path, just set directly
-            return set(std::string{*first_key}, std::forward<T>(val));
+            return set(*first_key, std::forward<T>(val));
         }
         
         // Get or create the root value for this key
@@ -168,7 +192,7 @@ public:
         
         // Use recursive vivify to set the nested value
         value_type new_root = set_at_path_vivify_impl(root_val, sub_path, 0, value_type{std::forward<T>(val)});
-        transient_.set(*first_key, value_box{std::move(new_root)});
+        transient_.set(std::string{*first_key}, value_box{std::move(new_root)});
         return *this;
     }
 
@@ -184,7 +208,7 @@ public:
         if (!first_key) return *this;
         
         if (path.size() == 1) {
-            return update_at(std::string{*first_key}, std::forward<Fn>(fn));
+            return update_at(*first_key, std::forward<Fn>(fn));
         }
         
         value_type root_val = get(*first_key);
@@ -196,7 +220,7 @@ public:
         value_type new_val = std::forward<Fn>(fn)(std::move(current));
         // Set back
         value_type new_root = set_at_path_vivify_impl(root_val, sub_path, 0, std::move(new_val));
-        transient_.set(*first_key, value_box{std::move(new_root)});
+        transient_.set(std::string{*first_key}, value_box{std::move(new_root)});
         return *this;
     }
 
@@ -253,13 +277,8 @@ private:
         value_type new_child = set_at_path_vivify_impl(current_child, path, idx + 1, std::move(new_val));
         
         // Set child back to parent
-        return std::visit([&root, &new_child](const auto& key_or_idx) -> value_type {
-            using T = std::decay_t<decltype(key_or_idx)>;
-            if constexpr (std::is_same_v<T, std::string_view>) {
-                return root.set_vivify(std::string{key_or_idx}, std::move(new_child));
-            } else {
-                return root.set_vivify(key_or_idx, std::move(new_child));
-            }
+        return std::visit([&root, &new_child](auto key_or_idx) -> value_type {
+            return root.set_vivify(key_or_idx, std::move(new_child));
         }, elem);
     }
 };
@@ -424,13 +443,8 @@ private:
             }
         }
         value_type new_child = set_at_path_vivify_impl(current_child, path, idx + 1, std::move(new_val));
-        return std::visit([&root, &new_child](const auto& key_or_idx) -> value_type {
-            using T = std::decay_t<decltype(key_or_idx)>;
-            if constexpr (std::is_same_v<T, std::string_view>) {
-                return root.set_vivify(std::string{key_or_idx}, std::move(new_child));
-            } else {
-                return root.set_vivify(key_or_idx, std::move(new_child));
-            }
+        return std::visit([&root, &new_child](auto key_or_idx) -> value_type {
+            return root.set_vivify(key_or_idx, std::move(new_child));
         }, elem);
     }
 };
@@ -507,22 +521,48 @@ public:
     BasicTableBuilder(const BasicTableBuilder&) = delete;
     BasicTableBuilder& operator=(const BasicTableBuilder&) = delete;
 
+    /// Insert a value with string_view id (id is copied internally)
     template <typename T>
-    BasicTableBuilder& insert(const std::string& id, T&& val) {
-        transient_.insert(table_entry{id, value_box{value_type{std::forward<T>(val)}}});
+    BasicTableBuilder& insert(std::string_view id, T&& val) {
+        transient_.insert(table_entry{std::string{id}, value_box{value_type{std::forward<T>(val)}}});
         return *this;
     }
 
-    BasicTableBuilder& insert(const std::string& id, value_type val) {
-        transient_.insert(table_entry{id, value_box{std::move(val)}});
+    /// Insert an already constructed BasicValue
+    BasicTableBuilder& insert(std::string_view id, value_type val) {
+        transient_.insert(table_entry{std::string{id}, value_box{std::move(val)}});
         return *this;
     }
 
-    [[nodiscard]] bool contains(const std::string& id) const {
+    /// Insert with const char* id (disambiguation for string literals)
+    template <typename T>
+    BasicTableBuilder& insert(const char* id, T&& val) {
+        return insert(std::string_view{id}, std::forward<T>(val));
+    }
+
+    /// Insert with const char* id (disambiguation for string literals)
+    BasicTableBuilder& insert(const char* id, value_type val) {
+        return insert(std::string_view{id}, std::move(val));
+    }
+
+    /// Insert with rvalue string id (zero-copy id transfer)
+    template <typename T>
+    BasicTableBuilder& insert(std::string&& id, T&& val) {
+        transient_.insert(table_entry{std::move(id), value_box{value_type{std::forward<T>(val)}}});
+        return *this;
+    }
+
+    /// Insert with rvalue string id (zero-copy id transfer)
+    BasicTableBuilder& insert(std::string&& id, value_type val) {
+        transient_.insert(table_entry{std::move(id), value_box{std::move(val)}});
+        return *this;
+    }
+
+    [[nodiscard]] bool contains(std::string_view id) const {
         return transient_.count(id) > 0;
     }
 
-    [[nodiscard]] value_type get(const std::string& id, value_type default_val = value_type{}) const {
+    [[nodiscard]] value_type get(std::string_view id, value_type default_val = value_type{}) const {
         const auto* ptr = transient_.find(id);
         if (ptr) {
             return ptr->value.get();
@@ -532,25 +572,25 @@ public:
 
     template<typename Fn>
     requires ValueTransformer<Fn, value_type>
-    BasicTableBuilder& update(const std::string& id, Fn&& fn) {
+    BasicTableBuilder& update(std::string_view id, Fn&& fn) {
         const auto* ptr = transient_.find(id);
         if (ptr) {
             auto new_val = value_type{std::forward<Fn>(fn)(ptr->value.get())};
-            transient_.insert(table_entry{id, value_box{std::move(new_val)}});
+            transient_.insert(table_entry{std::string{id}, value_box{std::move(new_val)}});
         }
         return *this;
     }
 
     template<typename Fn>
     requires ValueTransformer<Fn, value_type>
-    BasicTableBuilder& upsert(const std::string& id, Fn&& fn) {
+    BasicTableBuilder& upsert(std::string_view id, Fn&& fn) {
         value_type current{};
         const auto* ptr = transient_.find(id);
         if (ptr) {
             current = ptr->value.get();
         }
         auto new_val = std::forward<Fn>(fn)(std::move(current));
-        transient_.insert(table_entry{id, value_box{std::move(new_val)}});
+        transient_.insert(table_entry{std::string{id}, value_box{std::move(new_val)}});
         return *this;
     }
 

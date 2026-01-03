@@ -84,7 +84,7 @@ struct KeySeg {
     static constexpr bool is_key = true;
     static constexpr bool is_index = false;
 
-    static std::string key_string() { return Key.to_string(); }
+    static constexpr std::string_view key_string() noexcept { return Key.view(); }
 };
 
 // Index segment - for vector access
@@ -105,11 +105,11 @@ struct StaticKeyLens {
     static constexpr auto key = Key;
 
     Value get(const Value& whole) const {
-        return whole.at(key.to_string());
+        return whole.at(key.view());
     }
 
     Value set(Value whole, Value part) const {
-        return whole.set(key.to_string(), std::move(part));
+        return whole.set(key.view(), std::move(part));
     }
 };
 

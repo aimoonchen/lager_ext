@@ -16,9 +16,7 @@
 /// ## C++20 Features Used
 /// - Concepts for type constraints
 /// - std::source_location for error diagnostics
-/// - std::span for contiguous data views
-/// - std::ranges for algorithms
-/// - [[nodiscard]] and [[likely]]/[[unlikely]] attributes
+/// - [[nodiscard]] attributes
 /// - Defaulted comparison operators (operator<=>)
 
 #pragma once
@@ -45,9 +43,7 @@
 #include <cstdint>
 #include <functional> // for std::hash
 #include <iostream>
-#include <ranges>     // for std::ranges::copy (C++20)
 #include <source_location> // for std::source_location (C++20)
-#include <span>       // for std::span (C++20)
 #include <string>
 #include <variant>
 #include <vector>
@@ -343,6 +339,7 @@ struct BasicValue
         return BasicValue{t.persistent()};
     }
 
+    /// Factory functions for math types with explicit parameters
     static BasicValue vec2(float x, float y) {
         return BasicValue{Vec2{x, y}};
     }
@@ -355,64 +352,36 @@ struct BasicValue
         return BasicValue{Vec4{x, y, z, w}};
     }
 
-    static BasicValue vec2(std::span<const float, 2> data) {
-        Vec2 v;
-        std::ranges::copy(data, v.begin());
-        return BasicValue{v};
-    }
-
-    static BasicValue vec3(std::span<const float, 3> data) {
-        Vec3 v;
-        std::ranges::copy(data, v.begin());
-        return BasicValue{v};
-    }
-
-    static BasicValue vec4(std::span<const float, 4> data) {
-        Vec4 v;
-        std::ranges::copy(data, v.begin());
-        return BasicValue{v};
-    }
-
-    static BasicValue mat3(std::span<const float, 9> data) {
-        Mat3 m;
-        std::ranges::copy(data, m.begin());
-        return BasicValue{m};
-    }
-
-    static BasicValue mat4x3(std::span<const float, 12> data) {
-        Mat4x3 m;
-        std::ranges::copy(data, m.begin());
-        return BasicValue{m};
-    }
-
+    /// Factory functions for math types from raw float pointers
+    /// @note Useful for interop with other math libraries (GLM, Eigen, etc.)
     static BasicValue vec2(const float* ptr) {
-        return vec2(std::span<const float, 2>{ptr, 2});
+        return BasicValue{Vec2{ptr[0], ptr[1]}};
     }
 
     static BasicValue vec3(const float* ptr) {
-        return vec3(std::span<const float, 3>{ptr, 3});
+        return BasicValue{Vec3{ptr[0], ptr[1], ptr[2]}};
     }
 
     static BasicValue vec4(const float* ptr) {
-        return vec4(std::span<const float, 4>{ptr, 4});
+        return BasicValue{Vec4{ptr[0], ptr[1], ptr[2], ptr[3]}};
     }
 
     static BasicValue mat3(const float* ptr) {
-        return mat3(std::span<const float, 9>{ptr, 9});
+        Mat3 m;
+        std::copy_n(ptr, 9, m.begin());
+        return BasicValue{m};
     }
 
     static BasicValue mat4x3(const float* ptr) {
-        return mat4x3(std::span<const float, 12>{ptr, 12});
+        Mat4x3 m;
+        std::copy_n(ptr, 12, m.begin());
+        return BasicValue{m};
     }
 
-    /// Create a 3x3 identity matrix
-    /// @note Not constexpr because BasicValue(Mat3) involves immer::box allocation
-    static BasicValue identity_mat3() {
-        return BasicValue{Mat3{
-            1.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f,
-            0.0f, 0.0f, 1.0f
-        }};
+    static BasicValue mat4(const float* ptr) {
+        Mat4 m;
+        std::copy_n(ptr, 16, m.begin());
+        return BasicValue{m};
     }
 
     /// Get pointer to contained value of type T, or nullptr if type mismatch
@@ -441,7 +410,8 @@ struct BasicValue
         return is_vec2() || is_vec3() || is_vec4() || is_mat3() || is_mat4x3();
     }
 
-    /// Access element by string_view key (zero-allocation with transparent lookup)
+    /// Access element by key (zero-allocation with transparent lookup)
+    /// @note std::string and const char* implicitly convert to string_view (C++17+)
     [[nodiscard]] BasicValue at(std::string_view key) const {
         if (auto* m = get_if<value_map>()) {
             if (auto* found = m->find(key)) return found->get();
@@ -451,16 +421,6 @@ struct BasicValue
         }
         detail::log_key_error("Value::at", key, "not found or type mismatch");
         return BasicValue{};
-    }
-
-    /// Access element by string key (delegates to string_view overload)
-    [[nodiscard]] BasicValue at(const std::string& key) const {
-        return at(std::string_view{key});
-    }
-
-    /// Overload for string literals to avoid ambiguity between string and string_view
-    [[nodiscard]] BasicValue at(const char* key) const {
-        return at(std::string_view{key});
     }
 
     [[nodiscard]] BasicValue at(std::size_t index) const {
@@ -474,7 +434,7 @@ struct BasicValue
         return BasicValue{};
     }
 
-    [[nodiscard]] BasicValue at_or(const std::string& key, BasicValue default_val) const {
+    [[nodiscard]] BasicValue at_or(std::string_view key, BasicValue default_val) const {
         auto result = at(key);
         return result.is_null() ? std::move(default_val) : std::move(result);
     }
@@ -587,12 +547,25 @@ struct BasicValue
         return false;
     }
 
-    /// Set value by string_view key (zero-copy API, internally converts to string)
+    /// Set value by string_view key
     /// @note Allocation is unavoidable since immer::map needs owned keys for persistence.
-    ///       This overload provides API consistency with at(string_view).
     [[nodiscard]] BasicValue set(std::string_view key, BasicValue val) const {
         if (auto* m = get_if<value_map>()) return m->set(std::string{key}, value_box{std::move(val)});
         if (auto* t = get_if<value_table>()) return t->insert(table_entry{std::string{key}, value_box{std::move(val)}});
+        detail::log_key_error("Value::set", key, "cannot set on non-map type");
+        return *this;
+    }
+
+    /// Set value by const char* key (disambiguation for string literals)
+    [[nodiscard]] BasicValue set(const char* key, BasicValue val) const {
+        return set(std::string_view{key}, std::move(val));
+    }
+
+    /// Set value by rvalue string key (zero-copy key transfer)
+    /// @note Use this overload when you have a std::string that can be moved.
+    [[nodiscard]] BasicValue set(std::string&& key, BasicValue val) const {
+        if (auto* m = get_if<value_map>()) return m->set(std::move(key), value_box{std::move(val)});
+        if (auto* t = get_if<value_table>()) return t->insert(table_entry{std::move(key), value_box{std::move(val)}});
         detail::log_key_error("Value::set", key, "cannot set on non-map type");
         return *this;
     }
@@ -610,10 +583,24 @@ struct BasicValue
         return *this;
     }
 
-    [[nodiscard]] BasicValue set_vivify(const std::string& key, BasicValue val) const {
-        if (auto* m = get_if<value_map>()) return m->set(key, value_box{std::move(val)});
-        if (auto* t = get_if<value_table>()) return t->insert(table_entry{key, value_box{std::move(val)}});
-        if (is_null()) return value_map{}.set(key, value_box{std::move(val)});
+    [[nodiscard]] BasicValue set_vivify(std::string_view key, BasicValue val) const {
+        if (auto* m = get_if<value_map>()) return m->set(std::string{key}, value_box{std::move(val)});
+        if (auto* t = get_if<value_table>()) return t->insert(table_entry{std::string{key}, value_box{std::move(val)}});
+        if (is_null()) return value_map{}.set(std::string{key}, value_box{std::move(val)});
+        detail::log_key_error("Value::set_vivify", key, "cannot set on non-map/non-null type");
+        return *this;
+    }
+
+    /// Set value by const char* key with auto-vivification (disambiguation for string literals)
+    [[nodiscard]] BasicValue set_vivify(const char* key, BasicValue val) const {
+        return set_vivify(std::string_view{key}, std::move(val));
+    }
+
+    /// Set value by rvalue string key with auto-vivification (zero-copy key transfer)
+    [[nodiscard]] BasicValue set_vivify(std::string&& key, BasicValue val) const {
+        if (auto* m = get_if<value_map>()) return m->set(std::move(key), value_box{std::move(val)});
+        if (auto* t = get_if<value_table>()) return t->insert(table_entry{std::move(key), value_box{std::move(val)}});
+        if (is_null()) return value_map{}.set(std::move(key), value_box{std::move(val)});
         detail::log_key_error("Value::set_vivify", key, "cannot set on non-map/non-null type");
         return *this;
     }
