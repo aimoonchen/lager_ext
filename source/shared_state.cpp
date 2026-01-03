@@ -767,7 +767,7 @@ static void write_path(ByteBuffer& buf, const Path& path) {
     buf.push_back((count >> 24) & 0xFF);
 
     for (const auto& elem : path) {
-        if (auto* s = std::get_if<std::string>(&elem)) {
+        if (auto* s = std::get_if<std::string_view>(&elem)) {
             buf.push_back(0);  // String type
             uint32_t len = static_cast<uint32_t>(s->size());
             buf.push_back(len & 0xFF);

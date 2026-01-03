@@ -19,8 +19,8 @@ struct PathHash {
         for (const auto& elem : path) {
             std::size_t elem_hash = std::visit([](const auto& v) -> std::size_t {
                 using T = std::decay_t<decltype(v)>;
-                if constexpr (std::is_same_v<T, std::string>) {
-                    return std::hash<std::string>{}(v);
+                if constexpr (std::is_same_v<T, std::string_view>) {
+                    return std::hash<std::string_view>{}(v);
                 } else {
                     return std::hash<std::size_t>{}(v);
                 }
@@ -177,8 +177,8 @@ std::string get_error_message(PathErrorCode code, const PathElement& elem, std::
 {
     auto elem_str = std::visit([](const auto& v) -> std::string {
         using T = std::decay_t<decltype(v)>;
-        if constexpr (std::is_same_v<T, std::string>) {
-            return "key \"" + v + "\"";
+        if constexpr (std::is_same_v<T, std::string_view>) {
+            return "key \"" + std::string{v} + "\"";
         } else {
             return "index " + std::to_string(v);
         }
@@ -211,10 +211,11 @@ std::pair<Value, PathErrorCode> try_get_element(const Value& current, const Path
             return {Value{}, PathErrorCode::NullValue};
         }
 
-        if constexpr (std::is_same_v<T, std::string>) {
+        if constexpr (std::is_same_v<T, std::string_view>) {
             if (auto* map = current.get_if<ValueMap>()) {
-                if (auto found = map->find(key); found != nullptr) {
-                    return {**found, PathErrorCode::Success};
+                // Convert string_view to string for map lookup
+                if (auto found = map->find(std::string{key}); found != nullptr) {
+                    return {found->get(), PathErrorCode::Success};
                 }
                 return {Value{}, PathErrorCode::KeyNotFound};
             }
@@ -222,7 +223,7 @@ std::pair<Value, PathErrorCode> try_get_element(const Value& current, const Path
         } else {
             if (auto* vec = current.get_if<ValueVector>()) {
                 if (key < vec->size()) {
-                    return {*(*vec)[key], PathErrorCode::Success};
+                    return {(*vec)[key].get(), PathErrorCode::Success};
                 }
                 return {Value{}, PathErrorCode::IndexOutOfRange};
             }
@@ -305,7 +306,7 @@ PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new
     const auto& last_elem = path.back();
     bool can_set = std::visit([&current](const auto& key) -> bool {
         using T = std::decay_t<decltype(key)>;
-        if constexpr (std::is_same_v<T, std::string>) {
+        if constexpr (std::is_same_v<T, std::string_view>) {
             return current.is_null() || current.get_if<ValueMap>() != nullptr;
         } else {
             return current.get_if<ValueVector>() != nullptr;

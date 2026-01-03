@@ -97,7 +97,7 @@ std::string path_to_string_path(const Path& path)
         result += '/';
         std::visit([&](const auto& v) {
             using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, std::string>) {
+            if constexpr (std::is_same_v<T, std::string_view>) {
                 // Escape: ~ -> ~0, / -> ~1
                 for (char c : v) {
                     if (c == '~') {
@@ -109,6 +109,7 @@ std::string path_to_string_path(const Path& path)
                     }
                 }
             } else {
+                // size_t index
                 result += std::to_string(v);
             }
         }, elem);

@@ -17,7 +17,7 @@ namespace {
 /// Recursive helper for set_at_path
 Value set_at_path_recursive(
     const Value& root,
-    const Path& path,
+    PathView path,
     std::size_t path_index,
     Value new_val)
 {
@@ -37,7 +37,7 @@ Value set_at_path_recursive(
 // Public API Implementation
 // ============================================================
 
-Value set_at_path(const Value& root, const Path& path, Value new_val)
+Value set_at_path(const Value& root, PathView path, Value new_val)
 {
     if (path.empty()) {
         return new_val;
@@ -54,14 +54,15 @@ namespace {
 /// Set value at a single path element with auto-vivification
 Value set_at_path_element_vivify(const Value& current, const PathElement& elem, Value new_val)
 {
-    if (auto* key = std::get_if<std::string>(&elem)) {
+    if (auto* key = std::get_if<std::string_view>(&elem)) {
         // For string keys: auto-create map if null
+        std::string key_str{*key};
         if (auto* m = current.get_if<ValueMap>()) {
-            return m->set(*key, immer::box<Value>{std::move(new_val)});
+            return m->set(key_str, immer::box<Value>{std::move(new_val)});
         }
         if (current.is_null()) {
             // Auto-vivification: create new map
-            return ValueMap{}.set(*key, immer::box<Value>{std::move(new_val)});
+            return ValueMap{}.set(key_str, immer::box<Value>{std::move(new_val)});
         }
         // Not a map and not null - cannot vivify
         return current;
@@ -95,7 +96,7 @@ Value set_at_path_element_vivify(const Value& current, const PathElement& elem, 
 /// Recursive helper for set_at_path_vivify
 Value set_at_path_recursive_vivify(
     const Value& root,
-    const Path& path,
+    PathView path,
     std::size_t path_index,
     Value new_val)
 {
@@ -109,7 +110,7 @@ Value set_at_path_recursive_vivify(
     // If child is null and we have more path elements, prepare for vivification
     if (current_child.is_null() && path_index + 1 < path.size()) {
         const auto& next_elem = path[path_index + 1];
-        if (std::holds_alternative<std::string>(next_elem)) {
+        if (std::holds_alternative<std::string_view>(next_elem)) {
             current_child = Value{ValueMap{}};
         } else {
             current_child = Value{ValueVector{}};
@@ -122,7 +123,7 @@ Value set_at_path_recursive_vivify(
 
 } // anonymous namespace
 
-Value set_at_path_vivify(const Value& root, const Path& path, Value new_val)
+Value set_at_path_vivify(const Value& root, PathView path, Value new_val)
 {
     if (path.empty()) {
         return new_val;
@@ -134,7 +135,7 @@ Value set_at_path_vivify(const Value& root, const Path& path, Value new_val)
 // Path Erasure Implementation
 // ============================================================
 
-Value erase_at_path(const Value& root, const Path& path)
+Value erase_at_path(const Value& root, PathView path)
 {
     if (path.empty()) {
         return Value{};  // Erase entire root
@@ -142,7 +143,7 @@ Value erase_at_path(const Value& root, const Path& path)
 
     // If last element is a string key, we can erase from map
     if (path.size() == 1) {
-        if (auto* key = std::get_if<std::string>(&path[0])) {
+        if (auto* key = std::get_if<std::string_view>(&path[0])) {
             return detail::erase_key_from_map(root, *key);
         }
         // For index, set to null (cannot truly remove without reindexing)
@@ -157,7 +158,7 @@ Value erase_at_path(const Value& root, const Path& path)
     }
     const auto& last = path.back();
 
-    if (auto* key = std::get_if<std::string>(&last)) {
+    if (auto* key = std::get_if<std::string_view>(&last)) {
         Value parent = get_at_path(root, parent_path);
         Value new_parent = detail::erase_key_from_map(parent, *key);
         return set_at_path(root, parent_path, new_parent);
@@ -171,7 +172,7 @@ Value erase_at_path(const Value& root, const Path& path)
 // Path Validation Implementation
 // ============================================================
 
-bool is_valid_path(const Value& root, const Path& path)
+bool is_valid_path(const Value& root, PathView path)
 {
     Value current = root;
     for (const auto& elem : path) {
@@ -183,7 +184,7 @@ bool is_valid_path(const Value& root, const Path& path)
     return true;
 }
 
-std::size_t valid_path_depth(const Value& root, const Path& path)
+std::size_t valid_path_depth(const Value& root, PathView path)
 {
     Value current = root;
     std::size_t depth = 0;

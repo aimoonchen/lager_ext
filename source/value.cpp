@@ -158,21 +158,7 @@ void print_value(const Value& val, const std::string& prefix, std::size_t depth)
         val.data);
 }
 
-std::string path_to_string(const Path& path)
-{
-    std::string result;
-    for (const auto& elem : path) {
-        std::visit([&](const auto& v) {
-            using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, std::string>) {
-                result += "." + v;
-            } else {
-                result += "[" + std::to_string(v) + "]";
-            }
-        }, elem);
-    }
-    return result.empty() ? "/" : result;
-}
+// path_to_string is now implemented in path_types.cpp
 
 Value create_sample_data()
 {

@@ -151,13 +151,13 @@ public:
     BasicMapBuilder& set_at_path(const Path& path, T&& val) {
         if (path.empty()) return *this;
         
-        // Get first key (must be string for map)
-        auto* first_key = std::get_if<std::string>(&path[0]);
+        // Get first key (must be string_view for map)
+        auto* first_key = std::get_if<std::string_view>(&path[0]);
         if (!first_key) return *this;
         
         if (path.size() == 1) {
             // Single element path, just set directly
-            return set(*first_key, std::forward<T>(val));
+            return set(std::string{*first_key}, std::forward<T>(val));
         }
         
         // Get or create the root value for this key
@@ -180,11 +180,11 @@ public:
     BasicMapBuilder& update_at_path(const Path& path, Fn&& fn) {
         if (path.empty()) return *this;
         
-        auto* first_key = std::get_if<std::string>(&path[0]);
+        auto* first_key = std::get_if<std::string_view>(&path[0]);
         if (!first_key) return *this;
         
         if (path.size() == 1) {
-            return update_at(*first_key, std::forward<Fn>(fn));
+            return update_at(std::string{*first_key}, std::forward<Fn>(fn));
         }
         
         value_type root_val = get(*first_key);
@@ -243,7 +243,7 @@ private:
         // Prepare child for next level if needed
         if (current_child.is_null() && idx + 1 < path.size()) {
             const auto& next = path[idx + 1];
-            if (std::holds_alternative<std::string>(next)) {
+            if (std::holds_alternative<std::string_view>(next)) {
                 current_child = value_type{value_map{}};
             } else {
                 current_child = value_type{value_vector{}};
@@ -255,8 +255,8 @@ private:
         // Set child back to parent
         return std::visit([&root, &new_child](const auto& key_or_idx) -> value_type {
             using T = std::decay_t<decltype(key_or_idx)>;
-            if constexpr (std::is_same_v<T, std::string>) {
-                return root.set_vivify(key_or_idx, std::move(new_child));
+            if constexpr (std::is_same_v<T, std::string_view>) {
+                return root.set_vivify(std::string{key_or_idx}, std::move(new_child));
             } else {
                 return root.set_vivify(key_or_idx, std::move(new_child));
             }
@@ -417,7 +417,7 @@ private:
         }, elem);
         if (current_child.is_null() && idx + 1 < path.size()) {
             const auto& next = path[idx + 1];
-            if (std::holds_alternative<std::string>(next)) {
+            if (std::holds_alternative<std::string_view>(next)) {
                 current_child = value_type{value_map{}};
             } else {
                 current_child = value_type{value_vector{}};
@@ -425,7 +425,12 @@ private:
         }
         value_type new_child = set_at_path_vivify_impl(current_child, path, idx + 1, std::move(new_val));
         return std::visit([&root, &new_child](const auto& key_or_idx) -> value_type {
-            return root.set_vivify(key_or_idx, std::move(new_child));
+            using T = std::decay_t<decltype(key_or_idx)>;
+            if constexpr (std::is_same_v<T, std::string_view>) {
+                return root.set_vivify(std::string{key_or_idx}, std::move(new_child));
+            } else {
+                return root.set_vivify(key_or_idx, std::move(new_child));
+            }
         }, elem);
     }
 };

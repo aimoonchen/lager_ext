@@ -28,11 +28,14 @@
 #include <immer/vector.hpp>
 #include <immer/vector_transient.hpp>
 
+#include <lager_ext/path_types.h>  // PathElement, PathView, Path
+
 #include <algorithm>  // for std::copy_n
 #include <array>      // for Vec2, Vec3, Vec4, Mat3, Mat4x3
 #include <compare>    // for std::strong_ordering (C++20)
 #include <concepts>   // for C++20 Concepts (C++20)
 #include <cstdint>
+#include <functional> // for std::hash
 #include <iostream>
 #include <ranges>     // for std::ranges::copy (C++20)
 #include <source_location> // for std::source_location (C++20)
@@ -135,6 +138,46 @@ using Mat3 = std::array<float, 9>;
 using Mat4x3 = std::array<float, 12>;
 using Mat4 = std::array<float, 16>;
 
+// ============================================================
+// Transparent Hash and Comparator
+//
+// These enable heterogeneous lookup in immer::map and immer::table,
+// allowing queries with std::string_view without constructing
+// a temporary std::string. This eliminates heap allocations
+// during path traversal operations.
+//
+// The `is_transparent` type alias signals to the container that
+// it supports heterogeneous lookup (C++14/C++20 feature).
+// ============================================================
+
+/// Transparent hash functor for string types
+/// Supports: std::string, std::string_view, const char*
+struct TransparentStringHash {
+    using is_transparent = void;  // Enable heterogeneous lookup
+
+    [[nodiscard]] std::size_t operator()(std::string_view sv) const noexcept {
+        return std::hash<std::string_view>{}(sv);
+    }
+
+    [[nodiscard]] std::size_t operator()(const std::string& s) const noexcept {
+        return std::hash<std::string_view>{}(s);
+    }
+
+    [[nodiscard]] std::size_t operator()(const char* s) const noexcept {
+        return std::hash<std::string_view>{}(s);
+    }
+};
+
+/// Transparent equality comparator for string types
+/// Supports: std::string, std::string_view, const char*
+struct TransparentStringEqual {
+    using is_transparent = void;  // Enable heterogeneous lookup
+
+    [[nodiscard]] bool operator()(std::string_view a, std::string_view b) const noexcept {
+        return a == b;
+    }
+};
+
 // Forward declaration
 template <typename MemoryPolicy>
 struct BasicValue;
@@ -142,11 +185,13 @@ struct BasicValue;
 template <typename MemoryPolicy>
 using BasicValueBox = immer::box<BasicValue<MemoryPolicy>, MemoryPolicy>;
 
+/// Map container with transparent lookup support
+/// Allows find/count/at operations with string_view without allocation
 template <typename MemoryPolicy>
 using BasicValueMap = immer::map<std::string,
                                   BasicValueBox<MemoryPolicy>,
-                                  std::hash<std::string>,
-                                  std::equal_to<std::string>,
+                                  TransparentStringHash,
+                                  TransparentStringEqual,
                                   MemoryPolicy>;
 
 template <typename MemoryPolicy>
@@ -171,11 +216,13 @@ struct BasicTableEntry {
     }
 };
 
+/// Table container with transparent lookup support
+/// Allows find/count operations with string_view without allocation
 template <typename MemoryPolicy>
 using BasicValueTable = immer::table<BasicTableEntry<MemoryPolicy>,
                                       immer::table_key_fn,
-                                      std::hash<std::string>,
-                                      std::equal_to<std::string>,
+                                      TransparentStringHash,
+                                      TransparentStringEqual,
                                       MemoryPolicy>;
 
 // Boxed matrix types (reduces variant size from ~72 to ~40 bytes)
@@ -187,9 +234,6 @@ using BoxedMat4x3 = immer::box<Mat4x3, MemoryPolicy>;
 
 template <typename MemoryPolicy>
 using BoxedMat4 = immer::box<Mat4, MemoryPolicy>;
-
-using PathElement = std::variant<std::string, std::size_t>;
-using Path        = std::vector<PathElement>;
 
 /// @brief Byte buffer type for binary serialization
 using ByteBuffer  = std::vector<uint8_t>;
@@ -382,7 +426,8 @@ struct BasicValue
         return is_vec2() || is_vec3() || is_vec4() || is_mat3() || is_mat4x3();
     }
 
-    [[nodiscard]] BasicValue at(const std::string& key) const {
+    /// Access element by string_view key (zero-allocation with transparent lookup)
+    [[nodiscard]] BasicValue at(std::string_view key) const {
         if (auto* m = get_if<value_map>()) {
             if (auto* found = m->find(key)) return found->get();
         }
@@ -391,6 +436,16 @@ struct BasicValue
         }
         detail::log_key_error("Value::at", key, "not found or type mismatch");
         return BasicValue{};
+    }
+
+    /// Access element by string key (delegates to string_view overload)
+    [[nodiscard]] BasicValue at(const std::string& key) const {
+        return at(std::string_view{key});
+    }
+
+    /// Overload for string literals to avoid ambiguity between string and string_view
+    [[nodiscard]] BasicValue at(const char* key) const {
+        return at(std::string_view{key});
     }
 
     [[nodiscard]] BasicValue at(std::size_t index) const {
@@ -508,7 +563,8 @@ struct BasicValue
         return default_val;
     }
 
-    [[nodiscard]] bool contains(const std::string& key) const { return count(key) > 0; }
+    /// Check if key exists (zero-allocation with transparent lookup)
+    [[nodiscard]] bool contains(std::string_view key) const { return count(key) > 0; }
 
     [[nodiscard]] bool contains(std::size_t index) const {
         if (auto* v = get_if<value_vector>()) return index < v->size();
@@ -569,7 +625,8 @@ struct BasicValue
         return *this;
     }
 
-    [[nodiscard]] std::size_t count(const std::string& key) const {
+    /// Count occurrences of key (zero-allocation with transparent lookup)
+    [[nodiscard]] std::size_t count(std::string_view key) const {
         if (auto* m = get_if<value_map>()) return m->count(key);
         if (auto* t = get_if<value_table>()) return t->count(key) ? 1 : 0;
         return 0;
@@ -753,8 +810,7 @@ std::partial_ordering operator<=>(const BasicValue<MemoryPolicy>& a,
 // Print Value with indentation
 LAGER_EXT_API void print_value(const Value& val, const std::string& prefix = "", std::size_t depth = 0);
 
-// Convert Path to dot-notation string (e.g., ".users[0].name")
-[[nodiscard]] LAGER_EXT_API std::string path_to_string(const Path& path);
+// Note: path_to_string(PathView) is declared in path_types.h
 
 // ============================================================
 // Common test data factory

@@ -15,13 +15,13 @@ namespace lager_ext {
 
 namespace {
 
-// Hash function for PathElement
+// Hash function for PathElement (string_view or size_t)
 struct PathElementHash {
     std::size_t operator()(const PathElement& elem) const {
         return std::visit([](const auto& v) -> std::size_t {
             using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, std::string>) {
-                return std::hash<std::string>{}(v);
+            if constexpr (std::is_same_v<T, std::string_view>) {
+                return std::hash<std::string_view>{}(v);
             } else {
                 return std::hash<std::size_t>{}(v);
             }
@@ -66,7 +66,13 @@ bool values_share_structure(const Value& a, const Value& b) {
 // Get child value at path element
 Value get_child(const Value& parent, const PathElement& elem) {
     return std::visit([&parent](const auto& key) -> Value {
-        return parent.at(key);
+        using T = std::decay_t<decltype(key)>;
+        if constexpr (std::is_same_v<T, std::string_view>) {
+            // Convert string_view to string for map lookup
+            return parent.at(std::string{key});
+        } else {
+            return parent.at(key);  // size_t index
+        }
     }, elem);
 }
 

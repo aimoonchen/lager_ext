@@ -7,6 +7,28 @@
 /// This file provides the fundamental path traversal functions used by
 /// PathLens, ZoomedValue, and other high-level path abstractions.
 ///
+/// ## Path Types
+///
+/// - **PathView**: Zero-allocation path for static/literal paths (recommended for most cases)
+/// - **Path**: Owning path for dynamic paths (when keys come from runtime)
+///
+/// All path functions accept `PathView`, and `Path` implicitly converts to `PathView`.
+///
+/// ## Usage Examples
+///
+/// ```cpp
+/// using namespace std::string_view_literals;
+///
+/// // Static path (zero allocation)
+/// auto val = get_at_path(root, {{"users"sv, 0, "name"sv}});
+///
+/// // Dynamic path
+/// Path path;
+/// path.push_back(get_key());
+/// path.push_back(0);
+/// auto val = get_at_path(root, path);
+/// ```
+///
 /// For most use cases, prefer the unified `path::` namespace in <lager_ext/path.h>.
 /// Use this header directly only when you need:
 /// - Maximum performance (inline functions)
@@ -16,6 +38,7 @@
 #pragma once
 
 #include <lager_ext/value.h>
+#include <lager_ext/path_types.h>
 #include <lager_ext/api.h>
 
 namespace lager_ext {
@@ -30,8 +53,8 @@ namespace detail {
 /// @note Internal helper - prefer get_at_path() for public use
 [[nodiscard]] inline Value get_at_path_element(const Value& current, const PathElement& elem)
 {
-    if (auto* key = std::get_if<std::string>(&elem)) {
-        return current.at(*key);
+    if (auto* key = std::get_if<std::string_view>(&elem)) {
+        return current.at(std::string{*key});
     } else {
         return current.at(std::get<std::size_t>(elem));
     }
@@ -41,8 +64,8 @@ namespace detail {
 /// @note Internal helper - prefer set_at_path() for public use
 [[nodiscard]] inline Value set_at_path_element(const Value& current, const PathElement& elem, Value new_val)
 {
-    if (auto* key = std::get_if<std::string>(&elem)) {
-        return current.set(*key, std::move(new_val));
+    if (auto* key = std::get_if<std::string_view>(&elem)) {
+        return current.set(std::string{*key}, std::move(new_val));
     } else {
         return current.set(std::get<std::size_t>(elem), std::move(new_val));
     }
@@ -50,10 +73,10 @@ namespace detail {
 
 /// Erase a key from a map value
 /// @note Internal helper
-[[nodiscard]] inline Value erase_key_from_map(const Value& val, const std::string& key)
+[[nodiscard]] inline Value erase_key_from_map(const Value& val, std::string_view key)
 {
     if (auto* m = val.get_if<ValueMap>()) {
-        return m->erase(key);
+        return m->erase(std::string{key});
     }
     return val;
 }
@@ -62,9 +85,9 @@ namespace detail {
 /// @note Internal helper - prefer is_valid_path() for public use
 [[nodiscard]] inline bool can_access_element(const Value& val, const PathElement& elem)
 {
-    if (auto* key = std::get_if<std::string>(&elem)) {
+    if (auto* key = std::get_if<std::string_view>(&elem)) {
         if (const auto* map = val.get_if<ValueMap>()) {
-            return map->count(*key) > 0;
+            return map->count(std::string{*key}) > 0;
         }
         return false;
     } else {
@@ -87,10 +110,10 @@ namespace detail {
 
 /// @brief Get value at a path
 /// @param root The root value to traverse
-/// @param path The path to follow
+/// @param path The path to follow (PathView for zero-copy, or Path which implicitly converts)
 /// @return The value at the path, or null Value if any step fails
 /// @note This is an inline function for maximum performance
-[[nodiscard]] inline Value get_at_path(const Value& root, const Path& path)
+[[nodiscard]] inline Value get_at_path(const Value& root, PathView path)
 {
     Value current = root;
     for (const auto& elem : path) {
@@ -109,7 +132,7 @@ namespace detail {
 /// @return New root with the update applied
 /// @note If the path doesn't exist, the operation may silently fail.
 ///       Use set_at_path_vivify() to auto-create intermediate nodes.
-[[nodiscard]] LAGER_EXT_API Value set_at_path(const Value& root, const Path& path, Value new_val);
+[[nodiscard]] LAGER_EXT_API Value set_at_path(const Value& root, PathView path, Value new_val);
 
 /// @brief Set value at a path with auto-vivification
 /// Creates intermediate maps/vectors as needed when path doesn't exist.
@@ -118,9 +141,9 @@ namespace detail {
 /// @param new_val The new value to set
 /// @return New root with the update applied
 /// @example
-///   Value result = set_at_path_vivify(Value{}, {"a", "b", "c"}, Value{100});
+///   Value result = set_at_path_vivify(Value{}, {{"a"sv, "b"sv, "c"sv}}, Value{100});
 ///   // result: {"a": {"b": {"c": 100}}}
-[[nodiscard]] LAGER_EXT_API Value set_at_path_vivify(const Value& root, const Path& path, Value new_val);
+[[nodiscard]] LAGER_EXT_API Value set_at_path_vivify(const Value& root, PathView path, Value new_val);
 
 /// @brief Erase value at a path
 /// For maps: actually erases the key.
@@ -128,7 +151,7 @@ namespace detail {
 /// @param root The root value
 /// @param path The path to the value to erase
 /// @return New root with the element erased
-[[nodiscard]] LAGER_EXT_API Value erase_at_path(const Value& root, const Path& path);
+[[nodiscard]] LAGER_EXT_API Value erase_at_path(const Value& root, PathView path);
 
 // ============================================================
 // Path Validation
@@ -138,12 +161,12 @@ namespace detail {
 /// @param root The root value
 /// @param path The path to check
 /// @return true if all elements in the path exist and can be accessed
-[[nodiscard]] LAGER_EXT_API bool is_valid_path(const Value& root, const Path& path);
+[[nodiscard]] LAGER_EXT_API bool is_valid_path(const Value& root, PathView path);
 
 /// @brief Get the depth of valid traversal for a path
 /// @param root The root value
 /// @param path The path to check
 /// @return Number of path elements that can be successfully traversed (0 to path.size())
-[[nodiscard]] LAGER_EXT_API std::size_t valid_path_depth(const Value& root, const Path& path);
+[[nodiscard]] LAGER_EXT_API std::size_t valid_path_depth(const Value& root, PathView path);
 
 } // namespace lager_ext
