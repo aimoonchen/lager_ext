@@ -23,6 +23,30 @@
 
 #include "api.h"
 
+// ============================================================
+// Configuration
+// ============================================================
+
+/// Enable thread-safe Value types (ThreadSafeValue, SyncValue, etc.)
+/// Default: 0 (disabled for better compile time and binary size)
+/// Set to 1 to enable: #define LAGER_EXT_ENABLE_THREAD_SAFE 1
+#ifndef LAGER_EXT_ENABLE_THREAD_SAFE
+#  define LAGER_EXT_ENABLE_THREAD_SAFE 0
+#endif
+
+/// Helper macro for conditional compilation
+#if LAGER_EXT_ENABLE_THREAD_SAFE
+#  define LAGER_EXT_IF_THREAD_SAFE(x) x
+#else
+#  define LAGER_EXT_IF_THREAD_SAFE(x)
+#endif
+
+#if LAGER_EXT_CONFIG_VERBOSE && LAGER_EXT_ENABLE_THREAD_SAFE
+#  pragma message("lager_ext: Thread-safe types ENABLED")
+#elif LAGER_EXT_CONFIG_VERBOSE
+#  pragma message("lager_ext: Thread-safe types DISABLED (default)")
+#endif
+
 #include <immer/array.hpp>
 #include <immer/array_transient.hpp>
 #include <immer/box.hpp>
@@ -696,6 +720,7 @@ using UnsafeValueArray  = BasicValueArray<unsafe_memory_policy>;
 using UnsafeValueTable  = BasicValueTable<unsafe_memory_policy>;
 using UnsafeTableEntry  = BasicTableEntry<unsafe_memory_policy>;
 
+#if LAGER_EXT_ENABLE_THREAD_SAFE
 // ============================================================
 // ThreadSafeValue - Thread-safe Value for multi-threaded scenarios
 //
@@ -719,6 +744,7 @@ using ThreadSafeValueVector = BasicValueVector<thread_safe_memory_policy>;
 using ThreadSafeValueArray  = BasicValueArray<thread_safe_memory_policy>;
 using ThreadSafeValueTable  = BasicValueTable<thread_safe_memory_policy>;
 using ThreadSafeTableEntry  = BasicTableEntry<thread_safe_memory_policy>;
+#endif // LAGER_EXT_ENABLE_THREAD_SAFE
 
 // ============================================================
 // Default Value Type Aliases
@@ -743,7 +769,8 @@ using ValueArray  = UnsafeValueArray;
 using ValueTable  = UnsafeValueTable;
 using TableEntry  = UnsafeTableEntry;
 
-// SyncValue = ThreadSafeValue (multi-threaded safe)
+// SyncValue aliases - only available when thread-safe types are enabled
+#if LAGER_EXT_ENABLE_THREAD_SAFE
 using SyncValue       = ThreadSafeValue;
 using SyncValueBox    = ThreadSafeValueBox;
 using SyncValueMap    = ThreadSafeValueMap;
@@ -751,6 +778,7 @@ using SyncValueVector = ThreadSafeValueVector;
 using SyncValueArray  = ThreadSafeValueArray;
 using SyncValueTable  = ThreadSafeValueTable;
 using SyncTableEntry  = ThreadSafeTableEntry;
+#endif // LAGER_EXT_ENABLE_THREAD_SAFE
 
 // ============================================================
 // BasicValue comparison operators (C++20)
@@ -853,7 +881,7 @@ LAGER_EXT_API Value create_sample_data();
 extern template struct BasicValue<unsafe_memory_policy>;
 extern template struct BasicTableEntry<unsafe_memory_policy>;
 
-extern template struct BasicValue<thread_safe_memory_policy>;
-extern template struct BasicTableEntry<thread_safe_memory_policy>;
+LAGER_EXT_IF_THREAD_SAFE(extern template struct BasicValue<thread_safe_memory_policy>;)
+LAGER_EXT_IF_THREAD_SAFE(extern template struct BasicTableEntry<thread_safe_memory_policy>;)
 
 } // namespace lager_ext

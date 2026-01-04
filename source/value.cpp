@@ -1348,12 +1348,12 @@ template class BasicVectorBuilder<unsafe_memory_policy>;
 template class BasicArrayBuilder<unsafe_memory_policy>;
 template class BasicTableBuilder<unsafe_memory_policy>;
 
-// Explicit instantiation for thread_safe_memory_policy (SyncValue, ThreadSafeValue)
-template struct BasicValue<thread_safe_memory_policy>;
-template struct BasicTableEntry<thread_safe_memory_policy>;
-template class BasicMapBuilder<thread_safe_memory_policy>;
-template class BasicVectorBuilder<thread_safe_memory_policy>;
-template class BasicArrayBuilder<thread_safe_memory_policy>;
-template class BasicTableBuilder<thread_safe_memory_policy>;
+// Conditional instantiation for thread_safe_memory_policy
+LAGER_EXT_IF_THREAD_SAFE(template struct BasicValue<thread_safe_memory_policy>;)
+LAGER_EXT_IF_THREAD_SAFE(template struct BasicTableEntry<thread_safe_memory_policy>;)
+LAGER_EXT_IF_THREAD_SAFE(template class BasicMapBuilder<thread_safe_memory_policy>;)
+LAGER_EXT_IF_THREAD_SAFE(template class BasicVectorBuilder<thread_safe_memory_policy>;)
+LAGER_EXT_IF_THREAD_SAFE(template class BasicArrayBuilder<thread_safe_memory_policy>;)
+LAGER_EXT_IF_THREAD_SAFE(template class BasicTableBuilder<thread_safe_memory_policy>;)
 
 } // namespace lager_ext

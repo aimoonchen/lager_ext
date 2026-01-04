@@ -642,11 +642,13 @@ using VectorBuilder = BasicVectorBuilder<unsafe_memory_policy>;
 using ArrayBuilder  = BasicArrayBuilder<unsafe_memory_policy>;
 using TableBuilder  = BasicTableBuilder<unsafe_memory_policy>;
 
-// Thread-safe builders - use with SyncValue
+// Thread-safe builders - only available when enabled
+#if LAGER_EXT_ENABLE_THREAD_SAFE
 using SyncMapBuilder    = BasicMapBuilder<thread_safe_memory_policy>;
 using SyncVectorBuilder = BasicVectorBuilder<thread_safe_memory_policy>;
 using SyncArrayBuilder  = BasicArrayBuilder<thread_safe_memory_policy>;
 using SyncTableBuilder  = BasicTableBuilder<thread_safe_memory_policy>;
+#endif // LAGER_EXT_ENABLE_THREAD_SAFE
 
 // ============================================================
 // Extern Template Declarations for Builders
@@ -657,9 +659,9 @@ extern template class BasicVectorBuilder<unsafe_memory_policy>;
 extern template class BasicArrayBuilder<unsafe_memory_policy>;
 extern template class BasicTableBuilder<unsafe_memory_policy>;
 
-extern template class BasicMapBuilder<thread_safe_memory_policy>;
-extern template class BasicVectorBuilder<thread_safe_memory_policy>;
-extern template class BasicArrayBuilder<thread_safe_memory_policy>;
-extern template class BasicTableBuilder<thread_safe_memory_policy>;
+LAGER_EXT_IF_THREAD_SAFE(extern template class BasicMapBuilder<thread_safe_memory_policy>;)
+LAGER_EXT_IF_THREAD_SAFE(extern template class BasicVectorBuilder<thread_safe_memory_policy>;)
+LAGER_EXT_IF_THREAD_SAFE(extern template class BasicArrayBuilder<thread_safe_memory_policy>;)
+LAGER_EXT_IF_THREAD_SAFE(extern template class BasicTableBuilder<thread_safe_memory_policy>;)
 
 } // namespace lager_ext
