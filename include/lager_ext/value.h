@@ -22,16 +22,13 @@
 #pragma once
 
 #include "api.h"
+#include "value_fwd.h"  // Include forward declarations to avoid duplication
 
-// ============================================================
-// Configuration
-// ============================================================
-
-/// Enable thread-safe Value types (ThreadSafeValue, SyncValue, etc.)
-/// Default: 0 (disabled for better compile time and binary size)
-/// Set to 1 to enable: #define LAGER_EXT_ENABLE_THREAD_SAFE 1
-#ifndef LAGER_EXT_ENABLE_THREAD_SAFE
-#  define LAGER_EXT_ENABLE_THREAD_SAFE 0
+// Configuration and verbose logging from value_fwd.h
+#if LAGER_EXT_CONFIG_VERBOSE && LAGER_EXT_ENABLE_THREAD_SAFE
+#  pragma message("lager_ext: Thread-safe types ENABLED")
+#elif LAGER_EXT_CONFIG_VERBOSE
+#  pragma message("lager_ext: Thread-safe types DISABLED (default)")
 #endif
 
 /// Helper macro for conditional compilation
@@ -39,12 +36,6 @@
 #  define LAGER_EXT_IF_THREAD_SAFE(x) x
 #else
 #  define LAGER_EXT_IF_THREAD_SAFE(x)
-#endif
-
-#if LAGER_EXT_CONFIG_VERBOSE && LAGER_EXT_ENABLE_THREAD_SAFE
-#  pragma message("lager_ext: Thread-safe types ENABLED")
-#elif LAGER_EXT_CONFIG_VERBOSE
-#  pragma message("lager_ext: Thread-safe types DISABLED (default)")
 #endif
 
 #include <immer/array.hpp>
@@ -683,101 +674,52 @@ struct BasicValue
 };
 
 // ============================================================
-// Memory Policy Definitions
+// Memory Policy Definitions are now in value_fwd.h
 // ============================================================
 
-/// Single-threaded memory policy: non-atomic refcount + no locks, highest performance
-using unsafe_memory_policy = immer::memory_policy<
-    immer::unsafe_free_list_heap_policy<immer::cpp_heap>,
-    immer::unsafe_refcount_policy,
-    immer::no_lock_policy
->;
-
-/// Thread-safe memory policy: atomic refcount + spinlock
-using thread_safe_memory_policy = immer::default_memory_policy;
+// Note: unsafe_memory_policy and thread_safe_memory_policy are now defined
+// in value_fwd.h to avoid duplication and enable forward declarations.
 
 // ============================================================
-// UnsafeValue - Single-threaded high-performance Value
-//
-// Features:
-//   - Non-atomic reference counting (avoids CPU cache line bouncing)
-//   - No lock overhead (no spinlock)
-//   - 10-30% faster than thread-safe version
-//
-// Use cases:
-//   - Single-threaded applications
-//   - Each thread has its own independent Value tree (no sharing)
-//   - Performance-critical hot paths
-//
-// WARNING: Sharing UnsafeValue across threads causes data races and UB!
-//          Use ThreadSafeValue for multi-threaded scenarios.
-// ============================================================
-using UnsafeValue       = BasicValue<unsafe_memory_policy>;
-using UnsafeValueBox    = BasicValueBox<unsafe_memory_policy>;
-using UnsafeValueMap    = BasicValueMap<unsafe_memory_policy>;
-using UnsafeValueVector = BasicValueVector<unsafe_memory_policy>;
-using UnsafeValueArray  = BasicValueArray<unsafe_memory_policy>;
-using UnsafeValueTable  = BasicValueTable<unsafe_memory_policy>;
-using UnsafeTableEntry  = BasicTableEntry<unsafe_memory_policy>;
-
-#if LAGER_EXT_ENABLE_THREAD_SAFE
-// ============================================================
-// ThreadSafeValue - Thread-safe Value for multi-threaded scenarios
-//
-// Features:
-//   - Atomic reference counting (std::atomic operations)
-//   - Spinlock-protected free list
-//
-// Use cases:
-//   - Sharing the same Value tree across multiple threads
-//   - Cross-thread Value passing (e.g., message queues, event systems)
-//   - Integration with lager store (store may be accessed from multiple threads)
-//
-// Performance note:
-//   - 10-30% slower than UnsafeValue (depends on contention level)
-//   - Performance degradation is more pronounced under high contention
-// ============================================================
-using ThreadSafeValue       = BasicValue<thread_safe_memory_policy>;
-using ThreadSafeValueBox    = BasicValueBox<thread_safe_memory_policy>;
-using ThreadSafeValueMap    = BasicValueMap<thread_safe_memory_policy>;
-using ThreadSafeValueVector = BasicValueVector<thread_safe_memory_policy>;
-using ThreadSafeValueArray  = BasicValueArray<thread_safe_memory_policy>;
-using ThreadSafeValueTable  = BasicValueTable<thread_safe_memory_policy>;
-using ThreadSafeTableEntry  = BasicTableEntry<thread_safe_memory_policy>;
-#endif // LAGER_EXT_ENABLE_THREAD_SAFE
-
-// ============================================================
-// Default Value Type Aliases
+// Value Type Aliases
 //
 // Naming conventions:
-//   - Value       : Default type, alias for UnsafeValue (single-threaded, high performance)
-//   - SyncValue   : Convenience alias for ThreadSafeValue (multi-threaded safe)
-//   - SharedValue : Cross-process shared version (see shared_value.h)
+//   - Value     : Default type (single-threaded, high performance)
+//   - SyncValue : Thread-safe version (multi-threaded safe, available when macro enabled)
 //
 // Design philosophy:
-//   - Base type names explicitly express safety characteristics (UnsafeValue / ThreadSafeValue)
-//   - Short aliases for everyday use (Value / SyncValue)
-//   - Most single-threaded scenarios can simply use Value
+//   - Value is the primary type for most use cases
+//   - SyncValue only when you need thread safety and are willing to pay the performance cost
+//   - Clean, simple API with minimal cognitive overhead
 // ============================================================
 
-// Value = UnsafeValue (default, single-threaded, high performance)
-using Value       = UnsafeValue;
-using ValueBox    = UnsafeValueBox;
-using ValueMap    = UnsafeValueMap;
-using ValueVector = UnsafeValueVector;
-using ValueArray  = UnsafeValueArray;
-using ValueTable  = UnsafeValueTable;
-using TableEntry  = UnsafeTableEntry;
+// Value = BasicValue<unsafe_memory_policy> (default, single-threaded, high performance)
+// Features:
+//   - Non-atomic reference counting (10-30% faster)
+//   - No lock overhead
+//   - WARNING: Sharing across threads causes data races and UB!
+using Value       = BasicValue<unsafe_memory_policy>;
+using ValueBox    = BasicValueBox<unsafe_memory_policy>;
+using ValueMap    = BasicValueMap<unsafe_memory_policy>;
+using ValueVector = BasicValueVector<unsafe_memory_policy>;
+using ValueArray  = BasicValueArray<unsafe_memory_policy>;
+using ValueTable  = BasicValueTable<unsafe_memory_policy>;
+using TableEntry  = BasicTableEntry<unsafe_memory_policy>;
 
 // SyncValue aliases - only available when thread-safe types are enabled
 #if LAGER_EXT_ENABLE_THREAD_SAFE
-using SyncValue       = ThreadSafeValue;
-using SyncValueBox    = ThreadSafeValueBox;
-using SyncValueMap    = ThreadSafeValueMap;
-using SyncValueVector = ThreadSafeValueVector;
-using SyncValueArray  = ThreadSafeValueArray;
-using SyncValueTable  = ThreadSafeValueTable;
-using SyncTableEntry  = ThreadSafeTableEntry;
+// SyncValue = BasicValue<thread_safe_memory_policy> (thread-safe but slower)
+// Features:
+//   - Atomic reference counting
+//   - Spinlock-protected free list
+//   - Safe for cross-thread sharing
+using SyncValue       = BasicValue<thread_safe_memory_policy>;
+using SyncValueBox    = BasicValueBox<thread_safe_memory_policy>;
+using SyncValueMap    = BasicValueMap<thread_safe_memory_policy>;
+using SyncValueVector = BasicValueVector<thread_safe_memory_policy>;
+using SyncValueArray  = BasicValueArray<thread_safe_memory_policy>;
+using SyncValueTable  = BasicValueTable<thread_safe_memory_policy>;
+using SyncTableEntry  = BasicTableEntry<thread_safe_memory_policy>;
 #endif // LAGER_EXT_ENABLE_THREAD_SAFE
 
 // ============================================================

@@ -33,7 +33,8 @@
 
 #pragma once
 
-#include "value.h"
+#include "value_fwd.h"  // Use forward declarations for better compilation speed
+#include "value.h"      // Include full definitions for implementation
 
 namespace lager_ext {
 
@@ -633,22 +634,12 @@ private:
 };
 
 // ============================================================
-// Builder type aliases
+// Builder type aliases are now in value_fwd.h
 // ============================================================
 
-// Unsafe (single-threaded) builders - use with Value
-using MapBuilder    = BasicMapBuilder<unsafe_memory_policy>;
-using VectorBuilder = BasicVectorBuilder<unsafe_memory_policy>;
-using ArrayBuilder  = BasicArrayBuilder<unsafe_memory_policy>;
-using TableBuilder  = BasicTableBuilder<unsafe_memory_policy>;
-
-// Thread-safe builders - only available when enabled
-#if LAGER_EXT_ENABLE_THREAD_SAFE
-using SyncMapBuilder    = BasicMapBuilder<thread_safe_memory_policy>;
-using SyncVectorBuilder = BasicVectorBuilder<thread_safe_memory_policy>;
-using SyncArrayBuilder  = BasicArrayBuilder<thread_safe_memory_policy>;
-using SyncTableBuilder  = BasicTableBuilder<thread_safe_memory_policy>;
-#endif // LAGER_EXT_ENABLE_THREAD_SAFE
+// Note: MapBuilder, VectorBuilder, ArrayBuilder, TableBuilder and their
+// Sync variants are now defined in value_fwd.h to avoid duplication
+// and enable forward declarations.
 
 // ============================================================
 // Extern Template Declarations for Builders
