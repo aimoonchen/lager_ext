@@ -9,6 +9,9 @@
 // Must be defined before Windows.h to prevent min/max macro conflicts
 #define NOMINMAX
 
+// Enable thread-safe types for this demo
+#define LAGER_EXT_ENABLE_THREAD_SAFE 1
+
 #include <lager_ext/shared_value.h>
 #include <lager_ext/fast_shared_value.h>
 #include <lager_ext/value.h>
