@@ -490,8 +490,15 @@ struct BasicValue
         return default_val;
     }
 
-    [[nodiscard]] std::string as_string(std::string default_val = "") const {
+    // Lvalue version - copy the string
+    [[nodiscard]] std::string as_string(std::string default_val = "") const & {
         if (auto* p = get_if<std::string>()) return *p;
+        return default_val;
+    }
+    
+    // Rvalue version - move the string for zero-copy when Value is about to be destroyed
+    [[nodiscard]] std::string as_string(std::string default_val = "") && {
+        if (auto* p = get_if<std::string>()) return std::move(*p);
         return default_val;
     }
 

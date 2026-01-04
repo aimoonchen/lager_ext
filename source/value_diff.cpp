@@ -24,9 +24,10 @@ void DiffEntryCollector::diff(const Value& old_val, const Value& new_val, bool r
     // Pre-allocate to reduce reallocations during diff collection
     diffs_.reserve(32);
 
-    Path root_path;
-    root_path.reserve(16);  // Pre-allocate for typical nesting depth
-    diff_value(old_val, new_val, root_path);
+    // OPTIMIZATION: Use path stack instead of Path object for better performance
+    path_stack_.clear();
+    path_stack_.reserve(16);  // Pre-allocate for typical nesting depth
+    diff_value_optimized(old_val, new_val, 0);
 
     // Shrink to fit if we over-allocated significantly
     if (diffs_.size() > 0 && diffs_.capacity() > diffs_.size() * 2) {
@@ -253,6 +254,194 @@ void DiffEntryCollector::collect_removed(const Value& val, Path& current_path)
 void DiffEntryCollector::collect_added(const Value& val, Path& current_path)
 {
     collect_entries(val, current_path, true);
+}
+
+// ============================================================
+// OPTIMIZATION: Path Stack Implementation
+// These methods use the path_stack_ member instead of modifying Path objects
+// ============================================================
+
+void DiffEntryCollector::diff_value_optimized(const Value& old_val, const Value& new_val, std::size_t path_depth)
+{
+    const auto old_index = old_val.data.index();
+    const auto new_index = new_val.data.index();
+    if (old_index != new_index) [[unlikely]] {
+        Path current_path(current_path_view(path_depth));
+        diffs_.emplace_back(DiffEntry::Type::Change, current_path, old_val, new_val);
+        return;
+    }
+
+    std::visit([&](const auto& old_arg) {
+        using T = std::decay_t<decltype(old_arg)>;
+
+        if constexpr (std::is_same_v<T, ValueMap>) {
+            const auto& new_map = std::get<ValueMap>(new_val.data);
+            // OPTIMIZATION: immer container identity check - O(1)
+            if (old_arg.impl().root == new_map.impl().root &&
+                old_arg.impl().size == new_map.impl().size) [[likely]] {
+                return;
+            }
+            // Shallow mode: report container change without recursing
+            if (!recursive_) {
+                Path current_path(current_path_view(path_depth));
+                diffs_.emplace_back(DiffEntry::Type::Change, current_path, old_val, new_val);
+                return;
+            }
+            diff_map_optimized(old_arg, new_map, path_depth);
+        }
+        else if constexpr (std::is_same_v<T, ValueVector>) {
+            const auto& new_vec = std::get<ValueVector>(new_val.data);
+            // OPTIMIZATION: immer container identity check - O(1)
+            if (old_arg.impl().root == new_vec.impl().root &&
+                old_arg.impl().tail == new_vec.impl().tail &&
+                old_arg.impl().size == new_vec.impl().size) [[likely]] {
+                return;
+            }
+            // Shallow mode: report container change without recursing
+            if (!recursive_) {
+                Path current_path(current_path_view(path_depth));
+                diffs_.emplace_back(DiffEntry::Type::Change, current_path, old_val, new_val);
+                return;
+            }
+            diff_vector_optimized(old_arg, new_vec, path_depth);
+        }
+        else if constexpr (std::is_same_v<T, std::monostate>) {
+            // Both null, no change
+        }
+        else {
+            // Primitive types: direct comparison (already verified same type)
+            const auto& new_arg = std::get<T>(new_val.data);
+            if (old_arg != new_arg) {
+                Path current_path(current_path_view(path_depth));
+                diffs_.emplace_back(DiffEntry::Type::Change, current_path, old_val, new_val);
+            }
+        }
+    }, old_val.data);
+}
+
+void DiffEntryCollector::diff_map_optimized(const ValueMap& old_map, const ValueMap& new_map, std::size_t path_depth)
+{
+    // Ensure path stack has enough capacity
+    if (path_stack_.size() <= path_depth) {
+        path_stack_.resize(path_depth + 1);
+    }
+    
+    auto map_differ = immer::make_differ(
+        // added
+        [&](const std::pair<const std::string, ValueBox>& added_kv) {
+            path_stack_[path_depth] = PathElement{added_kv.first};
+            collect_added_optimized(*added_kv.second, path_depth + 1);
+        },
+        // removed
+        [&](const std::pair<const std::string, ValueBox>& removed_kv) {
+            path_stack_[path_depth] = PathElement{removed_kv.first};
+            collect_removed_optimized(*removed_kv.second, path_depth + 1);
+        },
+        // changed (retained key)
+        [&](const std::pair<const std::string, ValueBox>& old_kv,
+            const std::pair<const std::string, ValueBox>& new_kv) {
+            // Optimization: pointer comparison - O(1)
+            if (old_kv.second.get() == new_kv.second.get()) [[likely]] {
+                return; // Same pointer, unchanged
+            }
+            path_stack_[path_depth] = PathElement{old_kv.first};
+            diff_value_optimized(*old_kv.second, *new_kv.second, path_depth + 1);
+        }
+    );
+
+    immer::diff(old_map, new_map, map_differ);
+}
+
+void DiffEntryCollector::diff_vector_optimized(const ValueVector& old_vec, const ValueVector& new_vec, std::size_t path_depth)
+{
+    const size_t old_size = old_vec.size();
+    const size_t new_size = new_vec.size();
+    const size_t common_size = std::min(old_size, new_size);
+    
+    // Ensure path stack has enough capacity
+    if (path_stack_.size() <= path_depth) {
+        path_stack_.resize(path_depth + 1);
+    }
+
+    for (size_t i = 0; i < common_size; ++i) {
+        const auto& old_box = old_vec[i];
+        const auto& new_box = new_vec[i];
+
+        // Optimization: immer::box pointer comparison - O(1)
+        if (old_box.get() == new_box.get()) [[likely]] {
+            continue;
+        }
+
+        path_stack_[path_depth] = PathElement{i};
+        diff_value_optimized(*old_box, *new_box, path_depth + 1);
+    }
+
+    // Removed tail elements
+    for (size_t i = common_size; i < old_size; ++i) {
+        path_stack_[path_depth] = PathElement{i};
+        collect_removed_optimized(*old_vec[i], path_depth + 1);
+    }
+
+    // Added tail elements
+    for (size_t i = common_size; i < new_size; ++i) {
+        path_stack_[path_depth] = PathElement{i};
+        collect_added_optimized(*new_vec[i], path_depth + 1);
+    }
+}
+
+void DiffEntryCollector::collect_entries_optimized(const Value& val, std::size_t path_depth, bool is_add)
+{
+    // In shallow mode, just record the value at current path (no recursion)
+    if (!recursive_) {
+        Path current_path(current_path_view(path_depth));
+        if (is_add) {
+            diffs_.emplace_back(DiffEntry::Type::Add, current_path, val, val);
+        } else {
+            diffs_.emplace_back(DiffEntry::Type::Remove, current_path, val, val);
+        }
+        return;
+    }
+
+    // Recursive mode: descend into containers
+    std::visit([&](const auto& arg) {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, ValueMap>) {
+            // Ensure path stack has enough capacity for next level
+            if (path_stack_.size() <= path_depth) {
+                path_stack_.resize(path_depth + 1);
+            }
+            for (const auto& [k, v] : arg) {
+                path_stack_[path_depth] = PathElement{k};
+                collect_entries_optimized(*v, path_depth + 1, is_add);
+            }
+        }
+        else if constexpr (std::is_same_v<T, ValueVector>) {
+            // Ensure path stack has enough capacity for next level
+            if (path_stack_.size() <= path_depth) {
+                path_stack_.resize(path_depth + 1);
+            }
+            for (size_t i = 0; i < arg.size(); ++i) {
+                path_stack_[path_depth] = PathElement{i};
+                collect_entries_optimized(*arg[i], path_depth + 1, is_add);
+            }
+        }
+        else if constexpr (!std::is_same_v<T, std::monostate>) {
+            // Leaf value: record it - both fields reference the same value
+            Path current_path(current_path_view(path_depth));
+            diffs_.emplace_back(is_add ? DiffEntry::Type::Add : DiffEntry::Type::Remove, 
+                               current_path, val, val);
+        }
+    }, val.data);
+}
+
+void DiffEntryCollector::collect_removed_optimized(const Value& val, std::size_t path_depth)
+{
+    collect_entries_optimized(val, path_depth, false);
+}
+
+void DiffEntryCollector::collect_added_optimized(const Value& val, std::size_t path_depth)
+{
+    collect_entries_optimized(val, path_depth, true);
 }
 
 bool has_any_difference(const Value& old_val, const Value& new_val, bool recursive)
@@ -849,6 +1038,218 @@ Value diff_as_value(const Value& old_val, const Value& new_val, bool recursive)
     DiffValueCollector collector;
     collector.diff(old_val, new_val, recursive);
     return collector.get();
+}
+
+// ============================================================
+// Apply Diff Implementation
+// ============================================================
+
+namespace {
+    /// Recursively apply diff tree to a value, creating new Value with changes applied
+    /// @param root Current value being modified
+    /// @param diff_tree Current diff subtree to apply
+    /// @param path Current path (for error reporting)
+    /// @return New Value with diff applied
+    Value apply_diff_recursive(const Value& root, const Value& diff_tree, const Path& path = {}) {
+        // Check if this is a diff leaf node (contains _diff_type)
+        if (DiffValueCollector::is_diff_node(diff_tree)) {
+            // This is a leaf diff node - extract the operation and value
+            DiffEntry::Type type = DiffValueCollector::get_diff_type(diff_tree);
+            
+            switch (type) {
+                case DiffEntry::Type::Add: {
+                    // For Add: return the new value from the diff node
+                    Value new_val = DiffValueCollector::get_new_value(diff_tree);
+                    if (new_val.is_null()) {
+                        throw std::runtime_error("apply_diff: Add operation missing _new value at path: " + path_to_string(path));
+                    }
+                    return new_val;
+                }
+                case DiffEntry::Type::Remove: {
+                    // For Remove: return a null Value (removal)
+                    return Value{};
+                }
+                case DiffEntry::Type::Change: {
+                    // For Change: return the new value from the diff node
+                    Value new_val = DiffValueCollector::get_new_value(diff_tree);
+                    if (new_val.is_null()) {
+                        throw std::runtime_error("apply_diff: Change operation missing _new value at path: " + path_to_string(path));
+                    }
+                    return new_val;
+                }
+            }
+        }
+        
+        // This is an intermediate node - recurse into its children
+        if (auto* diff_map = diff_tree.get_if<ValueMap>()) {
+            // The diff tree is a map - apply changes to the corresponding structure in root
+            if (auto* root_map = root.get_if<ValueMap>()) {
+                // Root is also a map - merge changes
+                ValueMap result = *root_map;
+                
+                for (const auto& [key, diff_child_box] : *diff_map) {
+                    const Value& diff_child = *diff_child_box;
+                    Path child_path = path;
+                    child_path.push_back(key);
+                    
+                    // Get the current value at this key (or null if not present)
+                    Value current_val;
+                    if (auto* existing_box = root_map->find(key)) {
+                        current_val = existing_box->get();
+                    } else {
+                        current_val = Value{};  // null for missing keys
+                    }
+                    
+                    // Recursively apply diff to this child
+                    Value new_child = apply_diff_recursive(current_val, diff_child, child_path);
+                    
+                    // Update or remove the key based on the result
+                    if (new_child.is_null()) {
+                        // Remove the key if the result is null
+                        result = result.erase(key);
+                    } else {
+                        // Set the new value
+                        result = result.set(key, ValueBox{new_child});
+                    }
+                }
+                
+                return Value{result};
+            }
+            else if (root.is_null()) {
+                // Root is null but we have changes to apply - create a new map
+                ValueMap result;
+                
+                for (const auto& [key, diff_child_box] : *diff_map) {
+                    const Value& diff_child = *diff_child_box;
+                    Path child_path = path;
+                    child_path.push_back(key);
+                    
+                    // Apply diff to null value (effectively adding new keys)
+                    Value new_child = apply_diff_recursive(Value{}, diff_child, child_path);
+                    
+                    if (!new_child.is_null()) {
+                        result = result.set(key, ValueBox{new_child});
+                    }
+                }
+                
+                return Value{result};
+            }
+            else {
+                throw std::runtime_error("apply_diff: Type mismatch - diff expects map but root is not a map at path: " + path_to_string(path));
+            }
+        }
+        else if (auto* diff_vector_map = diff_tree.get_if<ValueMap>()) {
+            // Check if this looks like a vector diff (all keys are numeric strings)
+            bool all_numeric = true;
+            for (const auto& [key, _] : *diff_vector_map) {
+                try {
+                    [[maybe_unused]] size_t parsed = std::stoul(key);  // Try to parse as unsigned integer
+                } catch (...) {
+                    all_numeric = false;
+                    break;
+                }
+            }
+            
+            if (all_numeric) {
+                // This is a vector diff represented as a map with numeric string keys
+                if (auto* root_vec = root.get_if<ValueVector>()) {
+                    // Root is a vector - apply indexed changes
+                    ValueVector result = *root_vec;
+                    
+                    for (const auto& [index_str, diff_child_box] : *diff_vector_map) {
+                        const Value& diff_child = *diff_child_box;
+                        size_t index = std::stoul(index_str);
+                        Path child_path = path;
+                        child_path.push_back(index);
+                        
+                        // Get the current value at this index (or null if out of bounds)
+                        Value current_val;
+                        if (index < result.size()) {
+                            current_val = *result[index];
+                        } else {
+                            current_val = Value{};  // null for out-of-bounds indices
+                        }
+                        
+                        // Recursively apply diff to this child
+                        Value new_child = apply_diff_recursive(current_val, diff_child, child_path);
+                        
+                        // Update the vector
+                        if (!new_child.is_null()) {
+                            // Extend vector if necessary
+                            while (result.size() <= index) {
+                                result = result.push_back(ValueBox{Value{}});
+                            }
+                            result = result.set(index, ValueBox{new_child});
+                        } else if (index < result.size()) {
+                            // For removal, we could either remove the element or set it to null
+                            // For now, let's set it to null to preserve indices
+                            result = result.set(index, ValueBox{Value{}});
+                        }
+                    }
+                    
+                    return Value{result};
+                }
+                else if (root.is_null()) {
+                    // Root is null but we have vector changes to apply - create a new vector
+                    ValueVector result;
+                    
+                    // Collect all indices and sort them
+                    std::vector<std::pair<size_t, const Value*>> indexed_diffs;
+                    for (const auto& [index_str, diff_child_box] : *diff_vector_map) {
+                        size_t index = std::stoul(index_str);
+                        indexed_diffs.emplace_back(index, &(*diff_child_box));
+                    }
+                    std::sort(indexed_diffs.begin(), indexed_diffs.end());
+                    
+                    // Apply changes in order
+                    for (const auto& [index, diff_child] : indexed_diffs) {
+                        Path child_path = path;
+                        child_path.push_back(index);
+                        
+                        Value new_child = apply_diff_recursive(Value{}, *diff_child, child_path);
+                        
+                        if (!new_child.is_null()) {
+                            // Extend vector if necessary
+                            while (result.size() <= index) {
+                                result = result.push_back(ValueBox{Value{}});
+                            }
+                            result = result.set(index, ValueBox{new_child});
+                        }
+                    }
+                    
+                    return Value{result};
+                }
+                else {
+                    throw std::runtime_error("apply_diff: Type mismatch - diff expects vector but root is not a vector at path: " + path_to_string(path));
+                }
+            }
+        }
+        
+        // If we reach here, the diff_tree structure doesn't match expected patterns
+        throw std::runtime_error("apply_diff: Unexpected diff tree structure at path: " + path_to_string(path));
+    }
+}
+
+Value apply_diff(const Value& root, const Value& diff_tree)
+{
+    // Handle empty diff
+    if (diff_tree.is_null()) {
+        return root;  // No changes to apply
+    }
+    
+    // Check if diff is empty (no changes recorded)
+    if (auto* diff_map = diff_tree.get_if<ValueMap>()) {
+        if (diff_map->empty()) {
+            return root;  // Empty diff, no changes
+        }
+    }
+    
+    try {
+        return apply_diff_recursive(root, diff_tree);
+    } catch (const std::exception& e) {
+        // Re-throw with additional context
+        throw std::runtime_error(std::string("apply_diff failed: ") + e.what());
+    }
 }
 
 } // namespace lager_ext

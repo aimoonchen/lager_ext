@@ -159,13 +159,30 @@ class LAGER_EXT_API DiffEntryCollector {
 private:
     std::vector<DiffEntry> diffs_;
     bool recursive_ = true;
+    
+    // OPTIMIZATION: Path stack for zero-allocation path building
+    mutable std::vector<PathElement> path_stack_;
 
+    // Legacy methods (for backward compatibility)
     void diff_value(const Value& old_val, const Value& new_val, Path& current_path);
     void diff_map(const ValueMap& old_map, const ValueMap& new_map, Path& current_path);
     void diff_vector(const ValueVector& old_vec, const ValueVector& new_vec, Path& current_path);
     void collect_entries(const Value& val, Path& current_path, bool is_add);
     void collect_removed(const Value& val, Path& current_path);
     void collect_added(const Value& val, Path& current_path);
+    
+    // Optimized methods using path stack
+    void diff_value_optimized(const Value& old_val, const Value& new_val, std::size_t path_depth);
+    void diff_map_optimized(const ValueMap& old_map, const ValueMap& new_map, std::size_t path_depth);
+    void diff_vector_optimized(const ValueVector& old_vec, const ValueVector& new_vec, std::size_t path_depth);
+    void collect_entries_optimized(const Value& val, std::size_t path_depth, bool is_add);
+    void collect_removed_optimized(const Value& val, std::size_t path_depth);
+    void collect_added_optimized(const Value& val, std::size_t path_depth);
+    
+    // Helper: create PathView from current path stack
+    [[nodiscard]] PathView current_path_view(std::size_t depth) const noexcept {
+        return PathView{path_stack_.data(), depth};
+    }
 
 public:
     void diff(const Value& old_val, const Value& new_val, bool recursive = true);
@@ -268,5 +285,17 @@ namespace detail {
 
 /// Convenience function to compute diff as a Value tree (uses DiffValueCollector)
 [[nodiscard]] LAGER_EXT_API Value diff_as_value(const Value& old_val, const Value& new_val, bool recursive = true);
+
+/// Apply a diff tree to a Value, creating a new Value with the changes applied
+/// @param root The base Value to apply changes to
+/// @param diff_tree The diff tree (created by DiffValueCollector or diff_as_value)
+/// @return A new Value with the diff applied
+/// 
+/// The diff_tree should have the structure produced by DiffValueCollector:
+/// - Leaf nodes with changes contain special keys (_diff_type, _old, _new)
+/// - Intermediate nodes mirror the original structure
+///
+/// This function leverages Value::set methods for efficient incremental updates.
+[[nodiscard]] LAGER_EXT_API Value apply_diff(const Value& root, const Value& diff_tree);
 
 } // namespace lager_ext
