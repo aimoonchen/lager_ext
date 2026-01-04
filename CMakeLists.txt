@@ -79,6 +79,7 @@ set(LAGER_EXT_HEADERS
     include/lager_ext/undo.h
     include/lager_ext/value.h
     include/lager_ext/value_diff.h
+    include/lager_ext/value_fwd.h
 )
 
 # ============================================================
