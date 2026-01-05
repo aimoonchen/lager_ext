@@ -45,6 +45,7 @@ endif()
 set(LAGER_EXT_SOURCES
     source/delta_undo.cpp
     source/editor_engine.cpp
+    source/lager_adapters.cpp
     source/lager_lens.cpp
     source/multi_store.cpp
     source/path_utils.cpp
@@ -63,6 +64,7 @@ set(LAGER_EXT_HEADERS
     include/lager_ext/delta_undo.h
     include/lager_ext/editor_engine.h
     include/lager_ext/fast_shared_value.h
+    include/lager_ext/lager_adapters.h
     include/lager_ext/lager_lens.h
     include/lager_ext/multi_store.h
     include/lager_ext/path.h

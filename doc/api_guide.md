@@ -44,11 +44,17 @@ This document provides a comprehensive overview of the public APIs in the `lager
   - [6. Shared State (Cross-Process)](#6-shared-state-cross-process)
     - [6.1 SharedState](#61-sharedstate)
     - [6.2 Memory Region Operations](#62-memory-region-operations)
-  - [7. Header Reference](#7-header-reference)
-  - [8. Usage Examples](#8-usage-examples)
-    - [8.1 Basic Usage](#81-basic-usage)
-    - [8.2 Working with Math Types](#82-working-with-math-types)
-    - [8.3 Thread Safety](#83-thread-safety)
+  - [7. Lager Library Integration](#7-lager-library-integration)
+    - [7.1 Overview](#71-overview)
+    - [7.2 zoom\_value() - Cursor/Reader Adapters](#72-zoom_value---cursorreader-adapters)
+    - [7.3 value\_middleware() - Store Middleware](#73-value_middleware---store-middleware)
+    - [7.4 watch\_path() - Path-based Subscriptions](#74-watch_path---path-based-subscriptions)
+    - [7.5 PathWatcher vs watch\_path()](#75-pathwatcher-vs-watch_path)
+  - [8. Header Reference](#8-header-reference)
+  - [9. Usage Examples](#9-usage-examples)
+    - [9.1 Basic Usage](#91-basic-usage)
+    - [9.2 Working with Math Types](#92-working-with-math-types)
+    - [9.3 Thread Safety](#93-thread-safety)
   - [Notes](#notes)
 
 ---
@@ -1337,7 +1343,178 @@ release_memory_region(handle);
 
 ---
 
-## 7. Header Reference
+## 7. Lager Library Integration
+
+The `lager_adapters.h` header provides seamless integration with the [lager](https://github.com/arximboldi/lager) library for reactive state management.
+
+### 7.1 Overview
+
+```cpp
+#include <lager_ext/lager_adapters.h>
+using namespace lager_ext;
+```
+
+This module bridges `lager_ext`'s `Value`-based API with lager's strongly-typed cursor/reader/store ecosystem:
+
+| Function | Purpose |
+|----------|---------|
+| `zoom_value()` | Zoom a `lager::cursor<Value>` or `lager::reader<Value>` to a sub-path |
+| `value_middleware()` | Store middleware for intercepting Value state changes |
+| `value_diff_middleware()` | Convenience middleware that logs all state diffs |
+| `watch_path()` | Watch a specific path for changes (reactive) |
+
+### 7.2 zoom_value() - Cursor/Reader Adapters
+
+Zoom a lager cursor or reader to a sub-path using `PathLens`, `Path`, or variadic elements:
+
+```cpp
+#include <lager_ext/lager_adapters.h>
+using namespace lager_ext;
+
+lager::cursor<Value> cursor = /* from lager store */;
+
+// ========== Using PathLens ==========
+auto name_cursor = zoom_value(cursor, root / "users" / 0 / "name");
+Value name = name_cursor.get();
+name_cursor.set(Value{"Alice"});
+
+// ========== Using Path ==========
+Path path{"users", size_t(0), "name"};
+auto name_cursor2 = zoom_value(cursor, path);
+
+// ========== Using variadic elements ==========
+auto name_cursor3 = zoom_value(cursor, "users", 0, "name");
+
+// ========== Works with readers too ==========
+lager::reader<Value> reader = cursor;  // implicit conversion
+auto name_reader = zoom_value(reader, "users" / 0 / "name");
+Value name = name_reader.get();  // read-only
+```
+
+**API Reference:**
+
+| Overload | Description |
+|----------|-------------|
+| `zoom_value(reader, PathLens)` | Zoom using a PathLens |
+| `zoom_value(reader, Path)` | Zoom using a Path |
+| `zoom_value(reader, elements...)` | Zoom using variadic path elements |
+
+> **Note:** `zoom_value()` works with any lager reader or cursor type that has `value_type = Value`.
+
+### 7.3 value_middleware() - Store Middleware
+
+Create middleware that intercepts state changes in a lager store:
+
+```cpp
+#include <lager_ext/lager_adapters.h>
+using namespace lager_ext;
+
+// ========== Basic Usage ==========
+auto store = lager::make_store<MyAction>(
+    initial_state,
+    lager::with_manual_event_loop{},
+    value_middleware({
+        .on_change = [](const Value& old_state, const Value& new_state) {
+            std::cout << "State changed!\n";
+            // Handle state change...
+        }
+    })
+);
+
+// ========== With Diff Logging ==========
+auto store = lager::make_store<MyAction>(
+    initial_state,
+    lager::with_manual_event_loop{},
+    value_middleware({
+        .enable_diff_logging = true,
+        .enable_deep_diff = true,
+        .on_change = [](const Value& old_s, const Value& new_s) {
+            // Custom handling
+        }
+    })
+);
+
+// ========== Convenience: Diff-Logging Middleware ==========
+// Logs all state changes with detailed diff output
+auto store = lager::make_store<MyAction>(
+    initial_state,
+    lager::with_manual_event_loop{},
+    value_diff_middleware(/*recursive=*/true)
+);
+```
+
+**ValueMiddlewareConfig Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enable_diff_logging` | `bool` | `false` | Log diffs to console |
+| `enable_deep_diff` | `bool` | `true` | Use recursive diff |
+| `on_change` | `function<void(Value, Value)>` | `nullptr` | Callback on state change |
+
+### 7.4 watch_path() - Path-based Subscriptions
+
+Watch a specific path in a lager reader/cursor for changes. The callback is triggered automatically by lager's event loop when the value at the path changes.
+
+```cpp
+#include <lager_ext/lager_adapters.h>
+using namespace lager_ext;
+
+lager::reader<Value> reader = /* from store */;
+
+// ========== Watch with Path ==========
+auto conn = watch_path(reader, Path{"users", size_t(0), "status"}, 
+    [](const Value& new_status) {
+        std::cout << "Status changed to: " << new_status.as_string() << "\n";
+    }
+);
+
+// ========== Watch with PathLens ==========
+auto conn2 = watch_path(reader, root / "config" / "theme", 
+    [](const Value& theme) {
+        update_ui_theme(theme.as_string());
+    }
+);
+
+// ========== Disconnect when done ==========
+conn.disconnect();
+```
+
+### 7.5 PathWatcher vs watch_path()
+
+Both mechanisms monitor paths for changes, but they serve different use cases:
+
+| Feature | `PathWatcher` | `watch_path()` |
+|---------|---------------|----------------|
+| **Trigger Mode** | Manual (`check(old, new)`) | Automatic (lager event loop) |
+| **Requires lager** | No | Yes |
+| **Multiple paths** | Optimized (Trie structure) | One subscription per path |
+| **Structural sharing** | Explicit pruning | Relies on lager |
+| **Statistics** | Built-in | None |
+| **Best for** | Many paths, no lager store | Few paths, existing lager store |
+
+**When to use which:**
+
+```cpp
+// ✅ Use watch_path() when:
+// - You already have a lager store
+// - You're watching a few paths
+// - You want automatic reactive updates
+auto conn = watch_path(store, "users" / 0 / "name", on_name_change);
+
+// ✅ Use PathWatcher when:
+// - You're watching many paths with shared prefixes
+// - You don't have a lager store (e.g., cross-process sync)
+// - You need performance statistics
+PathWatcher watcher;
+watcher.watch("/users/0/name", callback1);
+watcher.watch("/users/0/age", callback2);
+watcher.watch("/users/0/email", callback3);
+// ... manually call watcher.check(old_state, new_state) after updates
+```
+
+---
+
+## 8. Header Reference
 
 | Header | Description |
 |--------|-------------|
@@ -1345,12 +1522,12 @@ release_memory_region(handle);
 | `<lager_ext/builders.h>` | Builder classes for O(n) container construction |
 | `<lager_ext/serialization.h>` | Binary and JSON serialization |
 | `<lager_ext/path.h>` | Core `PathView` (zero-allocation) and `Path` (owning) types |
-| `<lager_ext/path_api.h>` | **Unified Path API** - single entry point for all path operations |
-| `<lager_ext/path_core.h>` | Core path traversal engine (low-level API) |
+| `<lager_ext/path_utils.h>` | Path traversal utilities (`get_at_path`, `set_at_path`, etc.) |
 | `<lager_ext/path_watcher.h>` | Path change detection with trie-based optimization |
 | `<lager_ext/lager_lens.h>` | PathLens, ZoomedValue and lager lens integration |
+| `<lager_ext/lager_adapters.h>` | **Lager integration** - `zoom_value()`, middleware, `watch_path()` |
 | `<lager_ext/static_path.h>` | Compile-time static path lens (C++20 NTTP) |
-| `<lager_ext/value_diff.h>` | Value difference detection |
+| `<lager_ext/value_diff.h>` | Value difference detection (`DiffEntryCollector`, `DiffValueCollector`) |
 | `<lager_ext/shared_state.h>` | Cross-process shared state |
 | `<lager_ext/shared_value.h>` | Low-level shared memory operations |
 | `<lager_ext/concepts.h>` | C++20 concepts and math type aliases (`Vec2`, `Vec3`, etc.) |
@@ -1360,9 +1537,9 @@ release_memory_region(handle);
 
 ---
 
-## 8. Usage Examples
+## 9. Usage Examples
 
-### 8.1 Basic Usage
+### 9.1 Basic Usage
 
 ```cpp
 #include <lager_ext/value.h>
@@ -1413,7 +1590,7 @@ int main() {
 }
 ```
 
-### 8.2 Working with Math Types
+### 9.2 Working with Math Types
 
 ```cpp
 #include <lager_ext/value.h>
@@ -1445,7 +1622,7 @@ int main() {
 }
 ```
 
-### 8.3 Thread Safety
+### 9.3 Thread Safety
 
 ```cpp
 #include <lager_ext/value.h>
