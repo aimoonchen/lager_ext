@@ -163,15 +163,7 @@ private:
     // OPTIMIZATION: Path stack for zero-allocation path building
     mutable std::vector<PathElement> path_stack_;
 
-    // Legacy methods (for backward compatibility)
-    void diff_value(const Value& old_val, const Value& new_val, Path& current_path);
-    void diff_map(const ValueMap& old_map, const ValueMap& new_map, Path& current_path);
-    void diff_vector(const ValueVector& old_vec, const ValueVector& new_vec, Path& current_path);
-    void collect_entries(const Value& val, Path& current_path, bool is_add);
-    void collect_removed(const Value& val, Path& current_path);
-    void collect_added(const Value& val, Path& current_path);
-    
-    // Optimized methods using path stack
+    // Optimized methods using path stack (no path copying)
     void diff_value_optimized(const Value& old_val, const Value& new_val, std::size_t path_depth);
     void diff_map_optimized(const ValueMap& old_map, const ValueMap& new_map, std::size_t path_depth);
     void diff_vector_optimized(const ValueVector& old_vec, const ValueVector& new_vec, std::size_t path_depth);

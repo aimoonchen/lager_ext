@@ -209,7 +209,8 @@ void Path::parse_path_string(std::string_view source) {
         } else {
             // Calculate offset from storage_.data()
             std::size_t offset = static_cast<std::size_t>(segment.data() - storage_.data());
-            key_spans_.emplace_back(offset, segment.size());
+            std::size_t elem_idx = elements_.size();
+            key_spans_.push_back(KeySpan{elem_idx, offset, segment.size()});
             elements_.emplace_back(segment);
         }
 
@@ -222,16 +223,48 @@ void Path::parse_path_string(std::string_view source) {
 // Path - Modifiers
 // ============================================================
 
+Path& Path::push_back_literal(std::string_view literal_sv) {
+    original_path_ = {};  // Path modified, invalidate cached source
+    
+    // Zero-copy: directly reference the literal (static storage duration)
+    // No need to copy to storage_ or track in key_spans_
+    elements_.emplace_back(literal_sv);
+    return *this;
+}
+
+Path& Path::push_back(std::string&& key) {
+    original_path_ = {};  // Path modified, invalidate cached source
+    
+    // Move the string content into storage_
+    std::size_t offset = storage_.size();
+    std::size_t len = key.size();
+    
+    // If storage_ is empty and key is large enough, we can take ownership directly
+    if (storage_.empty() && key.capacity() >= len) {
+        storage_ = std::move(key);
+    } else {
+        storage_.append(key);
+    }
+    
+    std::size_t elem_idx = elements_.size();
+    key_spans_.push_back(KeySpan{elem_idx, offset, len});
+    elements_.emplace_back(std::string_view{storage_.data() + offset, len});
+    return *this;
+}
+
 Path& Path::push_back(std::string_view key) {
     original_path_ = {};  // Path modified, invalidate cached source
     
-    // Store offset before appending
+    // Copy the string content into storage_
     std::size_t offset = storage_.size();
+    std::size_t len = key.size();
     storage_.append(key);
-    key_spans_.emplace_back(offset, key.size());
+    
+    std::size_t elem_idx = elements_.size();
+    key_spans_.push_back(KeySpan{elem_idx, offset, len});
     
     // Create view pointing to the stored copy
-    elements_.emplace_back(std::string_view{storage_.data() + offset, key.size()});
+    elements_.emplace_back(std::string_view{storage_.data() + offset, len});
     return *this;
 }
 
@@ -246,15 +279,19 @@ void Path::pop_back() {
     
     original_path_ = {};  // Path modified, invalidate cached source
     
-    const auto& last = elements_.back();
-    if (std::holds_alternative<std::string_view>(last) && !key_spans_.empty()) {
+    std::size_t last_idx = elements_.size() - 1;
+    
+    // Check if the last element is tracked in key_spans_ (i.e., stored in storage_)
+    if (!key_spans_.empty() && key_spans_.back().element_idx == last_idx) {
         // Shrink storage_ if this was the last key
-        auto [offset, len] = key_spans_.back();
-        if (offset + len == storage_.size()) {
-            storage_.resize(offset);
+        const auto& span = key_spans_.back();
+        if (span.offset + span.length == storage_.size()) {
+            storage_.resize(span.offset);
         }
         key_spans_.pop_back();
     }
+    // else: it's a literal or index, no storage cleanup needed
+    
     elements_.pop_back();
 }
 
@@ -278,16 +315,14 @@ void Path::reserve(std::size_t n) {
 void Path::rebuild_views() {
     if (elements_.empty() || key_spans_.empty()) return;
     
-    // Rebuild string_view elements using key_spans_
-    std::size_t span_idx = 0;
-    
-    for (auto& elem : elements_) {
-        if (std::holds_alternative<std::string_view>(elem)) {
-            if (span_idx >= key_spans_.size()) break;
-            
-            auto [offset, len] = key_spans_[span_idx++];
-            elem = std::string_view{storage_.data() + offset, len};
-        }
+    // Rebuild string_view elements that point to storage_ (tracked by key_spans_)
+    // Each KeySpan knows exactly which element index it corresponds to
+    // Literals are NOT tracked and don't need rebuilding
+    for (const auto& span : key_spans_) {
+        elements_[span.element_idx] = std::string_view{
+            storage_.data() + span.offset, 
+            span.length
+        };
     }
 }
 

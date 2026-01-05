@@ -226,11 +226,32 @@ public:
     // Modifiers
     // ============================================================
 
-    /// Add a string key (copied into internal storage)
+    /// Add a string key from a string literal (zero-copy!)
+    /// @note The literal has static storage duration, so we can reference it directly
+    /// @example path.push_back("users");  // Zero allocation!
+    template<std::size_t N>
+    Path& push_back(const char (&literal)[N]) {
+        return push_back_literal(std::string_view{literal, N - 1});
+    }
+
+    /// Add a string key by moving ownership (zero-copy transfer)
+    /// @note The string content is moved into internal storage
+    /// @example path.push_back(std::move(dynamic_key));  // Ownership transfer
+    Path& push_back(std::string&& key);
+
+    /// Add a string key by copying (for temporary/unknown lifetime strings)
+    /// @note The string content is copied into internal storage
+    /// @example path.push_back(some_string_view);  // Copies content
     Path& push_back(std::string_view key);
 
     /// Add a numeric index
     Path& push_back(std::size_t index);
+
+private:
+    /// Internal: add literal string_view (no copy, direct reference)
+    Path& push_back_literal(std::string_view literal_sv);
+
+public:
 
     /// Add a PathElement (dispatches to appropriate overload)
     /// @note Uses requires clause to avoid ambiguity with string-like types
@@ -344,9 +365,15 @@ private:
     /// Path elements (string_views point to storage_ or static literals)
     std::vector<PathElement> elements_;
 
-    /// (offset, length) pairs for each string key in storage_
-    /// Used to rebuild string_views after copy/move
-    std::vector<std::pair<std::size_t, std::size_t>> key_spans_;
+    /// Tracks which string elements need rebuilding after copy/move.
+    /// For each string key in storage_: (element_index, offset, length)
+    /// Literals are NOT tracked here since they don't need rebuilding.
+    struct KeySpan {
+        std::size_t element_idx;  // Index in elements_ vector
+        std::size_t offset;       // Offset in storage_
+        std::size_t length;       // Length of the key
+    };
+    std::vector<KeySpan> key_spans_;
 
     /// Original path string for fast serialization
     /// Points to storage_ (if parsed) or static literal

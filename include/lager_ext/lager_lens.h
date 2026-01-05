@@ -248,42 +248,59 @@ public:
         };
     }
 
-    /// Main implementation: zero-copy lookup
-    [[nodiscard]] PathLens key(std::string_view k) const & {
+    // ============================================================
+    // key() methods - Template overloads for zero-copy literals
+    //
+    // Three categories of string keys:
+    // 1. String literals (const char(&)[N]): Zero-copy, direct reference
+    // 2. std::string&&: Move into Path's internal storage
+    // 3. std::string_view/const char*/std::string&: Copy into storage
+    //
+    // The template overload captures string literals at compile time,
+    // preserving their static storage duration information so Path
+    // can reference them directly without copying.
+    // ============================================================
+
+    /// Add a string literal key (zero-copy!)
+    /// @note Template captures literal type to enable zero-allocation path building
+    /// @example path.key("users")  // No allocation!
+    template<std::size_t N>
+    [[nodiscard]] PathLens key(const char (&literal)[N]) const & {
         PathLens result = *this;
-        result.path_.push_back(k);
+        result.path_.push_back(literal);  // Matches Path's template overload
         return result;
     }
-    [[nodiscard]] PathLens key(std::string_view k) && {
-        path_.push_back(k);
+
+    template<std::size_t N>
+    [[nodiscard]] PathLens key(const char (&literal)[N]) && {
+        path_.push_back(literal);
         return std::move(*this);
     }
 
-    /// Move semantics: zero-copy transfer
+    /// Add a string key by moving ownership
+    /// @note String content is transferred to Path's internal storage
     [[nodiscard]] PathLens key(std::string&& k) const & {
         PathLens result = *this;
         result.path_.push_back(std::move(k));
         return result;
     }
+
     [[nodiscard]] PathLens key(std::string&& k) && {
         path_.push_back(std::move(k));
         return std::move(*this);
     }
 
-    /// Disambiguation: string lvalue
-    [[nodiscard]] PathLens key(const std::string& k) const & {
-        return key(std::string_view{k});
-    }
-    [[nodiscard]] PathLens key(const std::string& k) && {
-        return std::move(*this).key(std::string_view{k});
+    /// Add a string key by copying (fallback for runtime strings)
+    /// @note Accepts any string-like type via implicit conversion to string_view
+    [[nodiscard]] PathLens key(std::string_view k) const & {
+        PathLens result = *this;
+        result.path_.push_back(k);
+        return result;
     }
 
-    /// Disambiguation: string literal
-    [[nodiscard]] PathLens key(const char* k) const & {
-        return key(std::string_view{k});
-    }
-    [[nodiscard]] PathLens key(const char* k) && {
-        return std::move(*this).key(std::string_view{k});
+    [[nodiscard]] PathLens key(std::string_view k) && {
+        path_.push_back(k);
+        return std::move(*this);
     }
     [[nodiscard]] PathLens index(std::size_t i) const & {
         PathLens result = *this;
@@ -295,10 +312,19 @@ public:
         return std::move(*this);
     }
 
-    [[nodiscard]] PathLens operator/(const std::string& k) const & { return key(k); }
-    [[nodiscard]] PathLens operator/(const std::string& k) && { return std::move(*this).key(k); }
-    [[nodiscard]] PathLens operator/(const char* k) const & { return key(k); }
-    [[nodiscard]] PathLens operator/(const char* k) && { return std::move(*this).key(k); }
+    /// Operator/ for chained navigation (literal version - zero-copy!)
+    template<std::size_t N>
+    [[nodiscard]] PathLens operator/(const char (&literal)[N]) const & { return key(literal); }
+    template<std::size_t N>
+    [[nodiscard]] PathLens operator/(const char (&literal)[N]) && { return std::move(*this).key(literal); }
+
+    /// Operator/ for dynamic strings
+    [[nodiscard]] PathLens operator/(std::string&& k) const & { return key(std::move(k)); }
+    [[nodiscard]] PathLens operator/(std::string&& k) && { return std::move(*this).key(std::move(k)); }
+    [[nodiscard]] PathLens operator/(std::string_view k) const & { return key(k); }
+    [[nodiscard]] PathLens operator/(std::string_view k) && { return std::move(*this).key(k); }
+
+    /// Operator/ for indices
     [[nodiscard]] PathLens operator/(std::size_t i) const & { return index(i); }
     [[nodiscard]] PathLens operator/(std::size_t i) && { return std::move(*this).index(i); }
     [[nodiscard]] PathLens operator/(int i) const & { return index(static_cast<std::size_t>(i)); }
@@ -444,44 +470,46 @@ public:
     
     // ============================================================
     // Navigation - Zoom further into the structure
+    //
+    // Template overloads for zero-copy literal support (same as PathLens).
     // ============================================================
     
-    /// Main implementation: zero-copy lookup
-    [[nodiscard]] ZoomedValue key(std::string_view k) const & {
+    /// Zoom into a map key using string literal (zero-copy!)
+    template<std::size_t N>
+    [[nodiscard]] ZoomedValue key(const char (&literal)[N]) const & {
         ZoomedValue result = *this;
-        result.path_.push_back(k);
+        result.path_.push_back(literal);
         return result;
     }
-    [[nodiscard]] ZoomedValue key(std::string_view k) && {
-        path_.push_back(k);
+
+    template<std::size_t N>
+    [[nodiscard]] ZoomedValue key(const char (&literal)[N]) && {
+        path_.push_back(literal);
         return std::move(*this);
     }
 
-    /// Move semantics: zero-copy transfer
+    /// Zoom into a map key by moving ownership
     [[nodiscard]] ZoomedValue key(std::string&& k) const & {
         ZoomedValue result = *this;
         result.path_.push_back(std::move(k));
         return result;
     }
+
     [[nodiscard]] ZoomedValue key(std::string&& k) && {
         path_.push_back(std::move(k));
         return std::move(*this);
     }
 
-    /// Disambiguation: string lvalue
-    [[nodiscard]] ZoomedValue key(const std::string& k) const & {
-        return key(std::string_view{k});
-    }
-    [[nodiscard]] ZoomedValue key(const std::string& k) && {
-        return std::move(*this).key(std::string_view{k});
+    /// Zoom into a map key by copying (fallback)
+    [[nodiscard]] ZoomedValue key(std::string_view k) const & {
+        ZoomedValue result = *this;
+        result.path_.push_back(k);
+        return result;
     }
 
-    /// Disambiguation: string literal
-    [[nodiscard]] ZoomedValue key(const char* k) const & {
-        return key(std::string_view{k});
-    }
-    [[nodiscard]] ZoomedValue key(const char* k) && {
-        return std::move(*this).key(std::string_view{k});
+    [[nodiscard]] ZoomedValue key(std::string_view k) && {
+        path_.push_back(k);
+        return std::move(*this);
     }
     
     /// Zoom into a vector index
@@ -495,11 +523,19 @@ public:
         return std::move(*this);
     }
     
-    /// Operator/ for chained navigation
-    [[nodiscard]] ZoomedValue operator/(const std::string& k) const & { return key(k); }
-    [[nodiscard]] ZoomedValue operator/(const std::string& k) && { return std::move(*this).key(k); }
-    [[nodiscard]] ZoomedValue operator/(const char* k) const & { return key(k); }
-    [[nodiscard]] ZoomedValue operator/(const char* k) && { return std::move(*this).key(k); }
+    /// Operator/ for chained navigation (literal version - zero-copy!)
+    template<std::size_t N>
+    [[nodiscard]] ZoomedValue operator/(const char (&literal)[N]) const & { return key(literal); }
+    template<std::size_t N>
+    [[nodiscard]] ZoomedValue operator/(const char (&literal)[N]) && { return std::move(*this).key(literal); }
+
+    /// Operator/ for dynamic strings
+    [[nodiscard]] ZoomedValue operator/(std::string&& k) const & { return key(std::move(k)); }
+    [[nodiscard]] ZoomedValue operator/(std::string&& k) && { return std::move(*this).key(std::move(k)); }
+    [[nodiscard]] ZoomedValue operator/(std::string_view k) const & { return key(k); }
+    [[nodiscard]] ZoomedValue operator/(std::string_view k) && { return std::move(*this).key(k); }
+
+    /// Operator/ for indices
     [[nodiscard]] ZoomedValue operator/(std::size_t i) const & { return index(i); }
     [[nodiscard]] ZoomedValue operator/(std::size_t i) && { return std::move(*this).index(i); }
     [[nodiscard]] ZoomedValue operator/(int i) const & { return index(static_cast<std::size_t>(i)); }

@@ -617,49 +617,60 @@ bool StateSubscriber::is_valid() const noexcept {
 // ============================================================
 
 // Helper: Compare two Values and collect differences
+// OPTIMIZATION: Uses path_stack for zero-allocation path building during recursion.
+// Only creates Path objects when adding to result (unavoidable copy at that point).
 static void collect_diff_recursive(const Value& old_val, const Value& new_val,
-                                    Path current_path, DiffResult& result) {
+                                    std::vector<PathElement>& path_stack,
+                                    std::size_t path_depth, DiffResult& result) {
     // Same value (early exit for identical data)
     // Note: For Value types, we compare the variant data directly
     // Structural sharing is detected at the box level in container comparisons below
-    if (old_val.data == new_val.data) {
+    if (old_val.data == new_val.data) [[likely]] {
         return;
     }
 
     // Different types or both primitives - report as modification
-    if (old_val.type_index() != new_val.type_index()) {
-        result.modified.push_back({current_path, old_val, new_val});
+    if (old_val.type_index() != new_val.type_index()) [[unlikely]] {
+        Path current_path;
+        current_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth));
+        result.modified.push_back({std::move(current_path), old_val, new_val});
         return;
     }
 
     // Both are maps
-    if (auto* old_map = old_val.get_if<ValueMap>()) {
+    if (auto* old_map = old_val.get_if<ValueMap>()) [[likely]] {
         auto* new_map = new_val.get_if<ValueMap>();
+
+        // Ensure path_stack has space for one more element
+        if (path_stack.size() <= path_depth) {
+            path_stack.resize(path_depth + 1);
+        }
 
         // Check for added and modified entries
         for (const auto& [key, new_box] : *new_map) {
-            Path child_path = current_path;
-            child_path.push_back(key);
+            path_stack[path_depth] = std::string_view{key};
 
             if (auto* old_box = old_map->find(key)) {
                 // Key exists in both - check if same box (structural sharing)
-                // Use .get() to compare immer::box internal pointers for O(1) identity check
-                // This is the correct way to detect structural sharing in immer::box
-                if (old_box->get() != new_box.get()) {
-                    collect_diff_recursive(old_box->get(), new_box.get(), child_path, result);
+                if (old_box->get() != new_box.get()) [[unlikely]] {
+                    collect_diff_recursive(old_box->get(), new_box.get(), 
+                                           path_stack, path_depth + 1, result);
                 }
             } else {
                 // Key only in new - added
-                result.added.emplace_back(child_path, new_box.get());
+                Path child_path;
+                child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
+                result.added.emplace_back(std::move(child_path), new_box.get());
             }
         }
 
         // Check for removed entries
         for (const auto& [key, old_box] : *old_map) {
-            if (!new_map->find(key)) {
-                Path child_path = current_path;
-                child_path.push_back(key);
-                result.removed.emplace_back(child_path, old_box.get());
+            if (!new_map->find(key)) [[unlikely]] {
+                path_stack[path_depth] = std::string_view{key};
+                Path child_path;
+                child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
+                result.removed.emplace_back(std::move(child_path), old_box.get());
             }
         }
         return;
@@ -669,6 +680,11 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val,
     if (auto* old_vec = old_val.get_if<ValueVector>()) {
         auto* new_vec = new_val.get_if<ValueVector>();
 
+        // Ensure path_stack has space for one more element
+        if (path_stack.size() <= path_depth) {
+            path_stack.resize(path_depth + 1);
+        }
+
         std::size_t min_size = std::min(old_vec->size(), new_vec->size());
 
         // Compare common elements
@@ -676,28 +692,28 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val,
             const auto& old_box = (*old_vec)[i];
             const auto& new_box = (*new_vec)[i];
 
-            // Check if same box (structural sharing) using .get() for O(1) identity check
-            // Note: Use .get() for pointer comparison, not address of box itself
-            // This detects immer's structural sharing correctly
-            if (old_box.get() != new_box.get()) {
-                Path child_path = current_path;
-                child_path.push_back(i);
-                collect_diff_recursive(old_box.get(), new_box.get(), child_path, result);
+            // Check if same box (structural sharing)
+            if (old_box.get() != new_box.get()) [[unlikely]] {
+                path_stack[path_depth] = i;
+                collect_diff_recursive(old_box.get(), new_box.get(), 
+                                       path_stack, path_depth + 1, result);
             }
         }
 
         // Elements added to new vector
         for (std::size_t i = min_size; i < new_vec->size(); ++i) {
-            Path child_path = current_path;
-            child_path.push_back(i);
-            result.added.emplace_back(child_path, (*new_vec)[i].get());
+            path_stack[path_depth] = i;
+            Path child_path;
+            child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
+            result.added.emplace_back(std::move(child_path), (*new_vec)[i].get());
         }
 
         // Elements removed from old vector
         for (std::size_t i = min_size; i < old_vec->size(); ++i) {
-            Path child_path = current_path;
-            child_path.push_back(i);
-            result.removed.emplace_back(child_path, (*old_vec)[i].get());
+            path_stack[path_depth] = i;
+            Path child_path;
+            child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
+            result.removed.emplace_back(std::move(child_path), (*old_vec)[i].get());
         }
         return;
     }
@@ -706,43 +722,53 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val,
     if (auto* old_arr = old_val.get_if<ValueArray>()) {
         auto* new_arr = new_val.get_if<ValueArray>();
 
+        // Ensure path_stack has space for one more element
+        if (path_stack.size() <= path_depth) {
+            path_stack.resize(path_depth + 1);
+        }
+
         std::size_t min_size = std::min(old_arr->size(), new_arr->size());
 
         for (std::size_t i = 0; i < min_size; ++i) {
             const auto& old_box = (*old_arr)[i];
             const auto& new_box = (*new_arr)[i];
 
-            // Check if same box (structural sharing) using .get() for O(1) identity check
-            if (old_box.get() != new_box.get()) {
-                Path child_path = current_path;
-                child_path.push_back(i);
-                collect_diff_recursive(old_box.get(), new_box.get(), child_path, result);
+            if (old_box.get() != new_box.get()) [[unlikely]] {
+                path_stack[path_depth] = i;
+                collect_diff_recursive(old_box.get(), new_box.get(), 
+                                       path_stack, path_depth + 1, result);
             }
         }
 
         for (std::size_t i = min_size; i < new_arr->size(); ++i) {
-            Path child_path = current_path;
-            child_path.push_back(i);
-            result.added.emplace_back(child_path, (*new_arr)[i].get());
+            path_stack[path_depth] = i;
+            Path child_path;
+            child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
+            result.added.emplace_back(std::move(child_path), (*new_arr)[i].get());
         }
 
         for (std::size_t i = min_size; i < old_arr->size(); ++i) {
-            Path child_path = current_path;
-            child_path.push_back(i);
-            result.removed.emplace_back(child_path, (*old_arr)[i].get());
+            path_stack[path_depth] = i;
+            Path child_path;
+            child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
+            result.removed.emplace_back(std::move(child_path), (*old_arr)[i].get());
         }
         return;
     }
 
     // Primitive types - compare by value
-    if (old_val.data != new_val.data) {
-        result.modified.push_back({current_path, old_val, new_val});
+    if (old_val.data != new_val.data) [[unlikely]] {
+        Path current_path;
+        current_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth));
+        result.modified.push_back({std::move(current_path), old_val, new_val});
     }
 }
 
 DiffResult collect_diff(const Value& old_val, const Value& new_val) {
     DiffResult result;
-    collect_diff_recursive(old_val, new_val, {}, result);
+    std::vector<PathElement> path_stack;
+    path_stack.reserve(16);  // Pre-allocate for typical path depths
+    collect_diff_recursive(old_val, new_val, path_stack, 0, result);
     return result;
 }
 
