@@ -63,7 +63,7 @@ void DiffEntryCollector::print_diffs() const
             case DiffEntry::Type::Remove: type_str = "REMOVE"; break;
             case DiffEntry::Type::Change: type_str = "CHANGE"; break;
         }
-        std::cout << "  " << type_str << " " << path_to_string(d.path);
+        std::cout << "  " << type_str << " " << d.path.to_dot_notation();
         if (d.type == DiffEntry::Type::Change) {
             std::cout << ": " << value_to_string(d.get_old()) << " -> " << value_to_string(d.get_new());
         } else if (d.type == DiffEntry::Type::Add) {
@@ -1061,7 +1061,7 @@ namespace {
                     // For Add: return the new value from the diff node
                     Value new_val = DiffValueCollector::get_new_value(diff_tree);
                     if (new_val.is_null()) {
-                        throw std::runtime_error("apply_diff: Add operation missing _new value at path: " + path_to_string(path));
+                        throw std::runtime_error("apply_diff: Add operation missing _new value at path: " + path.to_dot_notation());
                     }
                     return new_val;
                 }
@@ -1073,7 +1073,7 @@ namespace {
                     // For Change: return the new value from the diff node
                     Value new_val = DiffValueCollector::get_new_value(diff_tree);
                     if (new_val.is_null()) {
-                        throw std::runtime_error("apply_diff: Change operation missing _new value at path: " + path_to_string(path));
+                        throw std::runtime_error("apply_diff: Change operation missing _new value at path: " + path.to_dot_notation());
                     }
                     return new_val;
                 }
@@ -1135,7 +1135,7 @@ namespace {
                 return Value{result};
             }
             else {
-                throw std::runtime_error("apply_diff: Type mismatch - diff expects map but root is not a map at path: " + path_to_string(path));
+                throw std::runtime_error("apply_diff: Type mismatch - diff expects map but root is not a map at path: " + path.to_dot_notation());
             }
         }
         else if (auto* diff_vector_map = diff_tree.get_if<ValueMap>()) {
@@ -1220,13 +1220,13 @@ namespace {
                     return Value{result};
                 }
                 else {
-                    throw std::runtime_error("apply_diff: Type mismatch - diff expects vector but root is not a vector at path: " + path_to_string(path));
+                    throw std::runtime_error("apply_diff: Type mismatch - diff expects vector but root is not a vector at path: " + path.to_dot_notation());
                 }
             }
         }
         
         // If we reach here, the diff_tree structure doesn't match expected patterns
-        throw std::runtime_error("apply_diff: Unexpected diff tree structure at path: " + path_to_string(path));
+        throw std::runtime_error("apply_diff: Unexpected diff tree structure at path: " + path.to_dot_notation());
     }
 }
 

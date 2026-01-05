@@ -2,8 +2,7 @@
 // Implementation of lager::lens<Value, Value> scheme
 
 #include <lager_ext/lager_lens.h>
-#include <lager_ext/path_core.h>
-#include <lager_ext/string_path.h>  // For parse_string_path
+#include <lager_ext/path_utils.h>
 #include <zug/compose.hpp>
 #include <unordered_map>
 #include <list>

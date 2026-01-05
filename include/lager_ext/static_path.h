@@ -13,6 +13,13 @@
 /// - Zero runtime overhead for path construction
 /// - Type-safe path definitions
 /// - JSON Pointer style path syntax support
+///
+/// Usage:
+///   // Primary API - string literal syntax (recommended)
+///   using UserNamePath = StaticPath<"/users/0/name">;
+///
+///   // Advanced API - explicit segment types
+///   using UserNamePath = SegmentPath<K<"users">, I<0>, K<"name">>;
 
 #pragma once
 
@@ -37,7 +44,7 @@ namespace static_path {
 /// @brief Fixed-size string for C++20 NTTP (Non-Type Template Parameters)
 /// 
 /// Enables string literals as template parameters:
-///   LiteralPath<"/users/0/name">
+///   StaticPath<"/users/0/name">
 /// 
 /// @note Uses consteval constructor to ensure compile-time construction
 template<std::size_t N>
@@ -208,11 +215,15 @@ struct ComposedLens<> {
 };
 
 // ============================================================
-// Static Path - Compile-time path definition
+// Segment Path - Compile-time path with explicit segment types
 // ============================================================
 
+/// @brief Path defined using explicit segment types
+/// @example SegmentPath<K<"users">, I<0>, K<"name">>
+/// 
+/// For most use cases, prefer StaticPath<"/users/0/name"> instead.
 template<typename... Segments>
-struct StaticPath {
+struct SegmentPath {
     static constexpr std::size_t depth = sizeof...(Segments);
 
     // Convert to composed lens at compile time
@@ -266,7 +277,7 @@ private:
 
 // Empty path specialization (identity lens)
 template<>
-struct StaticPath<> {
+struct SegmentPath<> {
     static constexpr std::size_t depth = 0;
 
     static Value get(const Value& v) { return v; }
@@ -289,15 +300,15 @@ template<std::size_t N>
 using I = IndexSeg<N>;
 
 // ============================================================
-// Path concatenation - combine two static paths
+// Path concatenation - combine two segment paths
 // ============================================================
 
 template<typename Path1, typename Path2>
 struct ConcatPath;
 
 template<typename... Segs1, typename... Segs2>
-struct ConcatPath<StaticPath<Segs1...>, StaticPath<Segs2...>> {
-    using type = StaticPath<Segs1..., Segs2...>;
+struct ConcatPath<SegmentPath<Segs1...>, SegmentPath<Segs2...>> {
+    using type = SegmentPath<Segs1..., Segs2...>;
 };
 
 template<typename Path1, typename Path2>
@@ -311,8 +322,8 @@ template<typename BasePath, typename Segment>
 struct ExtendPath;
 
 template<typename... Segs, typename Segment>
-struct ExtendPath<StaticPath<Segs...>, Segment> {
-    using type = StaticPath<Segs..., Segment>;
+struct ExtendPath<SegmentPath<Segs...>, Segment> {
+    using type = SegmentPath<Segs..., Segment>;
 };
 
 template<typename BasePath, typename Segment>
@@ -330,18 +341,18 @@ using ExtendPathT = typename ExtendPath<BasePath, Segment>::type;
 #define STATIC_IDX(n) \
     lager_ext::static_path::IndexSeg<n>
 
-// Define a complete path
-#define STATIC_PATH(...) \
-    lager_ext::static_path::StaticPath<__VA_ARGS__>
+// Define a complete path using explicit segments
+#define SEGMENT_PATH(...) \
+    lager_ext::static_path::SegmentPath<__VA_ARGS__>
 
 // ============================================================
-// String Literal Static Path
+// Static Path from String Literal
 //
 // Allows defining paths using string literal syntax:
 //   StaticPath<"/users/0/name">
 //
 // This is equivalent to:
-//   StaticPath<K<"users">, I<0>, K<"name">>
+//   SegmentPath<K<"users">, I<0>, K<"name">>
 // ============================================================
 
 namespace detail {
@@ -453,28 +464,30 @@ struct SegmentTypeAt {
     >;
 };
 
-// Build StaticPath from segments
+// Build SegmentPath from segments
 template<FixedString Ptr, typename Indices>
 struct BuildPath;
 
 template<FixedString Ptr, std::size_t... Is>
 struct BuildPath<Ptr, std::index_sequence<Is...>> {
-    using type = StaticPath<typename SegmentTypeAt<Ptr, Is>::type...>;
+    using type = SegmentPath<typename SegmentTypeAt<Ptr, Is>::type...>;
 };
 
 } // namespace detail
 
-/// @brief Convert string literal to StaticPath at compile time
+/// @brief Convert string literal to compile-time path
 /// @tparam Ptr JSON Pointer style path string (e.g., "/users/0/name")
 /// 
-/// Usage: LiteralPath<"/users/0/name">
-/// Equivalent to: StaticPath<K<"users">, I<0>, K<"name">>
+/// This is the primary API for defining compile-time paths.
+/// 
+/// Usage: StaticPath<"/users/0/name">
+/// Equivalent to: SegmentPath<K<"users">, I<0>, K<"name">>
 /// 
 /// @example
-/// using UserNamePath = LiteralPath<"/users/0/name">;
+/// using UserNamePath = StaticPath<"/users/0/name">;
 /// Value name = UserNamePath::get(root);
 template<FixedString Ptr>
-using LiteralPath = typename detail::BuildPath<
+using StaticPath = typename detail::BuildPath<
     Ptr,
     std::make_index_sequence<detail::count_segments<Ptr>()>
 >::type;
@@ -483,12 +496,12 @@ using LiteralPath = typename detail::BuildPath<
 
 // ============================================================
 // Promote commonly used types to lager_ext namespace
-// Users can use lager_ext::LiteralPath<"/path"> directly
+// Users can use lager_ext::StaticPath<"/path"> directly
 // ============================================================
 
 using static_path::FixedString;
-using static_path::LiteralPath;
 using static_path::StaticPath;
+using static_path::SegmentPath;
 using static_path::K;
 using static_path::I;
 using static_path::ExtendPathT;

@@ -27,7 +27,7 @@ This document provides a comprehensive overview of the public APIs in the `lager
     - [4.2 Core Types](#42-core-types)
     - [4.3 Primitive Lenses](#43-primitive-lenses)
     - [4.4 PathLens (Runtime Paths)](#44-pathlens-runtime-paths)
-    - [4.5 LiteralPath (Compile-Time Paths)](#45-literalpath-compile-time-paths)
+    - [4.5 StaticPath (Compile-Time Paths)](#45-staticpath-compile-time-paths)
     - [4.6 Unified API (`path::` namespace)](#46-unified-api-path-namespace)
     - [4.7 ZoomedValue (Focused View)](#47-zoomedvalue-focused-view)
     - [4.8 PathWatcher (Change Detection)](#48-pathwatcher-change-detection)
@@ -464,7 +464,7 @@ The path system provides **lens-based access** to deeply nested values in `Value
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                       User API Layer                            │
-│  path::get/set/over    PathLens    LiteralPath<"/a/b">         │
+│  path::get/set/over    PathLens    StaticPath<"/a/b">          │
 ├─────────────────────────────────────────────────────────────────┤
 │                      Lens Layer                                 │
 │  key_lens(key)    index_lens(idx)    static_path_lens(...)     │
@@ -480,13 +480,13 @@ The path system provides **lens-based access** to deeply nested values in `Value
 |--------|----------|---------------------|
 | Return type | `Value` (null if missing) | `optional<Value>` |
 | Multi-level path | Native support | Manual nesting |
-| String paths | `parse_string_path()` | Not supported |
-| Compile-time paths | `LiteralPath<"/a/b">` | Not supported |
+| String paths | `Path{"/a/b"}` constructor | Not supported |
+| Compile-time paths | `StaticPath<"/a/b">` | Not supported |
 
 ### 4.2 Core Types
 
 ```cpp
-#include <lager_ext/path_types.h>
+#include <lager_ext/path.h>
 using namespace lager_ext;
 using namespace std::string_view_literals;
 
@@ -501,6 +501,13 @@ Path p;
 p.push_back(get_user_input());  // Copies into internal storage
 p.push_back(0);
 auto val = get_at_path(root, p);  // Path implicitly converts to PathView
+
+// Path from JSON Pointer string (RFC 6901)
+Path from_str{"/users/0/name"};           // Parse from string_view
+Path from_move{std::move(json_pointer)};  // Zero-copy from rvalue string
+
+// Convert Path back to JSON Pointer string
+std::string str = from_str.to_string_path();  // "/users/0/name"
 ```
 
 **Path Types Comparison:**
@@ -515,6 +522,8 @@ auto val = get_at_path(root, p);  // Path implicitly converts to PathView
 - `PathView` is a non-owning span - perfect for string literals and compile-time paths
 - `Path` stores all keys in a contiguous buffer, avoiding per-key heap allocations
 - All path functions accept `PathView`; `Path` implicitly converts to `PathView`
+- `Path` can be constructed directly from JSON Pointer strings (`Path{"/a/b/c"}`)
+- `Path` and `PathView` both have `to_string_path()` for serialization back to JSON Pointer format
 
 ### 4.3 Primitive Lenses
 
@@ -555,8 +564,8 @@ using namespace lager_ext;
 // From Path vector
 PathLens lens1(Path{"users", size_t(0), "name"});
 
-// From string path (JSON Pointer)
-PathLens lens2(parse_string_path("/users/0/name"));
+// From string path (JSON Pointer) - Path constructor parses the string
+PathLens lens2(Path{"/users/0/name"});
 
 // Fluent builder with / operator
 PathLens lens3 = PathLens() / "users" / 0 / "name";
@@ -590,9 +599,9 @@ lens1.parent();          // PathLens to parent
 lens1.concat(other);     // combine two paths
 ```
 
-### 4.5 LiteralPath (Compile-Time Paths)
+### 4.5 StaticPath (Compile-Time Paths)
 
-For paths known at compile time, `LiteralPath` provides **zero runtime overhead**:
+For paths known at compile time, `StaticPath` provides **zero runtime overhead**:
 
 ```cpp
 #include <lager_ext/static_path.h>
@@ -600,12 +609,12 @@ using namespace lager_ext;
 
 // ========== Define Path Types ==========
 
-// JSON Pointer syntax (C++20 NTTP)
-using UserNamePath = LiteralPath<"/users/0/name">;
-using ConfigTheme = LiteralPath<"/config/theme">;
+// JSON Pointer syntax (C++20 NTTP) - Recommended
+using UserNamePath = StaticPath<"/users/0/name">;
+using ConfigTheme = StaticPath<"/config/theme">;
 
-// Segment syntax (more flexible)
-using UserNamePath2 = StaticPath<K<"users">, I<0>, K<"name">>;
+// Segment syntax (more flexible, for advanced use cases)
+using UserNamePath2 = SegmentPath<K<"users">, I<0>, K<"name">>;
 
 // ========== Use Directly ==========
 
@@ -622,15 +631,15 @@ Path runtime = UserNamePath::to_runtime_path();
 
 namespace schema {
     // Define all paths for your data model
-    using Title = LiteralPath<"/title">;
-    using WindowWidth = LiteralPath<"/window/width">;
-    using WindowHeight = LiteralPath<"/window/height">;
+    using Title = StaticPath<"/title">;
+    using WindowWidth = StaticPath<"/window/width">;
+    using WindowHeight = StaticPath<"/window/height">;
     
     template<std::size_t N>
-    using UserName = StaticPath<K<"users">, I<N>, K<"name">>;
+    using UserName = SegmentPath<K<"users">, I<N>, K<"name">>;
     
     template<std::size_t N>
-    using UserAge = StaticPath<K<"users">, I<N>, K<"age">>;
+    using UserAge = SegmentPath<K<"users">, I<N>, K<"age">>;
 }
 
 // Type-safe access
@@ -643,14 +652,14 @@ Value user5_age = schema::UserAge<5>::get(state);
 
 ```cpp
 // Extend existing path
-using UsersPath = LiteralPath<"/users">;
+using UsersPath = StaticPath<"/users">;
 using FirstUser = ExtendPathT<UsersPath, I<0>>;
 using FirstUserName = ExtendPathT<FirstUser, K<"name">>;
 
 // Concatenate two paths
 using FullPath = ConcatPathT<
-    LiteralPath<"/users">,
-    LiteralPath<"/0/name">
+    StaticPath<"/users">,
+    StaticPath<"/0/name">
 >;
 ```
 
@@ -834,24 +843,78 @@ watcher.reset_stats();
 
 ### 4.9 String Path Parsing (RFC 6901)
 
+`Path` class has built-in support for JSON Pointer (RFC 6901) parsing and serialization:
+
 ```cpp
-#include <lager_ext/string_path.h>
+#include <lager_ext/path.h>
 using namespace lager_ext;
 
-// Parse JSON Pointer
-Path path = parse_string_path("/users/0/name");
-// Result: {"users", size_t(0), "name"}
+// ========== Parsing (String -> Path) ==========
 
-// Convert back to string
-std::string str = path_to_string_path(path);
+// From string literal (zero-copy, optimal!)
+Path path{"/users/0/name"};
+// Result: elements = {"users", size_t(0), "name"}
+// Note: String literals have static storage, no copy needed!
+
+// From rvalue string (zero-copy, takes ownership)
+std::string json_ptr = "/users/0/name";
+Path path2{std::move(json_ptr)};  // No allocation, reuses buffer
+
+// From string_view (copies the string)
+std::string_view sv = get_path_from_somewhere();
+Path path3{sv};  // Copies because sv may be temporary
+
+// ========== Serialization (Path -> String) ==========
+
+// Convert back to JSON Pointer string
+std::string str = path.to_string_path();
 // Result: "/users/0/name"
 
-// Escape sequences (RFC 6901)
+// PathView also supports serialization
+PathView pv = path;
+std::string str2 = pv.to_string_path();
+
+// ========== Escape Sequences (RFC 6901) ==========
 // ~0 = literal ~
 // ~1 = literal /
-Path escaped = parse_string_path("/config/theme~0mode");  // key: "theme~mode"
-Path with_slash = parse_string_path("/tags~1skills/0");   // key: "tags/skills"
+
+Path escaped{"/config/theme~0mode"};        // key: "theme~mode"
+Path with_slash{"/users/0/profile/tags~1skills"};  // key: "tags/skills"
+
+// Round-trip preserves escaping
+std::string round_trip = escaped.to_string_path();
+// Result: "/config/theme~0mode"
 ```
+
+**Path Construction Methods:**
+
+| Method | Heap Allocation | String Copy | Best For |
+|--------|-----------------|-------------|----------|
+| `Path{"/a/b/c"}` | **No** | **Zero-copy** | String literals (optimal!) |
+| `Path{std::string&&}` | **No** | **Zero-copy** | Dynamically built strings |
+| `Path{std::string_view}` | Yes | Full copy | Temporary/dynamic string_view |
+
+> **How It Works:** The compiler distinguishes between string literals (`const char[N]`) and `std::string_view`. When you write `Path{"/users/0/name"}`, the template `Path(const char (&)[N])` matches, which creates string_views pointing directly to the literal's static storage - zero allocation!
+
+> **When to use each constructor:**
+> ```cpp
+> // ✅ String literal - zero-copy (uses const char[N] template)
+> Path p1{"/config/theme"};
+> 
+> // ✅ Dynamic string you no longer need - zero-copy (takes ownership)
+> std::string dynamic = build_path();
+> Path p2{std::move(dynamic)};  // dynamic is now empty
+> 
+> // ✅ String view from external source - copies (safe)
+> std::string_view external = get_path();
+> Path p3{external};  // Copies because external may be temporary
+> 
+> // ✅ Dynamic path building - use push_back()
+> Path p4;
+> p4.push_back("users");
+> p4.push_back(get_user_index());
+> p4.push_back("name");
+> ```
 
 ### 4.10 Core Path Engine (`path_core.h`)
 
@@ -922,7 +985,7 @@ Value val = get_at_path(state, dynamic_path);  // Implicit PathView conversion
 
 | API | Use Case | Overhead |
 |-----|----------|----------|
-| `LiteralPath<"/a/b">` | Fixed paths in code | **Zero** (compile-time) |
+| `StaticPath<"/a/b">` | Fixed paths in code | **Zero** (compile-time) |
 | `PathLens` + cache | Repeated runtime paths | Low (LRU cache hit) |
 | `PathLens` no cache | One-off access | Medium (lens construction) |
 | `get_at_path()` | Simple traversal | Low (no lens) |
@@ -931,7 +994,7 @@ Value val = get_at_path(state, dynamic_path);  // Implicit PathView conversion
 
 ```cpp
 // ✅ Good: Compile-time path for fixed access
-using NamePath = LiteralPath<"/users/0/name">;
+using NamePath = StaticPath<"/users/0/name">;
 Value name = NamePath::get(state);
 
 // ✅ Good: Reuse PathLens for repeated access
@@ -1008,15 +1071,15 @@ if (collector.has_changes()) {
     for (const auto& entry : diffs) {
         switch (entry.type) {
             case DiffEntry::Type::Add:
-                std::cout << "Added at " << path_to_string(entry.path) 
+                std::cout << "Added at " << entry.path.to_dot_notation() 
                           << ": " << to_json(entry.get_new(), true) << std::endl;
                 break;
             case DiffEntry::Type::Remove:
-                std::cout << "Removed at " << path_to_string(entry.path) 
+                std::cout << "Removed at " << entry.path.to_dot_notation() 
                           << ": " << to_json(entry.get_old(), true) << std::endl;
                 break;
             case DiffEntry::Type::Change:
-                std::cout << "Changed at " << path_to_string(entry.path)
+                std::cout << "Changed at " << entry.path.to_dot_notation()
                           << ": " << to_json(entry.get_old(), true) 
                           << " -> " << to_json(entry.get_new(), true) << std::endl;
                 break;
@@ -1245,7 +1308,7 @@ Value current = subscriber.get();
 // Watch for changes
 subscriber.watch([](const ValueDiff& diff) {
     for (const auto& change : diff.modified) {
-        std::cout << "Changed: " << path_to_string(change.path) << std::endl;
+        std::cout << "Changed: " << change.path.to_dot_notation() << std::endl;
     }
 });
 ```
@@ -1281,13 +1344,12 @@ release_memory_region(handle);
 | `<lager_ext/value.h>` | Core `Value` type, type aliases, comparison operators |
 | `<lager_ext/builders.h>` | Builder classes for O(n) container construction |
 | `<lager_ext/serialization.h>` | Binary and JSON serialization |
-| `<lager_ext/path.h>` | **Unified Path API** - single entry point for all path operations |
-| `<lager_ext/path_types.h>` | `PathView` (zero-allocation) and `Path` (owning) types |
+| `<lager_ext/path.h>` | Core `PathView` (zero-allocation) and `Path` (owning) types |
+| `<lager_ext/path_api.h>` | **Unified Path API** - single entry point for all path operations |
 | `<lager_ext/path_core.h>` | Core path traversal engine (low-level API) |
 | `<lager_ext/path_watcher.h>` | Path change detection with trie-based optimization |
 | `<lager_ext/lager_lens.h>` | PathLens, ZoomedValue and lager lens integration |
 | `<lager_ext/static_path.h>` | Compile-time static path lens (C++20 NTTP) |
-| `<lager_ext/string_path.h>` | RFC 6901 JSON Pointer parsing |
 | `<lager_ext/value_diff.h>` | Value difference detection |
 | `<lager_ext/shared_state.h>` | Cross-process shared state |
 | `<lager_ext/shared_value.h>` | Low-level shared memory operations |

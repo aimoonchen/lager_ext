@@ -6,7 +6,7 @@
 #include "lager_ext/static_path.h"
 #include "lager_ext/lager_lens.h"
 #include "lager_ext/editor_engine.h"
-#include "lager_ext/string_path.h"
+#include "lager_ext/path_utils.h"
 
 #include <lager/lenses/at.hpp>
 #include <iostream>
@@ -142,10 +142,10 @@ void demo_lager_lens()
 
     // Test lager_path_lens with lager::view
     std::cout << "\n--- Test 1: GET using lager::view ---\n";
-    Path name_path = { std::string{"users"}, size_t{0}, std::string{"name"} };
+    Path name_path{"/users/0/name"};
     auto lens = lager_path_lens(name_path);
 
-    std::cout << "Path: " << path_to_string(name_path) << "\n";
+    std::cout << "Path: " << name_path.to_string_path() << "\n";
     std::cout << "lager::view(lens, data) = " << value_to_string(lager::view(lens, data)) << "\n";
 
     // Test lager::set
@@ -156,7 +156,7 @@ void demo_lager_lens()
 
     // Test lager::over
     std::cout << "\n--- Test 3: OVER using lager::over ---\n";
-    Path age_path = { std::string{"users"}, size_t{1}, std::string{"age"} };
+    Path age_path{"/users/1/age"};
     auto age_lens = lager_path_lens(age_path);
 
     std::cout << "Original age: " << value_to_string(lager::view(age_lens, data)) << "\n";
@@ -263,8 +263,8 @@ void demo_string_path()
     };
 
     for (const auto& path_str : test_paths) {
-        auto path = parse_string_path(path_str);
-        auto round_trip = path_to_string_path(path);
+        Path path{path_str};
+        auto round_trip = path.to_string_path();
         std::cout << "  \"" << path_str << "\" -> Path{";
         for (size_t i = 0; i < path.size(); ++i) {
             if (i > 0) std::cout << ", ";
@@ -286,7 +286,7 @@ void demo_string_path()
 
     // Helper lambda: create PathLens from string path
     auto path_lens = [](std::string_view path_str) {
-        return PathLens(parse_string_path(path_str));
+        return PathLens(Path{path_str});
     };
 
     std::cout << "  path_lens(\"/users/0/name\").get(data) = "
@@ -1032,27 +1032,27 @@ namespace schema {
     // Path definitions - These are compile-time constants
     // ============================================================
 
-    // Root-level paths
-    using TitlePath = StaticPath<K<"title">>;
-    using UsersPath = StaticPath<K<"users">>;
-    using WindowPath = StaticPath<K<"window">>;
+    // Root-level paths (using SegmentPath for segment-based definition)
+    using TitlePath = SegmentPath<K<"title">>;
+    using UsersPath = SegmentPath<K<"users">>;
+    using WindowPath = SegmentPath<K<"window">>;
 
     // Window sub-paths
-    using WindowWidthPath = StaticPath<K<"window">, K<"width">>;
-    using WindowHeightPath = StaticPath<K<"window">, K<"height">>;
+    using WindowWidthPath = SegmentPath<K<"window">, K<"width">>;
+    using WindowHeightPath = SegmentPath<K<"window">, K<"height">>;
 
     // User paths (parameterized by index)
     template<std::size_t Idx>
-    using UserPath = StaticPath<K<"users">, I<Idx>>;
+    using UserPath = SegmentPath<K<"users">, I<Idx>>;
 
     template<std::size_t Idx>
-    using UserNamePath = StaticPath<K<"users">, I<Idx>, K<"name">>;
+    using UserNamePath = SegmentPath<K<"users">, I<Idx>, K<"name">>;
 
     template<std::size_t Idx>
-    using UserAgePath = StaticPath<K<"users">, I<Idx>, K<"age">>;
+    using UserAgePath = SegmentPath<K<"users">, I<Idx>, K<"age">>;
 
     template<std::size_t Idx>
-    using UserEmailPath = StaticPath<K<"users">, I<Idx>, K<"email">>;
+    using UserEmailPath = SegmentPath<K<"users">, I<Idx>, K<"email">>;
 
     // ============================================================
     // Type-safe accessors
@@ -1224,7 +1224,7 @@ void demo_static_path() {
     std::cout << "Convert to runtime path:\n";
     auto runtime_path = UserEmailPath<2>::to_runtime_path();
     std::cout << "  UserEmailPath<2>::to_runtime_path() = "
-        << path_to_string(runtime_path) << "\n\n";
+        << runtime_path.to_string_path() << "\n\n";
 
     // --------------------------------------------------------
     // Demo 6: Path composition
@@ -1234,8 +1234,8 @@ void demo_static_path() {
     using namespace static_path;
 
     // Compose paths using ConcatPathT
-    using BasePath = StaticPath<K<"users">, I<0>>;
-    using FieldPath = StaticPath<K<"name">>;
+    using BasePath = SegmentPath<K<"users">, I<0>>;
+    using FieldPath = SegmentPath<K<"name">>;
     using FullPath = ConcatPathT<BasePath, FieldPath>;
 
     auto composed_result = FullPath::get(state);
@@ -1253,7 +1253,7 @@ void demo_static_path() {
     // --------------------------------------------------------
     std::cout << "--- Demo 7: Using Macros ---\n\n";
 
-    using MacroPath = STATIC_PATH(STATIC_KEY("window"), STATIC_KEY("width"));
+    using MacroPath = SEGMENT_PATH(STATIC_KEY("window"), STATIC_KEY("width"));
     auto macro_result = MacroPath::get(state);
     std::cout << "STATIC_PATH(STATIC_KEY(\"window\"), STATIC_KEY(\"width\"))::get(state) = "
         << value_to_string(macro_result) << "\n\n";
@@ -1264,21 +1264,21 @@ void demo_static_path() {
     // --------------------------------------------------------
     std::cout << "--- Demo 8: JSON Pointer Syntax (C++20) ---\n\n";
 
-    // Define paths using JSON Pointer syntax (LiteralPath)
-    using TitlePathJP = static_path::LiteralPath<"/title">;
-    using UserNamePathJP = static_path::LiteralPath<"/users/0/name">;
-    using WindowWidthPathJP = static_path::LiteralPath<"/window/width">;
+    // Define paths using JSON Pointer syntax (StaticPath)
+    using TitlePathJP = static_path::StaticPath<"/title">;
+    using UserNamePathJP = static_path::StaticPath<"/users/0/name">;
+    using WindowWidthPathJP = static_path::StaticPath<"/window/width">;
 
     // Use them just like regular StaticPath
     auto title_jp = TitlePathJP::get(state);
     auto user0_name_jp = UserNamePathJP::get(state);
     auto width_jp = WindowWidthPathJP::get(state);
 
-    std::cout << "LiteralPath<\"/title\">::get(state) = "
+    std::cout << "StaticPath<\"/title\">::get(state) = "
         << value_to_string(title_jp) << "\n";
-    std::cout << "LiteralPath<\"/users/0/name\">::get(state) = "
+    std::cout << "StaticPath<\"/users/0/name\">::get(state) = "
         << value_to_string(user0_name_jp) << "\n";
-    std::cout << "LiteralPath<\"/window/width\">::get(state) = "
+    std::cout << "StaticPath<\"/window/width\">::get(state) = "
         << value_to_string(width_jp) << "\n\n";
 
     // Verify they work the same as manually defined paths
@@ -1319,9 +1319,9 @@ void demo_static_path() {
     std::cout << "  - Any scenario where paths are known at compile time\n\n";
 
     std::cout << "Syntax comparison:\n";
-    std::cout << "  Manual:       StaticPath<K<\"users\">, I<0>, K<\"name\">>\n";
+    std::cout << "  Manual:       SegmentPath<K<\"users\">, I<0>, K<\"name\">>\n";
 #if __cplusplus >= 202002L || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)
-    std::cout << "  JSON Pointer: LiteralPath<\"/users/0/name\"> (C++20)\n";
+    std::cout << "  JSON Pointer: StaticPath<\"/users/0/name\"> (C++20)\n";
 #endif
     std::cout << "\n";
 }

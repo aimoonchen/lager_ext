@@ -2,7 +2,6 @@
 
 #include <lager_ext/value.h>
 #include <lager_ext/lager_lens.h>
-#include <lager_ext/string_path.h>
 #include <lager_ext/static_path.h>
 #include <lager_ext/value_diff.h>
 #include <lager_ext/shared_state.h>
@@ -105,7 +104,7 @@ AppState reducer(AppState state, Action action)
                 new_state.history = new_state.history.push_back(state.data);
                 new_state.future  = immer::vector<Value>{};
 
-                Path items_path = {std::string{"items"}};
+                Path items_path{"/items"};
                 auto items_lens = lager_path_lens(items_path);
                 auto current_items = lager::view(items_lens, new_state.data);
 
@@ -212,7 +211,8 @@ int main()
             std::string new_title;
             std::getline(std::cin, new_title);
 
-            Path path = {std::string{"items"}, index, std::string{"title"}};
+            Path path;
+            path.push_back("items").push_back(index).push_back("title");
             store.dispatch(UpdateItem{path, new_title});
             break;
         }

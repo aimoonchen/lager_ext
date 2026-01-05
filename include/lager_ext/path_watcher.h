@@ -12,7 +12,7 @@
 
 #include <lager_ext/api.h>
 #include <lager_ext/value.h>
-#include <lager_ext/path_core.h>
+#include <lager_ext/path_utils.h>
 
 #include <functional>
 #include <memory>

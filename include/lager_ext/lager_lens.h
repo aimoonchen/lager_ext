@@ -5,7 +5,7 @@
 #include <lager_ext/api.h>
 #include <lager_ext/concepts.h>  // C++20 Concepts (StringLike, IndexType, PathElementType, etc.)
 #include <lager_ext/value.h>
-#include <lager_ext/path_core.h>  // For get_at_path, set_at_path
+#include <lager_ext/path.h>  // For Path, PathView types
 #include <lager/lens.hpp>
 #include <lager/lenses.hpp>
 #include <zug/compose.hpp>
@@ -14,6 +14,11 @@
 #include <type_traits>
 
 namespace lager_ext {
+
+// Forward declarations for path traversal functions (defined in path_utils.h)
+// These are used by ZoomedValue and PathLens for their get/set operations
+[[nodiscard]] LAGER_EXT_API Value get_at_path(const Value& root, PathView path);
+[[nodiscard]] LAGER_EXT_API Value set_at_path(const Value& root, PathView path, Value new_val);
 
 template<typename T>
 concept IndexLike = std::is_integral_v<std::decay_t<T>> && !StringLike<T>;
@@ -160,7 +165,7 @@ using LagerValueLens = lager::lens<Value, Value>;
 
 } // namespace lager_ext
 
-// Include static_path.h for LiteralPath support
+// Include static_path.h for StaticPath support
 // This is placed after closing namespace to avoid circular dependencies
 #include <lager_ext/static_path.h>
 
@@ -176,7 +181,7 @@ namespace lager_ext {
 /// Value updated = lager::set(lens, root, Value{"Alice"});
 template<FixedString Ptr>
 [[nodiscard]] LagerValueLens static_path_lens() {
-    using PathType = LiteralPath<Ptr>;
+    using PathType = StaticPath<Ptr>;
     return lager_path_lens(PathType::to_runtime_path());
 }
 
@@ -330,7 +335,7 @@ public:
         result.path_.assign(path_.begin(), path_.end() - 1);
         return result;
     }
-    [[nodiscard]] std::string to_string() const { return path_to_string(path_); }
+    [[nodiscard]] std::string to_string() const { return path_.to_dot_notation(); }
 
     bool operator==(const PathLens& other) const { return path_ == other.path_; }
     bool operator!=(const PathLens& other) const { return path_ != other.path_; }

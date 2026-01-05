@@ -1,10 +1,10 @@
 // Copyright (c) 2024 chenmou. All rights reserved.
 // Licensed under the MIT License. See LICENSE file in the project root.
 
-/// @file path_core.cpp
-/// @brief Implementation of core path traversal engine.
+/// @file path_utils.cpp
+/// @brief Implementation of path traversal engine.
 
-#include <lager_ext/path_core.h>
+#include <lager_ext/path_utils.h>
 
 namespace lager_ext {
 
@@ -36,6 +36,18 @@ Value set_at_path_recursive(
 // ============================================================
 // Public API Implementation
 // ============================================================
+
+Value get_at_path(const Value& root, PathView path)
+{
+    Value current = root;
+    for (const auto& elem : path) {
+        current = detail::get_at_path_element(current, elem);
+        if (current.is_null()) [[unlikely]] {
+            break;  // Early exit on null (path errors are uncommon)
+        }
+    }
+    return current;
+}
 
 Value set_at_path(const Value& root, PathView path, Value new_val)
 {

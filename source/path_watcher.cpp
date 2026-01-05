@@ -2,7 +2,6 @@
 // Implementation of PathWatcher with Trie-based change detection
 
 #include <lager_ext/path_watcher.h>
-#include <lager_ext/string_path.h>  // For parse_string_path
 
 #include <unordered_map>
 #include <vector>
@@ -123,7 +122,7 @@ PathWatcher& PathWatcher::operator=(PathWatcher&&) noexcept = default;
 // ============================================================
 
 void PathWatcher::watch(const std::string& path_str, ChangeCallback callback) {
-    watch(parse_string_path(path_str), std::move(callback));
+    watch(Path{path_str}, std::move(callback));
 }
 
 void PathWatcher::watch(Path path, ChangeCallback callback) {
@@ -152,7 +151,7 @@ void PathWatcher::insert_path(const Path& path, ChangeCallback callback) {
 }
 
 void PathWatcher::unwatch(const std::string& path_str) {
-    unwatch(parse_string_path(path_str));
+    unwatch(Path{path_str});
 }
 
 void PathWatcher::unwatch(const Path& path) {

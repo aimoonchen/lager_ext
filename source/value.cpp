@@ -158,7 +158,7 @@ void print_value(const Value& val, const std::string& prefix, std::size_t depth)
         val.data);
 }
 
-// path_to_string is now implemented in path_types.cpp
+// to_dot_notation() is implemented in path_types.cpp as PathView::to_dot_notation()
 
 Value create_sample_data()
 {
@@ -1326,8 +1326,8 @@ Value from_json(const std::string& json_str, std::string* error_out) {
     return parser.parse(error_out);
 }
 
-// Note: path_to_string_path() and parse_string_path() are implemented
-// in string_path.cpp to avoid duplicate definitions.
+// Note: Path construction from strings is handled by Path constructors in path_types.cpp
+// Path::to_string_path() serialization is also implemented in path_types.cpp
 
 // ============================================================
 // Explicit Template Instantiations

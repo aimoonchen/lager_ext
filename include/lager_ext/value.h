@@ -49,7 +49,7 @@
 #include <immer/vector.hpp>
 #include <immer/vector_transient.hpp>
 
-#include <lager_ext/path_types.h>  // PathElement, PathView, Path
+#include <lager_ext/path.h>  // PathElement, PathView, Path
 
 #include <algorithm>  // for std::copy_n
 #include <array>      // for Vec2, Vec3, Vec4, Mat3, Mat4x3
@@ -802,7 +802,7 @@ std::partial_ordering operator<=>(const BasicValue<MemoryPolicy>& a,
 // Print Value with indentation
 LAGER_EXT_API void print_value(const Value& val, const std::string& prefix = "", std::size_t depth = 0);
 
-// Note: path_to_string(PathView) is declared in path_types.h
+// Note: PathView::to_dot_notation() and PathView::to_string_path() are declared in path_types.h
 
 // ============================================================
 // Common test data factory

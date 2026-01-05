@@ -3,7 +3,7 @@
 
 #include <lager_ext/editor_engine.h>
 #include <lager_ext/builders.h>
-#include <lager_ext/path_core.h>
+#include <lager_ext/path_utils.h>
 #include <iostream>
 #include <sstream>
 
@@ -467,7 +467,7 @@ void EngineSimulator::apply_diff(const DiffResult& diff) {
     // 3. Trigger necessary updates (e.g., re-render)
 
     for (const auto& mod : diff.modified) {
-        std::cout << "  Modified: " << path_to_string(mod.path)
+        std::cout << "  Modified: " << mod.path.to_dot_notation()
                   << " = " << value_to_string(mod.new_value) << "\n";
     }
 
