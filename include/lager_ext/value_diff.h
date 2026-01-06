@@ -183,6 +183,41 @@ public:
     [[nodiscard]] bool has_changes() const;
     [[nodiscard]] bool is_recursive() const { return recursive_; }
     void print_diffs() const;
+    
+    /// Build a Value tree from collected diffs
+    /// 
+    /// Leaf nodes store pointers to DiffEntry as uint64_t for maximum performance.
+    /// This is much faster than DiffValueCollector because:
+    /// - Leaf nodes are 8 bytes vs ~100+ bytes (ValueMap)
+    /// - No copying of old/new values - just pointer references
+    /// 
+    /// @warning The returned Value is only valid while this DiffEntryCollector
+    ///          (and its diffs_) remains alive and unchanged!
+    /// 
+    /// To access a leaf node:
+    /// @code
+    ///   if (auto* node = tree.get_at_path("users", 0, "name")) {
+    ///       if (auto* entry = DiffEntryCollector::get_entry(*node)) {
+    ///           // Use entry->type, entry->get_old(), entry->get_new()
+    ///       }
+    ///   }
+    /// @endcode
+    [[nodiscard]] Value as_value_tree() const;
+    
+    /// Check if a Value node is a DiffEntry leaf (contains pointer)
+    [[nodiscard]] static bool is_entry_node(const Value& node) {
+        return node.is<uint64_t>();
+    }
+    
+    /// Extract DiffEntry pointer from a leaf node
+    /// @param node A leaf node from as_value_tree() result
+    /// @return Pointer to DiffEntry, or nullptr if not a valid leaf
+    [[nodiscard]] static const DiffEntry* get_entry(const Value& node) {
+        if (auto* ptr_val = node.get_if<uint64_t>()) {
+            return reinterpret_cast<const DiffEntry*>(static_cast<uintptr_t>(*ptr_val));
+        }
+        return nullptr;
+    }
 };
 
 

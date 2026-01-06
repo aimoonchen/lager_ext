@@ -1,6 +1,7 @@
 // diff_collector.cpp - DiffCollector and diff demos
 
 #include <lager_ext/value_diff.h>
+#include <lager_ext/path_utils.h>
 #include <immer/algorithm.hpp>
 #include <iostream>
 
@@ -86,7 +87,7 @@ void DiffEntryCollector::diff_value_optimized(const Value& old_val, const Value&
     const auto new_index = new_val.data.index();
     if (old_index != new_index) [[unlikely]] {
         Path current_path(current_path_view(path_depth));
-        diffs_.emplace_back(DiffEntry::Type::Change, current_path, old_val, new_val);
+        diffs_.emplace_back(DiffEntry::Type::Change, std::move(current_path), old_val, new_val);
         return;
     }
 
@@ -103,7 +104,7 @@ void DiffEntryCollector::diff_value_optimized(const Value& old_val, const Value&
             // Shallow mode: report container change without recursing
             if (!recursive_) {
                 Path current_path(current_path_view(path_depth));
-                diffs_.emplace_back(DiffEntry::Type::Change, current_path, old_val, new_val);
+                diffs_.emplace_back(DiffEntry::Type::Change, std::move(current_path), old_val, new_val);
                 return;
             }
             diff_map_optimized(old_arg, new_map, path_depth);
@@ -119,7 +120,7 @@ void DiffEntryCollector::diff_value_optimized(const Value& old_val, const Value&
             // Shallow mode: report container change without recursing
             if (!recursive_) {
                 Path current_path(current_path_view(path_depth));
-                diffs_.emplace_back(DiffEntry::Type::Change, current_path, old_val, new_val);
+                diffs_.emplace_back(DiffEntry::Type::Change, std::move(current_path), old_val, new_val);
                 return;
             }
             diff_vector_optimized(old_arg, new_vec, path_depth);
@@ -132,7 +133,7 @@ void DiffEntryCollector::diff_value_optimized(const Value& old_val, const Value&
             const auto& new_arg = std::get<T>(new_val.data);
             if (old_arg != new_arg) {
                 Path current_path(current_path_view(path_depth));
-                diffs_.emplace_back(DiffEntry::Type::Change, current_path, old_val, new_val);
+                diffs_.emplace_back(DiffEntry::Type::Change, std::move(current_path), old_val, new_val);
             }
         }
     }, old_val.data);
@@ -214,9 +215,9 @@ void DiffEntryCollector::collect_entries_optimized(const Value& val, std::size_t
     if (!recursive_) {
         Path current_path(current_path_view(path_depth));
         if (is_add) {
-            diffs_.emplace_back(DiffEntry::Type::Add, current_path, val, val);
+            diffs_.emplace_back(DiffEntry::Type::Add, std::move(current_path), val, val);
         } else {
-            diffs_.emplace_back(DiffEntry::Type::Remove, current_path, val, val);
+            diffs_.emplace_back(DiffEntry::Type::Remove, std::move(current_path), val, val);
         }
         return;
     }
@@ -248,7 +249,7 @@ void DiffEntryCollector::collect_entries_optimized(const Value& val, std::size_t
             // Leaf value: record it - both fields reference the same value
             Path current_path(current_path_view(path_depth));
             diffs_.emplace_back(is_add ? DiffEntry::Type::Add : DiffEntry::Type::Remove, 
-                               current_path, val, val);
+                               std::move(current_path), val, val);
         }
     }, val.data);
 }
@@ -261,6 +262,34 @@ void DiffEntryCollector::collect_removed_optimized(const Value& val, std::size_t
 void DiffEntryCollector::collect_added_optimized(const Value& val, std::size_t path_depth)
 {
     collect_entries_optimized(val, path_depth, true);
+}
+
+Value DiffEntryCollector::as_value_tree() const
+{
+    if (diffs_.empty()) {
+        return Value{};  // Empty tree for no changes
+    }
+    
+    // Build tree by inserting each diff entry's path
+    // Leaf nodes store pointer to DiffEntry as uint64_t
+    Value tree = Value{ValueMap{}};
+    
+    for (const auto& entry : diffs_) {
+        // Encode pointer as uint64_t
+        const uint64_t ptr_val = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&entry));
+        Value leaf{ptr_val};
+        
+        // Insert at path
+        if (entry.path.empty()) {
+            // Root-level change
+            tree = leaf;
+        } else {
+            // Use set_at_path_vivify to build the tree structure with auto-vivification
+            tree = set_at_path_vivify(tree, entry.path, std::move(leaf));
+        }
+    }
+    
+    return tree;
 }
 
 bool has_any_difference(const Value& old_val, const Value& new_val, bool recursive)
