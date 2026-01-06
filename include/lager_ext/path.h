@@ -212,6 +212,15 @@ public:
         : Path(from_literal_impl(std::string_view{path_str, N - 1}))
     {}
 
+    /// Zero-copy construction from const char* pointer
+    /// @note Assumes the string has static storage duration (caller's responsibility)
+    /// @warning If the pointed string is temporary/stack-allocated, behavior is undefined!
+    /// @param path_str Path string pointer (e.g., "/users/0/name")
+    /// @example const char* s = "/users/0/name"; Path path{s};  // Zero-copy!
+    explicit Path(const char* path_str)
+        : Path(from_literal_impl(std::string_view{path_str}))
+    {}
+
     /// Zero-copy construction from rvalue string
     /// @note Takes ownership of the string, string_views point into it
     /// @param path_str Path string (e.g., "/users/0/name")
