@@ -498,34 +498,34 @@ void DiffValueCollector::clear()
 
 Value DiffValueCollector::make_diff_node(DiffEntry::Type type, const ValueBox& val_box)
 {
-    auto builder = ValueMap{};
+    // Use transient for better performance (in-place mutation)
+    auto transient = ValueMap{}.transient();
     
     // Use cached type box to avoid repeated allocation
-    builder = builder.set(diff_keys::TYPE, get_type_box(type));
+    transient.set(diff_keys::TYPE, get_type_box(type));
     
     // Store the value box directly - no copy, just reference count increment
     // Add: only _new (value being added)
     // Remove: only _old (value being removed)
     // Change: should not use this overload - use the two-value version
     if (type == DiffEntry::Type::Add) {
-        builder = builder.set(diff_keys::NEW, val_box);
+        transient.set(diff_keys::NEW, val_box);
     } else if (type == DiffEntry::Type::Remove) {
-        builder = builder.set(diff_keys::OLD, val_box);
+        transient.set(diff_keys::OLD, val_box);
     }
     
-    return Value{builder};
+    return Value{transient.persistent()};
 }
 
 Value DiffValueCollector::make_diff_node(DiffEntry::Type type, const ValueBox& old_box, const ValueBox& new_box)
 {
-    // For Change type, we need both values
+    // For Change type, we need both values - use transient for better performance
     if (type == DiffEntry::Type::Change) {
-        auto builder = ValueMap{};
-        // Use cached type box to avoid repeated allocation
-        builder = builder.set(diff_keys::TYPE, get_type_box(type));
-        builder = builder.set(diff_keys::OLD, old_box);
-        builder = builder.set(diff_keys::NEW, new_box);
-        return Value{builder};
+        auto transient = ValueMap{}.transient();
+        transient.set(diff_keys::TYPE, get_type_box(type));
+        transient.set(diff_keys::OLD, old_box);
+        transient.set(diff_keys::NEW, new_box);
+        return Value{transient.persistent()};
     }
     
     // For Add/Remove, delegate to single-value version using the meaningful value
