@@ -660,7 +660,8 @@ Value DiffValueCollector::diff_value_impl_box(const ValueBox& old_box, const Val
 
 Value DiffValueCollector::diff_map_impl(const ValueMap& old_map, const ValueMap& new_map, bool& changed)
 {
-    ValueMap result;
+    // Use transient for O(n) batch updates instead of O(n log n) with chained .set()
+    auto transient = ValueMap{}.transient();
     bool has_any_change = false;
     
     auto map_differ = immer::make_differ(
@@ -668,13 +669,13 @@ Value DiffValueCollector::diff_map_impl(const ValueMap& old_map, const ValueMap&
         [&](const std::pair<const std::string, ValueBox>& added_kv) {
             has_any_change = true;
             Value subtree = collect_entries_box(added_kv.second, DiffEntry::Type::Add);
-            result = result.set(added_kv.first, ValueBox{subtree});
+            transient.set(added_kv.first, ValueBox{subtree});
         },
         // removed - use ValueBox directly for zero-copy
         [&](const std::pair<const std::string, ValueBox>& removed_kv) {
             has_any_change = true;
             Value subtree = collect_entries_box(removed_kv.second, DiffEntry::Type::Remove);
-            result = result.set(removed_kv.first, ValueBox{subtree});
+            transient.set(removed_kv.first, ValueBox{subtree});
         },
         // changed (retained key)
         [&](const std::pair<const std::string, ValueBox>& old_kv,
@@ -687,7 +688,7 @@ Value DiffValueCollector::diff_map_impl(const ValueMap& old_map, const ValueMap&
             Value subtree = diff_value_impl_box(old_kv.second, new_kv.second, subtree_changed);
             if (subtree_changed) {
                 has_any_change = true;
-                result = result.set(old_kv.first, ValueBox{subtree});
+                transient.set(old_kv.first, ValueBox{subtree});
             }
         }
     );
@@ -696,7 +697,7 @@ Value DiffValueCollector::diff_map_impl(const ValueMap& old_map, const ValueMap&
     
     if (has_any_change) {
         changed = true;
-        return Value{result};
+        return Value{transient.persistent()};
     }
     return Value{};
 }
@@ -707,7 +708,8 @@ Value DiffValueCollector::diff_vector_impl(const ValueVector& old_vec, const Val
     const size_t new_size = new_vec.size();
     const size_t common_size = std::min(old_size, new_size);
     
-    ValueMap result;
+    // Use transient for O(n) batch updates instead of O(n log n) with chained .set()
+    auto transient = ValueMap{}.transient();
     bool has_any_change = false;
     
     // Compare common elements - use box version for zero-copy
@@ -724,7 +726,7 @@ Value DiffValueCollector::diff_vector_impl(const ValueVector& old_vec, const Val
         Value subtree = diff_value_impl_box(old_box, new_box, subtree_changed);
         if (subtree_changed) {
             has_any_change = true;
-            result = result.set(get_index_string(i), ValueBox{subtree});
+            transient.set(get_index_string(i), ValueBox{subtree});
         }
     }
     
@@ -732,19 +734,19 @@ Value DiffValueCollector::diff_vector_impl(const ValueVector& old_vec, const Val
     for (size_t i = common_size; i < old_size; ++i) {
         has_any_change = true;
         Value subtree = collect_entries_box(old_vec[i], DiffEntry::Type::Remove);
-        result = result.set(get_index_string(i), ValueBox{subtree});
+        transient.set(get_index_string(i), ValueBox{subtree});
     }
     
     // Added tail elements - use box version for zero-copy
     for (size_t i = common_size; i < new_size; ++i) {
         has_any_change = true;
         Value subtree = collect_entries_box(new_vec[i], DiffEntry::Type::Add);
-        result = result.set(get_index_string(i), ValueBox{subtree});
+        transient.set(get_index_string(i), ValueBox{subtree});
     }
     
     if (has_any_change) {
         changed = true;
-        return Value{result};
+        return Value{transient.persistent()};
     }
     return Value{};
 }
@@ -761,22 +763,24 @@ Value DiffValueCollector::collect_entries(const Value& val, DiffEntry::Type type
     return std::visit([&](const auto& arg) -> Value {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, ValueMap>) {
-            ValueMap result;
+            // Use transient for O(n) batch updates
+            auto transient = ValueMap{}.transient();
             for (const auto& [k, v] : arg) {
                 // Use box version for zero-copy
                 Value subtree = collect_entries_box(v, type);
-                result = result.set(k, ValueBox{subtree});
+                transient.set(k, ValueBox{subtree});
             }
-            return Value{result};
+            return Value{transient.persistent()};
         }
         else if constexpr (std::is_same_v<T, ValueVector>) {
-            ValueMap result;
+            // Use transient for O(n) batch updates
+            auto transient = ValueMap{}.transient();
             for (size_t i = 0; i < arg.size(); ++i) {
                 // Use box version for zero-copy, and cached index string
                 Value subtree = collect_entries_box(arg[i], type);
-                result = result.set(get_index_string(i), ValueBox{subtree});
+                transient.set(get_index_string(i), ValueBox{subtree});
             }
-            return Value{result};
+            return Value{transient.persistent()};
         }
         else if constexpr (!std::is_same_v<T, std::monostate>) {
             // Leaf value: create diff node - use single-value version
@@ -802,21 +806,23 @@ Value DiffValueCollector::collect_entries_box(const ValueBox& val_box, DiffEntry
     return std::visit([&](const auto& arg) -> Value {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, ValueMap>) {
-            ValueMap result;
+            // Use transient for O(n) batch updates
+            auto transient = ValueMap{}.transient();
             for (const auto& [k, v] : arg) {
                 Value subtree = collect_entries_box(v, type);
-                result = result.set(k, ValueBox{subtree});
+                transient.set(k, ValueBox{subtree});
             }
-            return Value{result};
+            return Value{transient.persistent()};
         }
         else if constexpr (std::is_same_v<T, ValueVector>) {
-            ValueMap result;
+            // Use transient for O(n) batch updates
+            auto transient = ValueMap{}.transient();
             for (size_t i = 0; i < arg.size(); ++i) {
                 Value subtree = collect_entries_box(arg[i], type);
                 // Use cached index string to avoid allocation
-                result = result.set(get_index_string(i), ValueBox{subtree});
+                transient.set(get_index_string(i), ValueBox{subtree});
             }
-            return Value{result};
+            return Value{transient.persistent()};
         }
         else if constexpr (!std::is_same_v<T, std::monostate>) {
             // Leaf value: create diff node using the box directly (zero-copy)
@@ -932,8 +938,8 @@ namespace {
         if (auto* diff_map = diff_tree.get_if<ValueMap>()) {
             // The diff tree is a map - apply changes to the corresponding structure in root
             if (auto* root_map = root.get_if<ValueMap>()) {
-                // Root is also a map - merge changes
-                ValueMap result = *root_map;
+                // Root is also a map - merge changes using transient for O(n) batch updates
+                auto transient = root_map->transient();
                 
                 for (const auto& [key, diff_child_box] : *diff_map) {
                     const Value& diff_child = *diff_child_box;
@@ -954,18 +960,18 @@ namespace {
                     // Update or remove the key based on the result
                     if (new_child.is_null()) {
                         // Remove the key if the result is null
-                        result = result.erase(key);
+                        transient.erase(key);
                     } else {
                         // Set the new value
-                        result = result.set(key, ValueBox{new_child});
+                        transient.set(key, ValueBox{new_child});
                     }
                 }
                 
-                return Value{result};
+                return Value{transient.persistent()};
             }
             else if (root.is_null()) {
-                // Root is null but we have changes to apply - create a new map
-                ValueMap result;
+                // Root is null but we have changes to apply - create a new map using transient
+                auto transient = ValueMap{}.transient();
                 
                 for (const auto& [key, diff_child_box] : *diff_map) {
                     const Value& diff_child = *diff_child_box;
@@ -976,11 +982,11 @@ namespace {
                     Value new_child = apply_diff_recursive(Value{}, diff_child, child_path);
                     
                     if (!new_child.is_null()) {
-                        result = result.set(key, ValueBox{new_child});
+                        transient.set(key, ValueBox{new_child});
                     }
                 }
                 
-                return Value{result};
+                return Value{transient.persistent()};
             }
             else {
                 throw std::runtime_error("apply_diff: Type mismatch - diff expects map but root is not a map at path: " + path.to_dot_notation());
@@ -1001,8 +1007,9 @@ namespace {
             if (all_numeric) {
                 // This is a vector diff represented as a map with numeric string keys
                 if (auto* root_vec = root.get_if<ValueVector>()) {
-                    // Root is a vector - apply indexed changes
-                    ValueVector result = *root_vec;
+                    // Root is a vector - apply indexed changes using transient
+                    auto transient = root_vec->transient();
+                    size_t current_size = root_vec->size();
                     
                     for (const auto& [index_str, diff_child_box] : *diff_vector_map) {
                         const Value& diff_child = *diff_child_box;
@@ -1012,8 +1019,8 @@ namespace {
                         
                         // Get the current value at this index (or null if out of bounds)
                         Value current_val;
-                        if (index < result.size()) {
-                            current_val = *result[index];
+                        if (index < current_size) {
+                            current_val = *(*root_vec)[index];
                         } else {
                             current_val = Value{};  // null for out-of-bounds indices
                         }
@@ -1024,22 +1031,22 @@ namespace {
                         // Update the vector
                         if (!new_child.is_null()) {
                             // Extend vector if necessary
-                            while (result.size() <= index) {
-                                result = result.push_back(ValueBox{Value{}});
+                            while (transient.size() <= index) {
+                                transient.push_back(ValueBox{Value{}});
                             }
-                            result = result.set(index, ValueBox{new_child});
-                        } else if (index < result.size()) {
+                            transient.set(index, ValueBox{new_child});
+                        } else if (index < transient.size()) {
                             // For removal, we could either remove the element or set it to null
                             // For now, let's set it to null to preserve indices
-                            result = result.set(index, ValueBox{Value{}});
+                            transient.set(index, ValueBox{Value{}});
                         }
                     }
                     
-                    return Value{result};
+                    return Value{transient.persistent()};
                 }
                 else if (root.is_null()) {
-                    // Root is null but we have vector changes to apply - create a new vector
-                    ValueVector result;
+                    // Root is null but we have vector changes to apply - create a new vector using transient
+                    auto transient = ValueVector{}.transient();
                     
                     // Collect all indices and sort them
                     std::vector<std::pair<size_t, const Value*>> indexed_diffs;
@@ -1058,14 +1065,14 @@ namespace {
                         
                         if (!new_child.is_null()) {
                             // Extend vector if necessary
-                            while (result.size() <= index) {
-                                result = result.push_back(ValueBox{Value{}});
+                            while (transient.size() <= index) {
+                                transient.push_back(ValueBox{Value{}});
                             }
-                            result = result.set(index, ValueBox{new_child});
+                            transient.set(index, ValueBox{new_child});
                         }
                     }
                     
-                    return Value{result};
+                    return Value{transient.persistent()};
                 }
                 else {
                     throw std::runtime_error("apply_diff: Type mismatch - diff expects vector but root is not a vector at path: " + path.to_dot_notation());
