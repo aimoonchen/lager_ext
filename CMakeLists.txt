@@ -48,11 +48,13 @@ set(LAGER_EXT_SOURCES
     source/lager_adapters.cpp
     source/lager_lens.cpp
     source/multi_store.cpp
+    source/mutable_value.cpp
     source/path_utils.cpp
     source/path.cpp
     source/path_watcher.cpp
     source/shared_state.cpp
     source/shared_value_region.cpp
+    source/utils.cpp
     source/value.cpp
     source/value_diff.cpp
 )
@@ -67,6 +69,7 @@ set(LAGER_EXT_HEADERS
     include/lager_ext/lager_adapters.h
     include/lager_ext/lager_lens.h
     include/lager_ext/multi_store.h
+    include/lager_ext/mutable_value.h
     include/lager_ext/path.h
     include/lager_ext/path_utils.h
     include/lager_ext/path_watcher.h
@@ -76,6 +79,7 @@ set(LAGER_EXT_HEADERS
     include/lager_ext/shared_value.h
     include/lager_ext/static_path.h
     include/lager_ext/undo.h
+    include/lager_ext/utils.h
     include/lager_ext/value.h
     include/lager_ext/value_diff.h
     include/lager_ext/value_fwd.h
