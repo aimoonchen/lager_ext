@@ -449,47 +449,20 @@ struct BasicValue
         return BasicValue{};
     }
 
-    [[nodiscard]] BasicValue at_or(std::string_view key, BasicValue default_val) const {
-        auto result = at(key);
-        return result.is_null() ? std::move(default_val) : std::move(result);
-    }
-
-    [[nodiscard]] BasicValue at_or(std::size_t index, BasicValue default_val) const {
-        auto result = at(index);
-        return result.is_null() ? std::move(default_val) : std::move(result);
-    }
-
+    /// Get value as type T, or return default if type mismatch
+    /// @note Use this for all primitive types: as<int>(), as<double>(), as<Vec2>(), etc.
+    /// @example val.as<int>(42), val.as<float>(), val.as<bool>(false)
     template<typename T>
-    [[nodiscard]] T get_or(T default_val = T{}) const {
+    [[nodiscard]] T as(T default_val = T{}) const {
         if (auto* ptr = get_if<T>()) return *ptr;
         return default_val;
     }
 
-    [[nodiscard]] int as_int(int default_val = 0) const {
-        if (auto* p = get_if<int>()) return *p;
-        return default_val;
-    }
+    // ============================================================
+    // Special accessor functions (cannot be replaced by as<T>)
+    // ============================================================
 
-    [[nodiscard]] int64_t as_int64(int64_t default_val = 0) const {
-        if (auto* p = get_if<int64_t>()) return *p;
-        return default_val;
-    }
-
-    [[nodiscard]] float as_float(float default_val = 0.0f) const {
-        if (auto* p = get_if<float>()) return *p;
-        return default_val;
-    }
-
-    [[nodiscard]] double as_double(double default_val = 0.0) const {
-        if (auto* p = get_if<double>()) return *p;
-        return default_val;
-    }
-
-    [[nodiscard]] bool as_bool(bool default_val = false) const {
-        if (auto* p = get_if<bool>()) return *p;
-        return default_val;
-    }
-
+    /// Get string with lvalue/rvalue optimization
     // Lvalue version - copy the string
     [[nodiscard]] std::string as_string(std::string default_val = "") const & {
         if (auto* p = get_if<std::string>()) return *p;
@@ -507,6 +480,8 @@ struct BasicValue
         return {};
     }
 
+    /// Get any numeric type as double (with automatic type conversion)
+    /// @note Supports: double, float, int64_t, int32_t
     [[nodiscard]] double as_number(double default_val = 0.0) const {
         if (auto* p = get_if<double>()) return *p;
         if (auto* p = get_if<float>()) return static_cast<double>(*p);
@@ -515,41 +490,7 @@ struct BasicValue
         return default_val;
     }
 
-    [[nodiscard]] value_map as_map(value_map default_val = {}) const {
-        if (auto* p = get_if<value_map>()) return *p;
-        return default_val;
-    }
-
-    [[nodiscard]] value_vector as_vector(value_vector default_val = {}) const {
-        if (auto* p = get_if<value_vector>()) return *p;
-        return default_val;
-    }
-
-    [[nodiscard]] value_array as_array(value_array default_val = {}) const {
-        if (auto* p = get_if<value_array>()) return *p;
-        return default_val;
-    }
-
-    [[nodiscard]] value_table as_table(value_table default_val = {}) const {
-        if (auto* p = get_if<value_table>()) return *p;
-        return default_val;
-    }
-
-    [[nodiscard]] Vec2 as_vec2(Vec2 default_val = {}) const {
-        if (auto* p = get_if<Vec2>()) return *p;
-        return default_val;
-    }
-
-    [[nodiscard]] Vec3 as_vec3(Vec3 default_val = {}) const {
-        if (auto* p = get_if<Vec3>()) return *p;
-        return default_val;
-    }
-
-    [[nodiscard]] Vec4 as_vec4(Vec4 default_val = {}) const {
-        if (auto* p = get_if<Vec4>()) return *p;
-        return default_val;
-    }
-
+    /// Get Mat3 (requires unboxing from immer::box)
     [[nodiscard]] Mat3 as_mat3(Mat3 default_val = {}) const {
         if (auto* p = get_if<boxed_mat3>()) return p->get();
         return default_val;

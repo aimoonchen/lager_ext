@@ -186,35 +186,30 @@ std::size_t idx = val.type_index();
 ### 1.5 Value Access
 
 ```cpp
-// Safe access with default value (recommended)
-int i = val.as_int(0);              // Returns 0 if not an int
-double d = val.as_double(0.0);
-float f = val.as_float(0.0f);
-bool b = val.as_bool(false);
-std::string s = val.as_string("");
-int64_t l = val.as_int64(0);
-double n = val.as_number(0.0);      // Converts any numeric type
+// Generic template access (recommended for most types)
+int i = val.as<int>(0);             // Returns 0 if not an int
+double d = val.as<double>(0.0);
+float f = val.as<float>(0.0f);
+bool b = val.as<bool>(false);
+int64_t l = val.as<int64_t>(0);
 
-// Math types
-Vec2 v2 = val.as_vec2({});
-Vec3 v3 = val.as_vec3({});
-Mat3 m3 = val.as_mat3({});
+// Math types (via template)
+Vec2 v2 = val.as<Vec2>();
+Vec3 v3 = val.as<Vec3>();
 
-// Containers
-ValueMap m = val.as_map({});
-ValueVector v = val.as_vector({});
+// Special accessor functions (cannot be replaced by as<T>)
+std::string s = val.as_string("");      // Supports move optimization
+std::string_view sv = val.as_string_view(); // Zero-copy string view
+double n = val.as_number(0.0);          // Heterogeneous numeric conversion
+Mat3 m3 = val.as_mat3();                // Unboxing from immer::box
+Mat4x3 m4x3 = val.as_mat4x3();          // Unboxing from immer::box
 
-// String view (no copy, returns empty if not string)
-std::string_view sv = val.as_string_view();
-
-// Generic template access
-auto ptr = val.get_if<std::string>();  // returns const T* or nullptr
-int i = val.get_or<int>(42);           // returns value or default
+// Low-level pointer access
+auto ptr = val.get_if<std::string>();   // Returns const T* or nullptr
 
 // Element access
 Value name = obj.at("name");           // Map key access, returns null if not found
 Value first = vec.at(0);               // Vector index access
-Value with_default = obj.at_or("key", Value{42});
 
 // Existence checks
 bool has_key = obj.contains("name");
@@ -306,7 +301,7 @@ Value current = builder.get("counter");
 
 // Update a value using function
 builder.update_at("counter", [](const Value& v) {
-    return Value{v.as_int(0) + 1};
+    return Value{v.as<int>(0) + 1};
 });
 
 // Upsert (update or insert)
@@ -322,7 +317,7 @@ builder.set_at_path({"users", size_t(0), "name"}, "Alice");
 
 // Update at nested path
 builder.update_at_path({"users", size_t(0), "age"}, [](const Value& v) {
-    return Value{v.as_int(0) + 1};
+    return Value{v.as<int>(0) + 1};
 });
 
 Value result = builder.finish();
@@ -354,7 +349,7 @@ Value second = builder.get(1);
 
 // Update at index
 builder.update_at(0, [](const Value& v) {
-    return Value{v.as_int(0) * 2};
+    return Value{v.as<int>(0) * 2};
 });
 ```
 
@@ -376,7 +371,7 @@ Value entities = TableBuilder()
 // Update existing entity
 TableBuilder builder(entities);
 builder.update("player1", [](const Value& player) {
-    return player.set("hp", player.at("hp").as_int(0) - 10);
+    return player.set("hp", player.at("hp").as<int>(0) - 10);
 });
 ```
 
@@ -585,14 +580,14 @@ PathLens from_root = root / "config" / "theme";
 Value name = lens1.get(state);
 Value updated = lens1.set(state, Value{"Alice"});
 Value incremented = lens1.over(state, [](Value v) {
-    return Value{v.as_int(0) + 1};
+    return Value{v.as<int>(0) + 1};
 });
 
 // Lager integration (also works!)
 Value name2 = lager::view(lens1, state);
 Value updated2 = lager::set(lens1, state, Value{"Alice"});
 Value inc2 = lager::over(lens1, state, [](Value v) {
-    return Value{v.as_int(0) + 1};
+    return Value{v.as<int>(0) + 1};
 });
 
 // ========== Inspection ==========
@@ -699,7 +694,7 @@ Value updated = path::set(state, "/users/0/name", Value{"Alice"});
 
 // Over (transform)
 Value inc = path::over(state, "/counter", [](const Value& v) {
-    return Value{v.as_int(0) + 1};
+    return Value{v.as<int>(0) + 1};
 });
 
 // ========== Builder Style ==========
@@ -1606,7 +1601,7 @@ int main() {
         .finish();
 
     // Read position
-    Vec3 pos = transform.at("position").as_vec3();
+    Vec3 pos = transform.at("position").as<Vec3>();
     std::cout << "Position: " << pos[0] << ", " << pos[1] << ", " << pos[2] << std::endl;
 
     // Update position
@@ -1614,7 +1609,7 @@ int main() {
 
     // Check type
     if (moved.at("rotation").is_vec4()) {
-        Vec4 rot = moved.at("rotation").as_vec4();
+        Vec4 rot = moved.at("rotation").as<Vec4>();
         // ... use rotation
     }
 
