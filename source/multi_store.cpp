@@ -30,7 +30,7 @@ ObjectState object_update(ObjectState state, ObjectAction action) {
 
             // Set the property
             state.data = Value{map_ptr->set(act.property_name,
-                                            immer::box<Value>(act.new_value))};
+                                            ValueBox(act.new_value))};
             state.version++;
             return state;
         }
@@ -44,7 +44,7 @@ ObjectState object_update(ObjectState state, ObjectAction action) {
             // Use transient for efficient batch update
             auto trans = map_ptr->transient();
             for (const auto& [name, value] : act.properties) {
-                trans.set(name, immer::box<Value>(value));
+                trans.set(name, ValueBox(value));
             }
             state.data = Value{trans.persistent()};
             state.version++;
@@ -545,14 +545,14 @@ void demo_multi_store_basic() {
     std::cout << "1. Adding objects...\n";
 
     ValueMap light_data;
-    light_data = light_data.set("name", immer::box<Value>(Value{"Sun Light"}));
-    light_data = light_data.set("intensity", immer::box<Value>(Value{1.0}));
-    light_data = light_data.set("color", immer::box<Value>(Value{"#FFFFFF"}));
+    light_data = light_data.set("name", ValueBox(Value{"Sun Light"}));
+    light_data = light_data.set("intensity", ValueBox(Value{1.0}));
+    light_data = light_data.set("color", ValueBox(Value{"#FFFFFF"}));
     controller.add_object("light_sun", "Light", Value{light_data});
 
     ValueMap camera_data;
-    camera_data = camera_data.set("name", immer::box<Value>(Value{"Main Camera"}));
-    camera_data = camera_data.set("fov", immer::box<Value>(Value{60.0}));
+    camera_data = camera_data.set("name", ValueBox(Value{"Main Camera"}));
+    camera_data = camera_data.set("fov", ValueBox(Value{60.0}));
     controller.add_object("camera_main", "Camera", Value{camera_data});
 
     std::cout << "   Objects added: " << controller.object_count() << "\n";
@@ -604,10 +604,10 @@ void demo_multi_store_transactions() {
     // Create multiple objects
     for (int i = 0; i < 5; ++i) {
         ValueMap data;
-        data = data.set("name", immer::box<Value>(Value{"Cube_" + std::to_string(i)}));
-        data = data.set("x", immer::box<Value>(Value{static_cast<double>(i * 10)}));
-        data = data.set("y", immer::box<Value>(Value{0.0}));
-        data = data.set("z", immer::box<Value>(Value{0.0}));
+        data = data.set("name", ValueBox(Value{"Cube_" + std::to_string(i)}));
+        data = data.set("x", ValueBox(Value{static_cast<double>(i * 10)}));
+        data = data.set("y", ValueBox(Value{0.0}));
+        data = data.set("z", ValueBox(Value{0.0}));
         controller.add_object("cube_" + std::to_string(i), "Mesh", Value{data}, false);
     }
 
@@ -665,11 +665,11 @@ void demo_multi_store_undo_redo() {
 
     // Create two objects
     ValueMap light_data;
-    light_data = light_data.set("intensity", immer::box<Value>(Value{1.0}));
+    light_data = light_data.set("intensity", ValueBox(Value{1.0}));
     controller.add_object("light", "Light", Value{light_data});
 
     ValueMap mesh_data;
-    mesh_data = mesh_data.set("scale", immer::box<Value>(Value{1.0}));
+    mesh_data = mesh_data.set("scale", ValueBox(Value{1.0}));
     controller.add_object("mesh", "Mesh", Value{mesh_data});
 
     std::cout << "Created 2 objects (2 undo operations)\n";
@@ -752,11 +752,11 @@ void demo_multi_store_performance() {
 
     for (int i = 0; i < NUM_OBJECTS; ++i) {
         ValueMap data;
-        data = data.set("name", immer::box<Value>(Value{"Object_" + std::to_string(i)}));
-        data = data.set("x", immer::box<Value>(Value{static_cast<double>(i)}));
-        data = data.set("y", immer::box<Value>(Value{0.0}));
-        data = data.set("z", immer::box<Value>(Value{0.0}));
-        data = data.set("visible", immer::box<Value>(Value{true}));
+        data = data.set("name", ValueBox(Value{"Object_" + std::to_string(i)}));
+        data = data.set("x", ValueBox(Value{static_cast<double>(i)}));
+        data = data.set("y", ValueBox(Value{0.0}));
+        data = data.set("z", ValueBox(Value{0.0}));
+        data = data.set("visible", ValueBox(Value{true}));
         // Create without recording undo (simulating initial load)
         controller.add_object("obj_" + std::to_string(i), "Mesh", Value{data}, false);
     }

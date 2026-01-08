@@ -70,11 +70,11 @@ Value set_at_path_element_vivify(const Value& current, const PathElement& elem, 
         // For string keys: auto-create map if null
         std::string key_str{*key};
         if (auto* m = current.get_if<ValueMap>()) {
-            return m->set(key_str, immer::box<Value>{std::move(new_val)});
+            return m->set(key_str, ValueBox{std::move(new_val)});
         }
         if (current.is_null()) {
             // Auto-vivification: create new map
-            return ValueMap{}.set(key_str, immer::box<Value>{std::move(new_val)});
+            return ValueMap{}.set(key_str, ValueBox{std::move(new_val)});
         }
         // Not a map and not null - cannot vivify
         return current;
@@ -84,21 +84,21 @@ Value set_at_path_element_vivify(const Value& current, const PathElement& elem, 
         // Use transient mode for O(N) batch push_back
         if (auto* v = current.get_if<ValueVector>()) {
             if (idx < v->size()) {
-                return v->set(idx, immer::box<Value>{std::move(new_val)});
+                return v->set(idx, ValueBox{std::move(new_val)});
             }
             auto trans = v->transient();
             while (trans.size() <= idx) {
-                trans.push_back(immer::box<Value>{});
+                trans.push_back(ValueBox{});
             }
-            trans.set(idx, immer::box<Value>{std::move(new_val)});
+            trans.set(idx, ValueBox{std::move(new_val)});
             return trans.persistent();
         }
         if (current.is_null()) {
             auto trans = ValueVector{}.transient();
             for (std::size_t i = 0; i < idx; ++i) {
-                trans.push_back(immer::box<Value>{});
+                trans.push_back(ValueBox{});
             }
-            trans.push_back(immer::box<Value>{std::move(new_val)});
+            trans.push_back(ValueBox{std::move(new_val)});
             return trans.persistent();
         }
         return current;

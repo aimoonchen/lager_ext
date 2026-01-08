@@ -126,7 +126,7 @@ using LagerValueLens = lager::lens<Value, Value>;
         // Setter (strict mode)
         [key](Value obj, Value value) -> Value {
             if (auto* map = obj.get_if<ValueMap>()) {
-                auto new_map = map->set(std::string{key}, immer::box<Value>{std::move(value)});
+                auto new_map = map->set(std::string{key}, ValueBox{std::move(value)});
                 return Value{std::move(new_map)};
             }
             return obj;
@@ -151,7 +151,7 @@ using LagerValueLens = lager::lens<Value, Value>;
             if (auto* vec = obj.get_if<ValueVector>()) {
                 if (index < vec->size()) {
                     auto new_vec = vec->update(index, [&](auto&&) {
-                        return immer::box<Value>{std::move(value)};
+                        return ValueBox{std::move(value)};
                     });
                     return Value{std::move(new_vec)};
                 }

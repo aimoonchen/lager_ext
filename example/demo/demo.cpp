@@ -213,35 +213,35 @@ void demo_string_path()
 
     // Build inner structures first
     ValueVector alice_tags;
-    alice_tags = alice_tags.push_back(immer::box<Value>{"c++"});
-    alice_tags = alice_tags.push_back(immer::box<Value>{"rust"});
+    alice_tags = alice_tags.push_back(ValueBox{"c++"});
+    alice_tags = alice_tags.push_back(ValueBox{"rust"});
 
     ValueMap alice_profile;
-    alice_profile = alice_profile.set("city", immer::box<Value>{"Beijing"});
-    alice_profile = alice_profile.set("tags/skills", immer::box<Value>{alice_tags});  // key with '/'
+    alice_profile = alice_profile.set("city", ValueBox{"Beijing"});
+    alice_profile = alice_profile.set("tags/skills", ValueBox{alice_tags});  // key with '/'
 
     ValueMap alice;
-    alice = alice.set("name", immer::box<Value>{"Alice"});
-    alice = alice.set("profile", immer::box<Value>{alice_profile});
+    alice = alice.set("name", ValueBox{"Alice"});
+    alice = alice.set("profile", ValueBox{alice_profile});
 
     ValueMap bob_profile;
-    bob_profile = bob_profile.set("city", immer::box<Value>{"Shanghai"});
+    bob_profile = bob_profile.set("city", ValueBox{"Shanghai"});
 
     ValueMap bob;
-    bob = bob.set("name", immer::box<Value>{"Bob"});
-    bob = bob.set("profile", immer::box<Value>{bob_profile});
+    bob = bob.set("name", ValueBox{"Bob"});
+    bob = bob.set("profile", ValueBox{bob_profile});
 
     ValueVector users;
-    users = users.push_back(immer::box<Value>{alice});
-    users = users.push_back(immer::box<Value>{bob});
+    users = users.push_back(ValueBox{alice});
+    users = users.push_back(ValueBox{bob});
 
     ValueMap config;
-    config = config.set("version", immer::box<Value>{1});
-    config = config.set("theme~mode", immer::box<Value>{"dark"});  // key with '~'
+    config = config.set("version", ValueBox{1});
+    config = config.set("theme~mode", ValueBox{"dark"});  // key with '~'
 
     ValueMap root;
-    root = root.set("users", immer::box<Value>{users});
-    root = root.set("config", immer::box<Value>{config});
+    root = root.set("users", ValueBox{users});
+    root = root.set("config", ValueBox{config});
 
     Value data{ root };
 

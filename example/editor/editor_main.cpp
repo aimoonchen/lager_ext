@@ -120,7 +120,7 @@ Value qvariantToValue(const QVariant& var) {
         case QMetaType::QVariantList: {
             ValueVector vec;
             for (const auto& item : var.toList()) {
-                vec = vec.push_back(immer::box<Value>(qvariantToValue(item)));
+                vec = vec.push_back(ValueBox(qvariantToValue(item)));
             }
             return Value{vec};
         }
@@ -129,7 +129,7 @@ Value qvariantToValue(const QVariant& var) {
             const auto qmap = var.toMap();
             for (auto it = qmap.begin(); it != qmap.end(); ++it) {
                 map = map.set(it.key().toStdString(),
-                              immer::box<Value>(qvariantToValue(it.value())));
+                              ValueBox(qvariantToValue(it.value())));
             }
             return Value{map};
         }
@@ -285,9 +285,9 @@ private:
 
                 auto emitVector = [this]() {
                     ValueMap map;
-                    map = map.set("x", immer::box<Value>(Value{xSpin_->value()}));
-                    map = map.set("y", immer::box<Value>(Value{ySpin_->value()}));
-                    map = map.set("z", immer::box<Value>(Value{zSpin_->value()}));
+                    map = map.set("x", ValueBox(Value{xSpin_->value()}));
+                    map = map.set("y", ValueBox(Value{ySpin_->value()}));
+                    map = map.set("z", ValueBox(Value{zSpin_->value()}));
                     emit valueChanged(Value{map});
                 };
 
@@ -435,9 +435,9 @@ private:
             case WidgetType::Vector3Edit: {
                 if (xSpin_ && ySpin_ && zSpin_) {
                     ValueMap map;
-                    map = map.set("x", immer::box<Value>(Value{xSpin_->value()}));
-                    map = map.set("y", immer::box<Value>(Value{ySpin_->value()}));
-                    map = map.set("z", immer::box<Value>(Value{zSpin_->value()}));
+                    map = map.set("x", ValueBox(Value{xSpin_->value()}));
+                    map = map.set("y", ValueBox(Value{ySpin_->value()}));
+                    map = map.set("z", ValueBox(Value{zSpin_->value()}));
                     return Value{map};
                 }
                 break;

@@ -24,9 +24,9 @@ Value to_value(const MutableValue& mv)
             auto transient = ValueMap{}.transient();
             for (const auto& [key, child_ptr] : val) {
                 if (child_ptr) {
-                    transient.set(key, immer::box<Value>{to_value(*child_ptr)});
+                    transient.set(key, ValueBox{to_value(*child_ptr)});
                 } else {
-                    transient.set(key, immer::box<Value>{Value{}});
+                    transient.set(key, ValueBox{Value{}});
                 }
             }
             return Value{transient.persistent()};
@@ -36,9 +36,9 @@ Value to_value(const MutableValue& mv)
             auto transient = ValueVector{}.transient();
             for (const auto& child_ptr : val) {
                 if (child_ptr) {
-                    transient.push_back(immer::box<Value>{to_value(*child_ptr)});
+                    transient.push_back(ValueBox{to_value(*child_ptr)});
                 } else {
-                    transient.push_back(immer::box<Value>{Value{}});
+                    transient.push_back(ValueBox{Value{}});
                 }
             }
             return Value{transient.persistent()};
@@ -81,9 +81,9 @@ Value to_value(MutableValue&& mv)
             auto transient = ValueMap{}.transient();
             for (auto& [key, child_ptr] : val) {
                 if (child_ptr) {
-                    transient.set(key, immer::box<Value>{to_value(std::move(*child_ptr))});
+                    transient.set(key, ValueBox{to_value(std::move(*child_ptr))});
                 } else {
-                    transient.set(key, immer::box<Value>{Value{}});
+                    transient.set(key, ValueBox{Value{}});
                 }
             }
             return Value{transient.persistent()};
@@ -93,9 +93,9 @@ Value to_value(MutableValue&& mv)
             auto transient = ValueVector{}.transient();
             for (auto& child_ptr : val) {
                 if (child_ptr) {
-                    transient.push_back(immer::box<Value>{to_value(std::move(*child_ptr))});
+                    transient.push_back(ValueBox{to_value(std::move(*child_ptr))});
                 } else {
-                    transient.push_back(immer::box<Value>{Value{}});
+                    transient.push_back(ValueBox{Value{}});
                 }
             }
             return Value{transient.persistent()};
