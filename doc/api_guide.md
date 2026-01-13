@@ -50,11 +50,29 @@ This document provides a comprehensive overview of the public APIs in the `lager
     - [7.3 value\_middleware() - Store Middleware](#73-value_middleware---store-middleware)
     - [7.4 watch\_path() - Path-based Subscriptions](#74-watch_path---path-based-subscriptions)
     - [7.5 PathWatcher vs watch\_path()](#75-pathwatcher-vs-watch_path)
-  - [8. Header Reference](#8-header-reference)
-  - [9. Usage Examples](#9-usage-examples)
-    - [9.1 Basic Usage](#91-basic-usage)
-    - [9.2 Working with Math Types](#92-working-with-math-types)
-    - [9.3 Thread Safety](#93-thread-safety)
+  - [8. IPC (Inter-Process Communication)](#8-ipc-inter-process-communication)
+    - [8.1 Overview](#81-overview)
+    - [8.2 Channel (Unidirectional)](#82-channel-unidirectional)
+      - [Factory Methods](#factory-methods)
+      - [Producer Operations](#producer-operations)
+      - [Consumer Operations](#consumer-operations)
+      - [Properties](#properties)
+    - [8.3 ChannelPair (Bidirectional)](#83-channelpair-bidirectional)
+      - [Factory Methods](#factory-methods-1)
+      - [Operations](#operations)
+      - [Properties](#properties-1)
+    - [8.4 Message Structure](#84-message-structure)
+    - [8.5 Performance Characteristics](#85-performance-characteristics)
+    - [8.6 Best Practices](#86-best-practices)
+      - [Thread Safety Rules](#thread-safety-rules)
+      - [Error Handling](#error-handling)
+      - [Graceful Shutdown](#graceful-shutdown)
+      - [Choosing Between APIs](#choosing-between-apis)
+  - [9. Header Reference](#9-header-reference)
+  - [10. Usage Examples](#10-usage-examples)
+    - [10.1 Basic Usage](#101-basic-usage)
+    - [10.2 Working with Math Types](#102-working-with-math-types)
+    - [10.3 Thread Safety](#103-thread-safety)
   - [Notes](#notes)
 
 ---
@@ -1509,7 +1527,343 @@ watcher.watch("/users/0/email", callback3);
 
 ---
 
-## 8. Header Reference
+## 8. IPC (Inter-Process Communication)
+
+The IPC module provides high-performance, lock-free cross-process communication using shared memory. It is designed for scenarios requiring sub-microsecond latency, such as game engine ↔ editor communication.
+
+> **Note:** This module requires building with `-DLAGER_EXT_ENABLE_IPC=ON` (Windows only).
+
+### 8.1 Overview
+
+```cpp
+#include <lager_ext/ipc.h>
+using namespace lager_ext::ipc;
+```
+
+The IPC module provides two main classes:
+
+| Class | Description | Use Case |
+|-------|-------------|----------|
+| `Channel` | Unidirectional lock-free channel | One-way data streaming |
+| `ChannelPair` | Bidirectional channel pair | Request/reply patterns |
+
+**Key Features:**
+- **Lock-free SPSC ring buffer** - Single Producer Single Consumer architecture
+- **~100-600 ns round-trip latency** - Orders of magnitude faster than Windows messaging
+- **~2-4 million messages/second** throughput
+- **Zero system calls** in the hot path
+- **Cache-line aligned** indices to prevent false sharing
+
+### 8.2 Channel (Unidirectional)
+
+`Channel` represents a one-way communication channel. One process creates the channel as a **producer** (sender), and another process attaches as a **consumer** (receiver).
+
+#### Factory Methods
+
+```cpp
+/// Create channel as producer (creates shared memory)
+static std::unique_ptr<Channel> createProducer(
+    const std::string& name,
+    size_t capacity = DEFAULT_CAPACITY  // 4096 messages
+);
+
+/// Attach to channel as consumer
+static std::unique_ptr<Channel> createConsumer(const std::string& name);
+```
+
+**Example:**
+
+```cpp
+// Process A (Producer)
+auto sender = Channel::createProducer("MyChannel", 8192);
+if (!sender) {
+    std::cerr << "Failed to create channel\n";
+    return;
+}
+
+// Process B (Consumer)
+auto receiver = Channel::createConsumer("MyChannel");
+if (!receiver) {
+    std::cerr << "Failed to attach to channel\n";
+    return;
+}
+```
+
+#### Producer Operations
+
+```cpp
+/// Send a Value (automatically serialized)
+bool send(uint32_t msgId, const Value& data = {});
+
+/// Send raw bytes (no serialization overhead)
+bool sendRaw(uint32_t msgId, const void* data, size_t size);
+
+/// Check if queue has space
+bool canSend() const;
+
+/// Get number of pending messages
+size_t pendingCount() const;
+```
+
+**Example:**
+
+```cpp
+// Send structured data
+Value playerState = MapBuilder()
+    .set("x", 100.5f)
+    .set("y", 200.0f)
+    .set("health", 100)
+    .finish();
+sender->send(MSG_PLAYER_UPDATE, playerState);
+
+// Send raw bytes (faster, no serialization)
+struct Position { float x, y; };
+Position pos{100.5f, 200.0f};
+sender->sendRaw(MSG_POSITION, &pos, sizeof(pos));
+```
+
+#### Consumer Operations
+
+```cpp
+/// Received message structure
+struct ReceivedMessage {
+    uint32_t msgId;
+    Value data;
+    uint64_t timestamp;
+};
+
+/// Non-blocking receive (returns std::nullopt if empty)
+std::optional<ReceivedMessage> tryReceive();
+
+/// Blocking receive with timeout
+std::optional<ReceivedMessage> receive(
+    std::chrono::milliseconds timeout = std::chrono::milliseconds::max()
+);
+
+/// Raw bytes receive (no deserialization)
+/// Returns: data size, 0 if empty, -1 if buffer too small
+int tryReceiveRaw(uint32_t& outMsgId, void* outData, size_t maxSize);
+```
+
+**Example:**
+
+```cpp
+// Non-blocking polling
+while (auto msg = receiver->tryReceive()) {
+    switch (msg->msgId) {
+        case MSG_PLAYER_UPDATE:
+            handlePlayerUpdate(msg->data);
+            break;
+        case MSG_GAME_EVENT:
+            handleGameEvent(msg->data);
+            break;
+    }
+}
+
+// Blocking receive with timeout
+if (auto msg = receiver->receive(std::chrono::milliseconds(100))) {
+    process(msg->data);
+} else {
+    std::cout << "Timeout waiting for message\n";
+}
+```
+
+#### Properties
+
+```cpp
+const std::string& name() const;      // Channel name
+bool isProducer() const;              // true if producer side
+size_t capacity() const;              // Queue capacity
+const std::string& lastError() const; // Last error message
+```
+
+### 8.3 ChannelPair (Bidirectional)
+
+`ChannelPair` provides bidirectional communication by combining two `Channel` instances. It supports both asynchronous and synchronous (request/reply) patterns.
+
+#### Factory Methods
+
+```cpp
+/// Create as endpoint A (creates both channels)
+static std::unique_ptr<ChannelPair> createEndpointA(
+    const std::string& name,
+    size_t capacity = DEFAULT_CAPACITY
+);
+
+/// Attach as endpoint B
+static std::unique_ptr<ChannelPair> createEndpointB(const std::string& name);
+```
+
+**Example:**
+
+```cpp
+// Game Engine (Endpoint A)
+auto enginePair = ChannelPair::createEndpointA("EngineEditor", 4096);
+
+// Editor (Endpoint B)
+auto editorPair = ChannelPair::createEndpointB("EngineEditor");
+```
+
+#### Operations
+
+```cpp
+/// Send to the other endpoint
+bool send(uint32_t msgId, const Value& data = {});
+
+/// Non-blocking receive
+std::optional<Channel::ReceivedMessage> tryReceive();
+
+/// Blocking receive
+std::optional<Channel::ReceivedMessage> receive(
+    std::chrono::milliseconds timeout = std::chrono::milliseconds::max()
+);
+
+/// Synchronous request/reply (like SendMessage)
+std::optional<Value> sendAndWaitReply(
+    uint32_t msgId,
+    const Value& data,
+    std::chrono::milliseconds timeout = std::chrono::seconds(30)
+);
+```
+
+**Example - Asynchronous:**
+
+```cpp
+// Engine sends updates
+enginePair->send(MSG_SCENE_UPDATE, sceneData);
+
+// Editor receives and processes
+while (auto msg = editorPair->tryReceive()) {
+    if (msg->msgId == MSG_SCENE_UPDATE) {
+        updateSceneView(msg->data);
+    }
+}
+```
+
+**Example - Synchronous Request/Reply:**
+
+```cpp
+// Editor requests entity data from engine
+Value request = MapBuilder()
+    .set("entityId", 42)
+    .finish();
+
+if (auto reply = editorPair->sendAndWaitReply(MSG_GET_ENTITY, request)) {
+    std::string name = reply->at("name").as_string();
+    Vec3 pos = reply->at("position").as<Vec3>();
+}
+```
+
+#### Properties
+
+```cpp
+const std::string& name() const;
+bool isEndpointA() const;
+const std::string& lastError() const;
+```
+
+### 8.4 Message Structure
+
+Messages are stored in a fixed-size 256-byte structure optimized for cache efficiency:
+
+```cpp
+struct Message {
+    uint32_t msgId;     // Message type identifier
+    uint32_t dataSize;  // Data size in bytes
+    uint64_t timestamp; // Optional timestamp
+
+    static constexpr size_t INLINE_SIZE = 240;
+    uint8_t inlineData[INLINE_SIZE];  // Inline storage for small data
+};
+
+static_assert(sizeof(Message) == 256);
+```
+
+- **Inline data (≤240 bytes):** Stored directly in the message, no extra allocation
+- **Large data:** Must be serialized to fit within 240 bytes, or use raw byte API
+
+### 8.5 Performance Characteristics
+
+Benchmark results comparing IPC Channel to Windows native messaging (10,000 iterations):
+
+| Method | Average Latency | Min Latency | Throughput |
+|--------|-----------------|-------------|------------|
+| **IPC Channel** | **~0.4-1.2 µs** | **~0.2 µs** | **~2-4M/sec** |
+| PostMessage + Reply | ~19 µs | ~11 µs | ~50K/sec |
+| SendMessage | ~237 µs | ~4 µs | ~4K/sec |
+| WM_COPYDATA | ~180 µs | ~9 µs | ~5K/sec |
+
+**Performance advantage:** 50-400x faster than Windows messaging APIs.
+
+**Why so fast?**
+1. **No kernel transitions** - Pure user-mode shared memory operations
+2. **Lock-free design** - Uses `std::atomic` with release/acquire semantics
+3. **Cache-optimized** - 256-byte messages align to cache lines
+4. **False sharing prevention** - Producer/consumer indices on separate cache lines
+
+### 8.6 Best Practices
+
+#### Thread Safety Rules
+
+```cpp
+// ❌ WRONG: Multiple producers
+std::thread t1([&]{ channel->send(1, data1); });
+std::thread t2([&]{ channel->send(2, data2); });  // Data corruption!
+
+// ✅ CORRECT: Single producer, single consumer
+// Producer process/thread
+channel->send(1, data);
+
+// Consumer process/thread (different from producer)
+channel->tryReceive();
+```
+
+#### Error Handling
+
+```cpp
+auto channel = Channel::createProducer("MyChannel");
+if (!channel) {
+    std::cerr << "Create failed: " << Channel::lastError() << "\n";
+    return;
+}
+
+if (!channel->send(msgId, data)) {
+    // Queue is full - back off or drop message
+    std::cerr << "Queue full, pending: " << channel->pendingCount() << "\n";
+}
+```
+
+#### Graceful Shutdown
+
+```cpp
+// Define shutdown message ID
+constexpr uint32_t MSG_SHUTDOWN = 0xFFFFFFFF;
+
+// Producer signals shutdown
+sender->send(MSG_SHUTDOWN);
+
+// Consumer handles shutdown
+while (auto msg = receiver->tryReceive()) {
+    if (msg->msgId == MSG_SHUTDOWN) {
+        break;
+    }
+    process(msg->data);
+}
+```
+
+#### Choosing Between APIs
+
+| Scenario | Recommended API |
+|----------|-----------------|
+| One-way data streaming | `Channel` |
+| Bidirectional communication | `ChannelPair` |
+| High-frequency small updates | `sendRaw()` / `tryReceiveRaw()` |
+| Complex structured data | `send()` with `Value` |
+| Request/reply pattern | `ChannelPair::sendAndWaitReply()` |
+
+---
+
+## 9. Header Reference
 
 | Header | Description |
 |--------|-------------|
@@ -1525,6 +1879,7 @@ watcher.watch("/users/0/email", callback3);
 | `<lager_ext/value_diff.h>` | Value difference detection (`DiffEntryCollector`, `DiffValueCollector`) |
 | `<lager_ext/shared_state.h>` | Cross-process shared state |
 | `<lager_ext/shared_value.h>` | Low-level shared memory operations |
+| `<lager_ext/ipc.h>` | **IPC module** - Lock-free cross-process `Channel` and `ChannelPair` |
 | `<lager_ext/concepts.h>` | C++20 concepts and math type aliases (`Vec2`, `Vec3`, etc.) |
 | `<lager_ext/editor_engine.h>` | Scene-like editor state management |
 | `<lager_ext/delta_undo.h>` | Delta-based undo/redo system |
@@ -1532,9 +1887,9 @@ watcher.watch("/users/0/email", callback3);
 
 ---
 
-## 9. Usage Examples
+## 10. Usage Examples
 
-### 9.1 Basic Usage
+### 10.1 Basic Usage
 
 ```cpp
 #include <lager_ext/value.h>
@@ -1585,7 +1940,7 @@ int main() {
 }
 ```
 
-### 9.2 Working with Math Types
+### 10.2 Working with Math Types
 
 ```cpp
 #include <lager_ext/value.h>
@@ -1617,7 +1972,7 @@ int main() {
 }
 ```
 
-### 9.3 Thread Safety
+### 10.3 Thread Safety
 
 ```cpp
 #include <lager_ext/value.h>

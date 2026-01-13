@@ -27,6 +27,7 @@ option(LAGER_EXT_BUILD_SHARED "Build lager_ext as shared library" OFF)
 option(LAGER_EXT_BUILD_EXAMPLES "Build example programs" ON)
 option(LAGER_EXT_BUILD_TESTS "Build unit tests" OFF)
 option(LAGER_EXT_INSTALL "Generate install target" OFF)
+option(LAGER_EXT_ENABLE_IPC "Enable IPC module (requires boost::interprocess)" ON)
 
 # ============================================================
 # Determine if this is a top-level project
@@ -84,6 +85,22 @@ set(LAGER_EXT_HEADERS
     include/lager_ext/value_diff.h
     include/lager_ext/value_fwd.h
 )
+
+# ============================================================
+# Optional IPC Module
+# ============================================================
+
+if(LAGER_EXT_ENABLE_IPC)
+    list(APPEND LAGER_EXT_SOURCES 
+        source/ipc.cpp
+    )
+    list(APPEND LAGER_EXT_HEADERS 
+        include/lager_ext/ipc.h
+    )
+    message(STATUS "IPC module: ENABLED (SPSC lock-free implementation)")
+else()
+    message(STATUS "IPC module: DISABLED")
+endif()
 
 # ============================================================
 # Create Library Target
@@ -164,9 +181,11 @@ target_compile_definitions(lager_ext
     PUBLIC
         # zug uses std::variant instead of Boost.Variant
         ZUG_VARIANT_STD
-        # Boost.Interprocess needs this macro to avoid linking date_time library
-        BOOST_DATE_TIME_NO_LIB
+        # IPC module availability flag
+        $<$<BOOL:${LAGER_EXT_ENABLE_IPC}>:LAGER_EXT_ENABLE_IPC>
     PRIVATE
+        # Boost.Interprocess needs this macro to avoid linking date_time library
+        $<$<BOOL:${LAGER_EXT_ENABLE_IPC}>:BOOST_DATE_TIME_NO_LIB>
         # Disable debug checks in release mode
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:MinSizeRel>:NDEBUG>
@@ -395,6 +414,7 @@ if(LAGER_EXT_IS_TOP_LEVEL)
         message(STATUS "  Library type:    STATIC")
     endif()
     message(STATUS "  C++ Standard:    C++20")
+    message(STATUS "  IPC module:      ${LAGER_EXT_ENABLE_IPC}")
     message(STATUS "  Build examples:  ${LAGER_EXT_BUILD_EXAMPLES}")
     message(STATUS "  Build tests:     ${LAGER_EXT_BUILD_TESTS}")
     message(STATUS "  Install:         ${LAGER_EXT_INSTALL}")

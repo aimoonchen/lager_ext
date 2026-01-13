@@ -114,4 +114,18 @@ add_lager_ext_example(engine
         engine/shared_value_demo.cpp
 )
 
+# ============================================================
+# Example 4: IPC Benchmark (Channel vs Windows Messages)
+# ============================================================
+
+if(LAGER_EXT_ENABLE_IPC)
+    add_lager_ext_example(ipc_benchmark
+        SOURCES
+            ipc_benchmark/main.cpp
+    )
+    message(STATUS "  Adding example: ipc_benchmark (Channel vs Windows Messages)")
+else()
+    message(STATUS "  Skipping ipc_benchmark: IPC module not enabled")
+endif()
+
 message(STATUS "")
