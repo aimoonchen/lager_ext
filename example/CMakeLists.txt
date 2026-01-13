@@ -124,8 +124,15 @@ if(LAGER_EXT_ENABLE_IPC)
             ipc_benchmark/main.cpp
     )
     message(STATUS "  Adding example: ipc_benchmark (Channel vs Windows Messages)")
+    
+    add_lager_ext_example(ipc_demo
+        SOURCES
+            ipc_demo/main.cpp
+    )
+    message(STATUS "  Adding example: ipc_demo (Basic IPC API usage)")
 else()
     message(STATUS "  Skipping ipc_benchmark: IPC module not enabled")
+    message(STATUS "  Skipping ipc_demo: IPC module not enabled")
 endif()
 
 message(STATUS "")

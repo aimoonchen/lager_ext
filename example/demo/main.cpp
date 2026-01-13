@@ -139,122 +139,157 @@ void demo_property_editing();
 void demo_undo_redo();
 } // namespace lager_ext
 
-int main() {
-    auto loop = lager::with_manual_event_loop{};
-    auto store = lager::make_store<Action>(create_initial_state(), loop, lager::with_reducer(reducer));
+#include "lager_ext/builders.h"
+void test()
+{
+    static const char* testdata = R"(
+{
+	"visible_mask ": 1,
+	"name" : "$root",
+	"scene_object_id" : "0B9ACB8B-F043E51A-7D6FFEB1-8B888C36",
+	"scene_object_type" : 76,
+	"hide" : false,
+	"show" : true,
+	"parent" : "00000000-00000000-00000000-00000000",
+	"Frozen" : false,
+	"file" : "",
+	"scene_object_locked" : false,
+	"position" : [0, 0, 0],
+	"scene_object_layer" : 0,
+	"scale" : [1, 1, 1],
+	"euler" : [0, 0, 0],
+	"children" : ""
+}
+		)";
 
-    std::cout << "=== Path Lens Example ===\n";
-    std::cout << "Demonstrating 5 schemes for dynamic data access\n\n";
-
-    while (true) {
-        std::cout << "Current data:\n";
-        print_value(store.get().data, "", 1);
-
-        std::cout << "\n=== Operations ===\n";
-        std::cout << "1. Add item\n";
-        std::cout << "2. Update item\n";
-        std::cout << "U. Undo\n";
-        std::cout << "R. Redo\n";
-        std::cout << "\n=== Scheme Demos ===\n";
-        std::cout << "L. Scheme 1: lager::lens<Value, Value>\n";
-        std::cout << "A. Scheme 2: lager::lenses::at\n";
-        std::cout << "J. Scheme 3: String Path API\n";
-        std::cout << "S. Scheme 4: Static Path (compile-time)\n";
-        std::cout << "\n=== Diff Demos ===\n";
-        std::cout << "D. Demo immer::diff (basic)\n";
-        std::cout << "C. Demo DiffEntryCollector\n";
-        std::cout << "\n=== Cross-Process ===\n";
-        std::cout << "P. Demo Shared State (Publisher/Subscriber)\n";
-        std::cout << "\n=== Editor-Engine Demo ===\n";
-        std::cout << "G. Demo Editor-Engine (Full Flow)\n";
-        std::cout << "H. Demo Property Editing\n";
-        std::cout << "I. Demo Undo/Redo\n";
-        std::cout << "\nQ. Quit\n";
-        std::cout << "\nChoice: ";
-
-        char choice;
-        std::cin >> choice;
-        std::cin.ignore();
-
-        switch (choice) {
-        case '1': {
-            std::cout << "Enter item title: ";
-            std::string title;
-            std::getline(std::cin, title);
-            store.dispatch(AddItem{title});
-            break;
-        }
-        case '2': {
-            std::cout << "Enter item index: ";
-            size_t index;
-            std::cin >> index;
-            std::cin.ignore();
-
-            std::cout << "Enter new title: ";
-            std::string new_title;
-            std::getline(std::cin, new_title);
-
-            Path path;
-            path.push_back("items").push_back(index).push_back("title");
-            store.dispatch(UpdateItem{path, new_title});
-            break;
-        }
-        case 'U':
-        case 'u':
-            store.dispatch(Undo{});
-            break;
-        case 'R':
-        case 'r':
-            store.dispatch(Redo{});
-            break;
-        case 'L':
-        case 'l':
-            lager_ext::demo_lager_lens();
-            break;
-        case 'A':
-        case 'a':
-            lager_ext::demo_at_lens();
-            break;
-        case 'J':
-        case 'j':
-            lager_ext::demo_string_path();
-            break;
-        case 'S':
-        case 's':
-            lager_ext::demo_static_path();
-            break;
-        case 'D':
-        case 'd':
-            lager_ext::demo_immer_diff();
-            break;
-        case 'C':
-        case 'c':
-            lager_ext::demo_recursive_diff_collector();
-            break;
-        case 'P':
-        case 'p':
-            lager_ext::demo_shared_state();
-            break;
-        case 'G':
-        case 'g':
-            lager_ext::demo_editor_engine();
-            break;
-        case 'H':
-        case 'h':
-            lager_ext::demo_property_editing();
-            break;
-        case 'I':
-        case 'i':
-            lager_ext::demo_undo_redo();
-            break;
-        case 'Q':
-        case 'q':
-            std::cout << "Goodbye!\n";
-            return 0;
-        default:
-            std::cout << "Invalid choice!\n";
-        }
-
-        std::cout << "\n";
+    auto mapbuilder = lager_ext::MapBuilder();
+    for (int i = 0; i < 1; i++) {
+        std::string id("0B9ACB8B-F043E51A-7D6FFEB1-8B888C36");
+        auto immerobj = lager_ext::from_json(testdata);
+        mapbuilder.set(id, immerobj);
     }
+    auto valuemap = mapbuilder.finish_map();
+    printf("\n");
+}
+int main() {
+//     auto loop = lager::with_manual_event_loop{};
+//     auto store = lager::make_store<Action>(create_initial_state(), loop, lager::with_reducer(reducer));
+// 
+//     std::cout << "=== Path Lens Example ===\n";
+//     std::cout << "Demonstrating 5 schemes for dynamic data access\n\n";
+// 
+//     while (true) {
+//         std::cout << "Current data:\n";
+//         print_value(store.get().data, "", 1);
+// 
+//         std::cout << "\n=== Operations ===\n";
+//         std::cout << "1. Add item\n";
+//         std::cout << "2. Update item\n";
+//         std::cout << "U. Undo\n";
+//         std::cout << "R. Redo\n";
+//         std::cout << "\n=== Scheme Demos ===\n";
+//         std::cout << "L. Scheme 1: lager::lens<Value, Value>\n";
+//         std::cout << "A. Scheme 2: lager::lenses::at\n";
+//         std::cout << "J. Scheme 3: String Path API\n";
+//         std::cout << "S. Scheme 4: Static Path (compile-time)\n";
+//         std::cout << "\n=== Diff Demos ===\n";
+//         std::cout << "D. Demo immer::diff (basic)\n";
+//         std::cout << "C. Demo DiffEntryCollector\n";
+//         std::cout << "\n=== Cross-Process ===\n";
+//         std::cout << "P. Demo Shared State (Publisher/Subscriber)\n";
+//         std::cout << "\n=== Editor-Engine Demo ===\n";
+//         std::cout << "G. Demo Editor-Engine (Full Flow)\n";
+//         std::cout << "H. Demo Property Editing\n";
+//         std::cout << "I. Demo Undo/Redo\n";
+//         std::cout << "\nQ. Quit\n";
+//         std::cout << "\nChoice: ";
+// 
+//         char choice;
+//         std::cin >> choice;
+//         std::cin.ignore();
+// 
+//         switch (choice) {
+//         case '1': {
+//             std::cout << "Enter item title: ";
+//             std::string title;
+//             std::getline(std::cin, title);
+//             store.dispatch(AddItem{title});
+//             break;
+//         }
+//         case '2': {
+//             std::cout << "Enter item index: ";
+//             size_t index;
+//             std::cin >> index;
+//             std::cin.ignore();
+// 
+//             std::cout << "Enter new title: ";
+//             std::string new_title;
+//             std::getline(std::cin, new_title);
+// 
+//             Path path;
+//             path.push_back("items").push_back(index).push_back("title");
+//             store.dispatch(UpdateItem{path, new_title});
+//             break;
+//         }
+//         case 'U':
+//         case 'u':
+//             store.dispatch(Undo{});
+//             break;
+//         case 'R':
+//         case 'r':
+//             store.dispatch(Redo{});
+//             break;
+//         case 'L':
+//         case 'l':
+//             lager_ext::demo_lager_lens();
+//             break;
+//         case 'A':
+//         case 'a':
+//             lager_ext::demo_at_lens();
+//             break;
+//         case 'J':
+//         case 'j':
+//             lager_ext::demo_string_path();
+//             break;
+//         case 'S':
+//         case 's':
+//             lager_ext::demo_static_path();
+//             break;
+//         case 'D':
+//         case 'd':
+//             lager_ext::demo_immer_diff();
+//             break;
+//         case 'C':
+//         case 'c':
+//             lager_ext::demo_recursive_diff_collector();
+//             break;
+//         case 'P':
+//         case 'p':
+//             lager_ext::demo_shared_state();
+//             break;
+//         case 'G':
+//         case 'g':
+//             lager_ext::demo_editor_engine();
+//             break;
+//         case 'H':
+//         case 'h':
+//             lager_ext::demo_property_editing();
+//             break;
+//         case 'I':
+//         case 'i':
+//             lager_ext::demo_undo_redo();
+//             break;
+//         case 'Q':
+//         case 'q':
+//             std::cout << "Goodbye!\n";
+//             return 0;
+//         default:
+//             std::cout << "Invalid choice!\n";
+//         }
+// 
+//         std::cout << "\n";
+//     }
+    test();
+    printf("\n");
+    return 0;
 }
