@@ -42,8 +42,10 @@ This document provides a comprehensive overview of the public APIs in the `lager
     - [5.5 Quick Difference Check](#55-quick-difference-check)
     - [5.6 Choosing Between Collectors](#56-choosing-between-collectors)
   - [6. Shared State (Cross-Process)](#6-shared-state-cross-process)
-    - [6.1 SharedState](#61-sharedstate)
-    - [6.2 Memory Region Operations](#62-memory-region-operations)
+    - [6.1 SharedValueHandle (Low-Level Shared Memory)](#61-sharedvaluehandle-low-level-shared-memory)
+    - [6.2 SharedMemoryRegion (Low-Level API)](#62-sharedmemoryregion-low-level-api)
+    - [6.3 StatePublisher / StateSubscriber (High-Level State Sync)](#63-statepublisher--statesubscriber-high-level-state-sync)
+    - [6.4 Utility Functions](#64-utility-functions)
   - [7. Lager Library Integration](#7-lager-library-integration)
     - [7.1 Overview](#71-overview)
     - [7.2 zoom\_value() - Cursor/Reader Adapters](#72-zoom_value---cursorreader-adapters)
@@ -68,11 +70,20 @@ This document provides a comprehensive overview of the public APIs in the `lager
       - [Error Handling](#error-handling)
       - [Graceful Shutdown](#graceful-shutdown)
       - [Choosing Between APIs](#choosing-between-apis)
-  - [9. Header Reference](#9-header-reference)
-  - [10. Usage Examples](#10-usage-examples)
-    - [10.1 Basic Usage](#101-basic-usage)
-    - [10.2 Working with Math Types](#102-working-with-math-types)
-    - [10.3 Thread Safety](#103-thread-safety)
+  - [9. MutableValue \& Type Conversion](#9-mutablevalue--type-conversion)
+    - [9.1 MutableValue Overview](#91-mutablevalue-overview)
+    - [9.2 Construction \& Factory Methods](#92-construction--factory-methods)
+    - [9.3 Type Checking \& Access](#93-type-checking--access)
+    - [9.4 Map \& Vector Operations](#94-map--vector-operations)
+    - [9.5 Path-based Access](#95-path-based-access)
+    - [9.6 MutableValue ↔ Value Conversion](#96-mutablevalue--value-conversion)
+    - [9.7 FastSharedValue (High-Performance Shared Memory)](#97-fastsharedvalue-high-performance-shared-memory)
+    - [9.8 Performance Comparison](#98-performance-comparison)
+  - [10. Header Reference](#10-header-reference)
+  - [11. Usage Examples](#11-usage-examples)
+    - [11.1 Basic Usage](#111-basic-usage)
+    - [11.2 Working with Math Types](#112-working-with-math-types)
+    - [11.3 Thread Safety](#113-thread-safety)
   - [Notes](#notes)
 
 ---
@@ -1307,51 +1318,182 @@ Both collectors use zero-copy internally with `ValueBox` for optimal performance
 
 ## 6. Shared State (Cross-Process)
 
-### 6.1 SharedState
+`lager_ext` provides two complementary systems for cross-process data sharing:
 
-`SharedState` enables cross-process state synchronization:
+1. **SharedValueHandle** (`shared_value.h`) - Zero-copy shared memory for raw `Value` data transfer
+2. **StatePublisher/StateSubscriber** (`shared_state.h`) - Higher-level state synchronization with versioning and diff support
 
-```cpp
-#include <lager_ext/shared_state.h>
-using namespace lager_ext;
+### 6.1 SharedValueHandle (Low-Level Shared Memory)
 
-// Publisher side
-SharedStatePublisher publisher("my_app_state");
-publisher.set(create_sample_data());
-publisher.update({"config", "theme"}, "light");
-
-// Subscriber side (different process)
-SharedStateSubscriber subscriber("my_app_state");
-Value current = subscriber.get();
-
-// Watch for changes
-subscriber.watch([](const ValueDiff& diff) {
-    for (const auto& change : diff.modified) {
-        std::cout << "Changed: " << change.path.to_dot_notation() << std::endl;
-    }
-});
-```
-
-### 6.2 Memory Region Operations
+`SharedValueHandle` provides zero-copy cross-process `Value` sharing using memory-mapped regions:
 
 ```cpp
 #include <lager_ext/shared_value.h>
 using namespace lager_ext;
 
-// Check if a memory region is initialized
-bool ready = is_memory_region_initialized("my_region");
+// ========== Process A (Writer) ==========
+SharedValueHandle writer;
+Value state = MapBuilder()
+    .set("users", VectorBuilder()
+        .push(MapBuilder().set("name", "Alice").set("age", 30).build())
+        .push(MapBuilder().set("name", "Bob").set("age", 25).build())
+        .build())
+    .build();
 
-// Get a handle to a shared memory region
-SharedMemoryHandle handle = get_shared_memory_region("my_region");
+// Create shared memory and write Value
+if (writer.create("my_app_state", state, /*max_size=*/10 * 1024 * 1024)) {
+    // State is now accessible to other processes
+}
 
-// Write Value to memory region
-write_to_memory_region(handle, my_value);
+// ========== Process B (Reader) ==========
+SharedValueHandle reader;
+if (reader.open("my_app_state")) {
+    // Zero-copy read (pointer directly into shared memory)
+    const SharedValue* shared = reader.shared_value();
+    
+    // Deep copy to local Value for manipulation
+    Value local_copy = reader.copy_to_local();
+}
+```
 
-// Read Value from memory region
-Value value = read_from_memory_region(handle);
+**SharedValueHandle API Reference:**
 
-// Release the handle when done
-release_memory_region(handle);
+| Method | Description |
+|--------|-------------|
+| `create(name, value, max_size)` | Create shared memory and write Value |
+| `open(name)` | Open existing shared memory region |
+| `shared_value()` | Get raw pointer to SharedValue (zero-copy read) |
+| `copy_to_local()` | Deep copy SharedValue to local Value |
+| `is_valid()` | Check if the handle is valid |
+| `is_value_ready()` | Check if Value has been initialized |
+| `last_error()` | Get last error message |
+
+### 6.2 SharedMemoryRegion (Low-Level API)
+
+For fine-grained control over shared memory:
+
+```cpp
+#include <lager_ext/shared_value.h>
+using namespace shared_memory;
+
+// ========== Writer Process ==========
+SharedMemoryRegion region;
+if (region.create("my_region", 1024 * 1024)) {  // 1MB region
+    // Set as current region for allocations
+    set_current_shared_region(&region);
+    
+    // Allocate and construct objects in shared memory
+    void* ptr = region.allocate(sizeof(MyData), alignof(MyData));
+    
+    // Sync cursor after batch allocations
+    region.sync_allocation_cursor();
+    
+    set_current_shared_region(nullptr);
+}
+
+// ========== Reader Process ==========
+SharedMemoryRegion region;
+if (region.open("my_region")) {
+    // Access data at fixed base address
+    void* base = region.base();
+    size_t size = region.size();
+}
+```
+
+### 6.3 StatePublisher / StateSubscriber (High-Level State Sync)
+
+For higher-level state synchronization with automatic versioning and diff support:
+
+```cpp
+#include <lager_ext/shared_state.h>
+using namespace lager_ext;
+
+// ========== Publisher Process ==========
+SharedMemoryConfig config;
+config.name = "my_app_state";
+config.size = 64 * 1024;  // 64KB
+
+StatePublisher publisher(config);
+
+// Publish full state
+Value initial_state = create_initial_state();
+publisher.publish(initial_state);
+
+// Publish incremental diff (more efficient for updates)
+Value new_state = apply_changes(initial_state);
+bool used_diff = publisher.publish_diff(initial_state, new_state);
+
+// Check statistics
+auto stats = publisher.stats();
+std::cout << "Total publishes: " << stats.total_publishes << std::endl;
+
+// ========== Subscriber Process ==========
+StateSubscriber subscriber(config);
+
+// Non-blocking poll
+if (subscriber.poll()) {
+    Value state = subscriber.current();
+}
+
+// Blocking wait with timeout
+Value state = subscriber.wait_for_update(std::chrono::milliseconds{100});
+
+// Register callback
+subscriber.on_update([](const Value& new_state, uint64_t version) {
+    std::cout << "State updated to version " << version << std::endl;
+});
+
+// Start background polling
+subscriber.start_polling();
+// ... later ...
+subscriber.stop_polling();
+```
+
+**StatePublisher API Reference:**
+
+| Method | Description |
+|--------|-------------|
+| `publish(state)` | Publish complete state |
+| `publish_diff(old_state, new_state)` | Publish incremental diff (returns true if diff was used) |
+| `publish_full(state)` | Force publish full state |
+| `version()` | Get current version number |
+| `stats()` | Get publish statistics |
+| `is_valid()` | Check if shared memory is valid |
+| `close()` | Explicitly release resources |
+
+**StateSubscriber API Reference:**
+
+| Method | Description |
+|--------|-------------|
+| `current()` | Get current cached state |
+| `version()` | Get current version number |
+| `poll()` | Non-blocking check for updates |
+| `try_get_update()` | Try to get update without blocking |
+| `wait_for_update(timeout)` | Blocking wait for next update |
+| `on_update(callback)` | Register update callback |
+| `start_polling()` | Start background polling thread |
+| `stop_polling()` | Stop background polling |
+| `is_polling()` | Check if polling is active |
+| `stats()` | Get receive statistics |
+
+### 6.4 Utility Functions
+
+```cpp
+#include <lager_ext/shared_state.h>
+using namespace lager_ext;
+
+// Collect structured diff between two Values
+DiffResult diff = collect_diff(old_val, new_val);
+for (const auto& [path, value] : diff.added) {
+    std::cout << "Added: " << path.to_dot_notation() << std::endl;
+}
+
+// Encode/decode diff for transmission
+ByteBuffer encoded = encode_diff(diff);
+DiffResult decoded = decode_diff(encoded);
+
+// Apply diff to a Value
+Value updated = apply_diff(base_value, diff);
 ```
 
 ---
@@ -1863,11 +2005,323 @@ while (auto msg = receiver->tryReceive()) {
 
 ---
 
-## 9. Header Reference
+## 9. MutableValue & Type Conversion
+
+This section covers the mutable data structures and conversion utilities for scenarios where immutability is not required or where high-performance tree building is needed.
+
+### 9.1 MutableValue Overview
+
+`MutableValue` provides a mutable, JSON-like data structure as an alternative to the immutable `Value` type. It's designed for:
+
+- **C++ reflection data**: Receiving dynamically-typed data from reflection systems
+- **Complex tree building**: Constructing deep nested structures with many intermediate modifications
+- **Temporary data manipulation**: When you need to modify data before converting to immutable form
+
+```cpp
+#include <lager_ext/mutable_value.h>
+using namespace lager_ext;
+
+// MutableValue supports the same data types as Value:
+// - Primitives: int8-64, uint8-64, float, double, bool
+// - Strings: std::string
+// - Containers: MutableValueMap (robin_map), MutableValueVector (std::vector)
+// - Math types: Vec2, Vec3, Vec4, Mat3, Mat4x3
+```
+
+**Key Differences from `Value`:**
+
+| Feature | `Value` (immutable) | `MutableValue` |
+|---------|---------------------|----------------|
+| Modification | Returns new value (COW) | In-place modification |
+| Ownership | Shared (refcounted) | Exclusive (`unique_ptr`) |
+| Map implementation | `immer::map` | `tsl::robin_map` |
+| Best for | Read-heavy, state management | Write-heavy, tree building |
+
+### 9.2 Construction & Factory Methods
+
+```cpp
+#include <lager_ext/mutable_value.h>
+using namespace lager_ext;
+
+// ========== Direct Construction ==========
+MutableValue null_val;                    // null
+MutableValue bool_val(true);              // bool
+MutableValue int_val(42);                 // int32
+MutableValue int64_val(int64_t{100});     // int64
+MutableValue float_val(3.14f);            // float
+MutableValue double_val(3.14159);         // double
+MutableValue str_val("hello");            // string
+
+// ========== Factory Methods ==========
+auto null_v = MutableValue::make_null();
+auto map_v = MutableValue::make_map();
+auto vec_v = MutableValue::make_vector();
+
+// Math types
+auto v2 = MutableValue::make_vec2(1.0f, 2.0f);
+auto v3 = MutableValue::make_vec3(1.0f, 2.0f, 3.0f);
+auto v4 = MutableValue::make_vec4(1.0f, 2.0f, 3.0f, 4.0f);
+
+// From raw float arrays
+float arr3[9] = {1,0,0, 0,1,0, 0,0,1};
+float arr4x3[12] = {1,0,0, 0,1,0, 0,0,1, 0,0,0};
+auto m3 = MutableValue::make_mat3(arr3);
+auto m4x3 = MutableValue::make_mat4x3(arr4x3);
+```
+
+### 9.3 Type Checking & Access
+
+```cpp
+MutableValue val = /* ... */;
+
+// ========== Type Checking ==========
+val.is_null();       // true if monostate
+val.is_string();     // true if std::string
+val.is_bool();       // true if bool
+val.is_numeric();    // true if any numeric type
+val.is_map();        // true if MutableValueMap
+val.is_vector();     // true if MutableValueVector
+val.is_vec2();       // true if Vec2
+val.is_vec3();       // true if Vec3
+val.is_vec4();       // true if Vec4
+val.is_mat3();       // true if Mat3 (boxed)
+val.is_mat4x3();     // true if Mat4x3 (boxed)
+val.is_vector_math();  // true if Vec2/Vec3/Vec4
+val.is_matrix_math();  // true if Mat3/Mat4x3
+val.is_math_type();    // true if any math type
+
+// Generic type check
+val.is<int32_t>();
+val.is<std::string>();
+
+// ========== Value Access (throws on type mismatch) ==========
+std::string& s = val.as<std::string>();
+
+// ========== Safe Access (returns nullptr on mismatch) ==========
+if (auto* p = val.get_if<std::string>()) {
+    std::cout << *p << std::endl;
+}
+
+// ========== Convenient Accessors with Defaults ==========
+int n = val.as_int(0);              // returns 0 if not int
+int64_t n64 = val.as_int64(0);      // converts from any int type
+float f = val.as_float(0.0f);       // returns 0.0f if not float
+double d = val.as_double(0.0);      // converts from float
+double num = val.as_number(0.0);    // converts from any numeric
+bool b = val.as_bool(false);        // returns false if not bool
+std::string str = val.as_string(""); // returns "" if not string
+
+// Math accessors
+Vec2 v2 = val.as_vec2({0,0});
+Vec3 v3 = val.as_vec3({0,0,0});
+Vec4 v4 = val.as_vec4({0,0,0,0});
+Mat3 m3 = val.as_mat3({});          // unboxes automatically
+Mat4x3 m4x3 = val.as_mat4x3({});    // unboxes automatically
+```
+
+### 9.4 Map & Vector Operations
+
+```cpp
+MutableValue root = MutableValue::make_map();
+
+// ========== Map Operations ==========
+// Set values (creates map if needed)
+root.set("name", "Alice");
+root.set("age", 30);
+root.set("active", true);
+
+// Get values (returns pointer, nullptr if not found)
+if (MutableValue* name = root.get("name")) {
+    std::cout << name->as_string() << std::endl;
+}
+
+// Check key existence
+if (root.contains("name")) { /* ... */ }
+
+// Erase key
+root.erase("active");
+
+// ========== Vector Operations ==========
+MutableValue arr = MutableValue::make_vector();
+
+// Push values
+arr.push_back("first");
+arr.push_back("second");
+arr.push_back(42);
+
+// Access by index (returns nullptr if out of bounds)
+if (MutableValue* first = arr.get(0)) {
+    std::cout << first->as_string() << std::endl;
+}
+
+// Set at index (extends with nulls if needed)
+arr.set(5, "sixth");  // indices 3,4 become null
+
+// Get size
+std::size_t count = arr.size();
+
+// ========== Nested Structures ==========
+MutableValue data = MutableValue::make_map();
+data.set("users", MutableValue::make_vector());
+
+// Access nested
+if (auto* users = data.get("users")) {
+    users->push_back(MutableValue::make_map());
+    if (auto* user = users->get(0)) {
+        user->set("name", "Bob");
+        user->set("score", 100);
+    }
+}
+```
+
+### 9.5 Path-based Access
+
+`MutableValue` supports the same `PathView` system as `Value`:
+
+```cpp
+#include <lager_ext/mutable_value.h>
+#include <lager_ext/path.h>
+using namespace lager_ext;
+
+MutableValue root = MutableValue::make_map();
+
+// ========== set_at_path (creates intermediate containers) ==========
+root.set_at_path({"users", size_t(0), "name"}, "Alice");
+root.set_at_path({"users", size_t(0), "age"}, 30);
+root.set_at_path({"config", "theme"}, "dark");
+
+// ========== get_at_path ==========
+if (auto* name = root.get_at_path({"users", size_t(0), "name"})) {
+    std::cout << name->as_string() << std::endl;  // "Alice"
+}
+
+// ========== has_path (check existence) ==========
+if (root.has_path({"config", "theme"})) {
+    // path exists
+}
+
+// ========== erase_at_path ==========
+root.erase_at_path({"config", "theme"});
+
+// ========== Using Path class ==========
+Path user_path{"users", size_t(0)};
+if (auto* user = root.get_at_path(user_path)) {
+    // Work with user
+}
+```
+
+### 9.6 MutableValue ↔ Value Conversion
+
+```cpp
+#include <lager_ext/utils.h>
+using namespace lager_ext;
+
+// ========== MutableValue -> Value ==========
+MutableValue mv = MutableValue::make_map();
+mv.set("name", "Player");
+mv.set("health", 100);
+mv.set("position", Vec3{1.0f, 2.0f, 3.0f});
+
+// Convert to immutable Value
+Value immutable = to_value(mv);
+
+// Move variant (may avoid string copies)
+Value moved = to_value(std::move(mv));
+
+// ========== Value -> MutableValue ==========
+Value v = MapBuilder()
+    .set("data", VectorBuilder()
+        .push(1).push(2).push(3)
+        .build())
+    .build();
+
+// Convert to mutable
+MutableValue mutable_v = to_mutable_value(v);
+mutable_v.set("data_count", mutable_v.get("data")->size());
+```
+
+**When to Use Each Approach:**
+
+| Scenario | Recommended |
+|----------|-------------|
+| Simple data, few modifications | `Value` directly |
+| Complex tree with many updates | `MutableValue` → `to_value()` |
+| Reflection/deserialization | `MutableValue` → `to_value()` |
+| lager store state | `Value` (immutable required) |
+| Temporary computation | `MutableValue` |
+
+### 9.7 FastSharedValue (High-Performance Shared Memory)
+
+`FastSharedValue` provides O(n) construction complexity for shared memory scenarios, compared to `SharedValue`'s O(n log n):
+
+```cpp
+#include <lager_ext/fast_shared_value.h>
+using namespace lager_ext;
+
+// ========== FastSharedValueHandle (Writer) ==========
+FastSharedValueHandle writer;
+
+Value large_state = /* build a large state tree */;
+
+// O(n) construction using fake transience policy
+if (writer.create("my_fast_state", large_state, 100 * 1024 * 1024)) {
+    // State written to shared memory
+}
+
+// ========== FastSharedValueHandle (Reader) ==========
+FastSharedValueHandle reader;
+if (reader.open("my_fast_state")) {
+    // Zero-copy access
+    const FastSharedValue* shared = reader.shared_value();
+    
+    // Deep copy to local Value
+    Value local = reader.copy_to_local();
+}
+
+// ========== Direct Conversion Functions ==========
+// Value -> FastSharedValue (O(n) with transient)
+FastSharedValue fast_shared = fast_deep_copy_to_shared(local_value);
+
+// FastSharedValue -> Value
+Value local = fast_deep_copy_to_local(fast_shared);
+```
+
+**FastSharedValue vs SharedValue:**
+
+| Aspect | `SharedValue` | `FastSharedValue` |
+|--------|---------------|-------------------|
+| Construction complexity | O(n log n) | **O(n)** |
+| Memory overhead | Higher (intermediate nodes) | Lower |
+| Transient support | No | Yes (fake policy) |
+| Best for | Small to medium data | **Large data (10,000+ elements)** |
+
+### 9.8 Performance Comparison
+
+**Tree Building Benchmark (10,000 elements):**
+
+| Method | Time | Memory |
+|--------|------|--------|
+| Direct `Value` construction | ~15ms | ~5MB |
+| `MutableValue` → `to_value()` | ~8ms | ~3MB |
+| `SharedValue` (O(n log n)) | ~25ms | ~12MB |
+| `FastSharedValue` (O(n)) | ~10ms | ~5MB |
+
+**Recommendations:**
+
+1. **Simple structures**: Use `Value` with `MapBuilder`/`VectorBuilder`
+2. **Complex tree building**: Use `MutableValue` → `to_value()`
+3. **Shared memory (small)**: Use `SharedValueHandle`
+4. **Shared memory (large)**: Use `FastSharedValueHandle`
+
+---
+
+## 10. Header Reference
 
 | Header | Description |
 |--------|-------------|
 | `<lager_ext/value.h>` | Core `Value` type, type aliases, comparison operators |
+| `<lager_ext/value_fwd.h>` | Forward declarations for Value and Builder types |
+| `<lager_ext/mutable_value.h>` | Mutable dynamic value type (non-immutable alternative) |
 | `<lager_ext/builders.h>` | Builder classes for O(n) container construction |
 | `<lager_ext/serialization.h>` | Binary and JSON serialization |
 | `<lager_ext/path.h>` | Core `PathView` (zero-allocation) and `Path` (owning) types |
@@ -1878,18 +2332,22 @@ while (auto msg = receiver->tryReceive()) {
 | `<lager_ext/static_path.h>` | Compile-time static path lens (C++20 NTTP) |
 | `<lager_ext/value_diff.h>` | Value difference detection (`DiffEntryCollector`, `DiffValueCollector`) |
 | `<lager_ext/shared_state.h>` | Cross-process shared state |
-| `<lager_ext/shared_value.h>` | Low-level shared memory operations |
+| `<lager_ext/shared_value.h>` | Low-level shared memory value operations |
+| `<lager_ext/fast_shared_value.h>` | High-performance shared value with fake transience (O(n) build) |
 | `<lager_ext/ipc.h>` | **IPC module** - Lock-free cross-process `Channel` and `ChannelPair` |
 | `<lager_ext/concepts.h>` | C++20 concepts and math type aliases (`Vec2`, `Vec3`, etc.) |
-| `<lager_ext/editor_engine.h>` | Scene-like editor state management |
+| `<lager_ext/scene_types.h>` | Common types for editor engines (UI metadata, etc.) |
+| `<lager_ext/editor_engine.h>` | Scene-like editor state management (snapshot undo) |
 | `<lager_ext/delta_undo.h>` | Delta-based undo/redo system |
+| `<lager_ext/undo.h>` | Unified abstract undo/redo interface |
 | `<lager_ext/multi_store.h>` | Multi-document state management |
+| `<lager_ext/utils.h>` | Utility functions (`MutableValue` ↔ `Value` conversion) |
 
 ---
 
-## 10. Usage Examples
+## 11. Usage Examples
 
-### 10.1 Basic Usage
+### 11.1 Basic Usage
 
 ```cpp
 #include <lager_ext/value.h>
@@ -1940,7 +2398,7 @@ int main() {
 }
 ```
 
-### 10.2 Working with Math Types
+### 11.2 Working with Math Types
 
 ```cpp
 #include <lager_ext/value.h>
@@ -1972,7 +2430,7 @@ int main() {
 }
 ```
 
-### 10.3 Thread Safety
+### 11.3 Thread Safety
 
 ```cpp
 #include <lager_ext/value.h>
