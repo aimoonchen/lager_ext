@@ -38,8 +38,8 @@
 #pragma once
 
 #include <lager_ext/api.h>
-#include <lager_ext/value.h>
 #include <lager_ext/mutable_value.h>
+#include <lager_ext/value.h>
 
 namespace lager_ext {
 

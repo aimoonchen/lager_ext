@@ -1,9 +1,10 @@
 // editor_engine.cpp
 // Implementation of Editor-Engine Cross-Process State Management
 
-#include <lager_ext/editor_engine.h>
 #include <lager_ext/builders.h>
+#include <lager_ext/editor_engine.h>
 #include <lager_ext/path_utils.h>
+
 #include <iostream>
 #include <sstream>
 
@@ -36,235 +37,227 @@ static Path parse_property_path(const std::string& path_str) {
 static void push_undo_state(EditorModel& model) {
     model.undo_stack = model.undo_stack.push_back(model.scene);
     if (model.undo_stack.size() > EditorModel::max_history) {
-        model.undo_stack = model.undo_stack.drop(1);  // O(1) drop from front
+        model.undo_stack = model.undo_stack.drop(1); // O(1) drop from front
     }
-    model.redo_stack = immer::flex_vector<SceneState>{};  // Clear redo stack
+    model.redo_stack = immer::flex_vector<SceneState>{}; // Clear redo stack
 }
 
 EditorModel editor_update(EditorModel model, EditorAction action) {
     // Check if this action should be recorded to undo history
     const bool record_undo = should_record_undo(action);
 
-    return std::visit([&model, record_undo](auto&& act) -> EditorModel {
-        using T = std::decay_t<decltype(act)>;
+    return std::visit(
+        [&model, record_undo](auto&& act) -> EditorModel {
+            using T = std::decay_t<decltype(act)>;
 
-        // ============================================================
-        // Control Actions (Undo/Redo/ClearHistory)
-        // ============================================================
+            // ============================================================
+            // Control Actions (Undo/Redo/ClearHistory)
+            // ============================================================
 
-        if constexpr (std::is_same_v<T, actions::Undo>) {
-            if (model.undo_stack.empty()) {
-                return model;
-            }
-
-            // Save current state for redo - flex_vector has O(1) push_back
-            model.redo_stack = model.redo_stack.push_back(model.scene);
-
-            // Restore previous state - flex_vector has O(1) back() and take()
-            model.scene = model.undo_stack.back();
-            model.undo_stack = model.undo_stack.take(model.undo_stack.size() - 1);
-            model.dirty = true;
-
-            return model;
-        }
-        else if constexpr (std::is_same_v<T, actions::Redo>) {
-            if (model.redo_stack.empty()) {
-                return model;
-            }
-
-            // Save current state for undo
-            model.undo_stack = model.undo_stack.push_back(model.scene);
-
-            // Restore next state
-            model.scene = model.redo_stack.back();
-            model.redo_stack = model.redo_stack.take(model.redo_stack.size() - 1);
-            model.dirty = true;
-
-            return model;
-        }
-        else if constexpr (std::is_same_v<T, actions::ClearHistory>) {
-            // Clear undo/redo history (e.g., after loading a new scene)
-            model.undo_stack = immer::flex_vector<SceneState>{};
-            model.redo_stack = immer::flex_vector<SceneState>{};
-            return model;
-        }
-
-        // ============================================================
-        // System Actions (NOT recorded to undo history)
-        // ============================================================
-
-        else if constexpr (std::is_same_v<T, actions::SelectObject>) {
-            // Select object for editing - SystemAction, no undo
-            const auto& payload = act.payload;
-            if (model.scene.objects.find(payload.object_id) != nullptr) {
-                model.scene.selected_id = payload.object_id;
-            }
-            return model;
-        }
-        else if constexpr (std::is_same_v<T, actions::SyncFromEngine>) {
-            // Full sync from engine (replaces current state) - clears history
-            const auto& payload = act.payload;
-            model.scene = payload.new_state;
-            model.undo_stack = immer::flex_vector<SceneState>{};
-            model.redo_stack = immer::flex_vector<SceneState>{};
-            model.dirty = false;
-            return model;
-        }
-        else if constexpr (std::is_same_v<T, actions::LoadObjects>) {
-            // Batch load objects - SystemAction, no undo (used for incremental loading)
-            const auto& payload = act.payload;
-
-            // Use transient builder for O(n) batch insertion
-            auto builder = model.scene.objects.transient();
-            for (const auto& obj : payload.objects) {
-                builder.set(obj.id, obj);
-            }
-            model.scene.objects = std::move(builder).persistent();
-            model.scene.version++;
-            model.dirty = true;
-
-            return model;
-        }
-        else if constexpr (std::is_same_v<T, actions::SetLoadingState>) {
-            // Set loading state - SystemAction, no undo (UI state only)
-            // Note: In a full implementation, you might have a separate loading_state field
-            // For now, this is a placeholder that doesn't modify scene state
-            return model;
-        }
-
-        // ============================================================
-        // User Actions (recorded to undo history)
-        // ============================================================
-
-        else if constexpr (std::is_same_v<T, actions::SetProperty>) {
-            // Modify property of selected object - UserAction
-            const auto& payload = act.payload;
-
-            if (model.scene.selected_id.empty()) {
-                return model;
-            }
-
-            const SceneObject* obj_ptr = model.scene.objects.find(model.scene.selected_id);
-            if (obj_ptr == nullptr) {
-                return model;
-            }
-
-            // Record undo state (this is a UserAction)
-            if (record_undo) {
-                push_undo_state(model);
-            }
-
-            // Update property using immer::map::set() for immutable update
-            Path path = parse_property_path(payload.property_path);
-            SceneObject updated_obj = *obj_ptr;
-            updated_obj.data = set_at_path(updated_obj.data, path, payload.new_value);
-            model.scene.objects = model.scene.objects.set(model.scene.selected_id, updated_obj);
-            model.scene.version++;
-            model.dirty = true;
-
-            return model;
-        }
-        else if constexpr (std::is_same_v<T, actions::SetProperties>) {
-            // Batch update multiple properties - UserAction
-            const auto& payload = act.payload;
-
-            if (model.scene.selected_id.empty()) {
-                return model;
-            }
-
-            const SceneObject* obj_ptr = model.scene.objects.find(model.scene.selected_id);
-            if (obj_ptr == nullptr) {
-                return model;
-            }
-
-            // Record undo state (this is a UserAction)
-            if (record_undo) {
-                push_undo_state(model);
-            }
-
-            // Update all properties
-            SceneObject updated_obj = *obj_ptr;
-            for (const auto& [path_str, value] : payload.updates) {
-                Path path = parse_property_path(path_str);
-                updated_obj.data = set_at_path(updated_obj.data, path, value);
-            }
-            model.scene.objects = model.scene.objects.set(model.scene.selected_id, updated_obj);
-            model.scene.version++;
-            model.dirty = true;
-
-            return model;
-        }
-        else if constexpr (std::is_same_v<T, actions::AddObject>) {
-            // Add a new object - UserAction
-            const auto& payload = act.payload;
-
-            // Record undo state (this is a UserAction)
-            if (record_undo) {
-                push_undo_state(model);
-            }
-
-            // Add the object using immer::map::set()
-            model.scene.objects = model.scene.objects.set(payload.object.id, payload.object);
-
-            // Add to parent's children list
-            if (!payload.parent_id.empty()) {
-                const SceneObject* parent_ptr = model.scene.objects.find(payload.parent_id);
-                if (parent_ptr != nullptr) {
-                    SceneObject updated_parent = *parent_ptr;
-                    updated_parent.children.push_back(payload.object.id);
-                    model.scene.objects = model.scene.objects.set(payload.parent_id, updated_parent);
+            if constexpr (std::is_same_v<T, actions::Undo>) {
+                if (model.undo_stack.empty()) {
+                    return model;
                 }
-            }
 
-            model.scene.version++;
-            model.dirty = true;
+                // Save current state for redo - flex_vector has O(1) push_back
+                model.redo_stack = model.redo_stack.push_back(model.scene);
 
-            return model;
-        }
-        else if constexpr (std::is_same_v<T, actions::RemoveObject>) {
-            // Remove an object - UserAction
-            const auto& payload = act.payload;
+                // Restore previous state - flex_vector has O(1) back() and take()
+                model.scene = model.undo_stack.back();
+                model.undo_stack = model.undo_stack.take(model.undo_stack.size() - 1);
+                model.dirty = true;
 
-            const SceneObject* obj_ptr = model.scene.objects.find(payload.object_id);
-            if (obj_ptr == nullptr) {
+                return model;
+            } else if constexpr (std::is_same_v<T, actions::Redo>) {
+                if (model.redo_stack.empty()) {
+                    return model;
+                }
+
+                // Save current state for undo
+                model.undo_stack = model.undo_stack.push_back(model.scene);
+
+                // Restore next state
+                model.scene = model.redo_stack.back();
+                model.redo_stack = model.redo_stack.take(model.redo_stack.size() - 1);
+                model.dirty = true;
+
+                return model;
+            } else if constexpr (std::is_same_v<T, actions::ClearHistory>) {
+                // Clear undo/redo history (e.g., after loading a new scene)
+                model.undo_stack = immer::flex_vector<SceneState>{};
+                model.redo_stack = immer::flex_vector<SceneState>{};
                 return model;
             }
 
-            // Record undo state (this is a UserAction)
-            if (record_undo) {
-                push_undo_state(model);
-            }
+            // ============================================================
+            // System Actions (NOT recorded to undo history)
+            // ============================================================
 
-            // Remove from parent's children list (immutably)
-            for (const auto& [id, obj] : model.scene.objects) {
-                auto child_it = std::find(obj.children.begin(), obj.children.end(), payload.object_id);
-                if (child_it != obj.children.end()) {
-                    SceneObject updated_parent = obj;
-                    updated_parent.children.erase(
-                        std::find(updated_parent.children.begin(),
-                                  updated_parent.children.end(),
-                                  payload.object_id));
-                    model.scene.objects = model.scene.objects.set(id, updated_parent);
-                    break;
+            else if constexpr (std::is_same_v<T, actions::SelectObject>) {
+                // Select object for editing - SystemAction, no undo
+                const auto& payload = act.payload;
+                if (model.scene.objects.find(payload.object_id) != nullptr) {
+                    model.scene.selected_id = payload.object_id;
                 }
+                return model;
+            } else if constexpr (std::is_same_v<T, actions::SyncFromEngine>) {
+                // Full sync from engine (replaces current state) - clears history
+                const auto& payload = act.payload;
+                model.scene = payload.new_state;
+                model.undo_stack = immer::flex_vector<SceneState>{};
+                model.redo_stack = immer::flex_vector<SceneState>{};
+                model.dirty = false;
+                return model;
+            } else if constexpr (std::is_same_v<T, actions::LoadObjects>) {
+                // Batch load objects - SystemAction, no undo (used for incremental loading)
+                const auto& payload = act.payload;
+
+                // Use transient builder for O(n) batch insertion
+                auto builder = model.scene.objects.transient();
+                for (const auto& obj : payload.objects) {
+                    builder.set(obj.id, obj);
+                }
+                model.scene.objects = std::move(builder).persistent();
+                model.scene.version++;
+                model.dirty = true;
+
+                return model;
+            } else if constexpr (std::is_same_v<T, actions::SetLoadingState>) {
+                // Set loading state - SystemAction, no undo (UI state only)
+                // Note: In a full implementation, you might have a separate loading_state field
+                // For now, this is a placeholder that doesn't modify scene state
+                return model;
             }
 
-            // Remove the object using immer::map::erase()
-            model.scene.objects = model.scene.objects.erase(payload.object_id);
+            // ============================================================
+            // User Actions (recorded to undo history)
+            // ============================================================
 
-            // Clear selection if removed object was selected
-            if (model.scene.selected_id == payload.object_id) {
-                model.scene.selected_id.clear();
+            else if constexpr (std::is_same_v<T, actions::SetProperty>) {
+                // Modify property of selected object - UserAction
+                const auto& payload = act.payload;
+
+                if (model.scene.selected_id.empty()) {
+                    return model;
+                }
+
+                const SceneObject* obj_ptr = model.scene.objects.find(model.scene.selected_id);
+                if (obj_ptr == nullptr) {
+                    return model;
+                }
+
+                // Record undo state (this is a UserAction)
+                if (record_undo) {
+                    push_undo_state(model);
+                }
+
+                // Update property using immer::map::set() for immutable update
+                Path path = parse_property_path(payload.property_path);
+                SceneObject updated_obj = *obj_ptr;
+                updated_obj.data = set_at_path(updated_obj.data, path, payload.new_value);
+                model.scene.objects = model.scene.objects.set(model.scene.selected_id, updated_obj);
+                model.scene.version++;
+                model.dirty = true;
+
+                return model;
+            } else if constexpr (std::is_same_v<T, actions::SetProperties>) {
+                // Batch update multiple properties - UserAction
+                const auto& payload = act.payload;
+
+                if (model.scene.selected_id.empty()) {
+                    return model;
+                }
+
+                const SceneObject* obj_ptr = model.scene.objects.find(model.scene.selected_id);
+                if (obj_ptr == nullptr) {
+                    return model;
+                }
+
+                // Record undo state (this is a UserAction)
+                if (record_undo) {
+                    push_undo_state(model);
+                }
+
+                // Update all properties
+                SceneObject updated_obj = *obj_ptr;
+                for (const auto& [path_str, value] : payload.updates) {
+                    Path path = parse_property_path(path_str);
+                    updated_obj.data = set_at_path(updated_obj.data, path, value);
+                }
+                model.scene.objects = model.scene.objects.set(model.scene.selected_id, updated_obj);
+                model.scene.version++;
+                model.dirty = true;
+
+                return model;
+            } else if constexpr (std::is_same_v<T, actions::AddObject>) {
+                // Add a new object - UserAction
+                const auto& payload = act.payload;
+
+                // Record undo state (this is a UserAction)
+                if (record_undo) {
+                    push_undo_state(model);
+                }
+
+                // Add the object using immer::map::set()
+                model.scene.objects = model.scene.objects.set(payload.object.id, payload.object);
+
+                // Add to parent's children list
+                if (!payload.parent_id.empty()) {
+                    const SceneObject* parent_ptr = model.scene.objects.find(payload.parent_id);
+                    if (parent_ptr != nullptr) {
+                        SceneObject updated_parent = *parent_ptr;
+                        updated_parent.children.push_back(payload.object.id);
+                        model.scene.objects = model.scene.objects.set(payload.parent_id, updated_parent);
+                    }
+                }
+
+                model.scene.version++;
+                model.dirty = true;
+
+                return model;
+            } else if constexpr (std::is_same_v<T, actions::RemoveObject>) {
+                // Remove an object - UserAction
+                const auto& payload = act.payload;
+
+                const SceneObject* obj_ptr = model.scene.objects.find(payload.object_id);
+                if (obj_ptr == nullptr) {
+                    return model;
+                }
+
+                // Record undo state (this is a UserAction)
+                if (record_undo) {
+                    push_undo_state(model);
+                }
+
+                // Remove from parent's children list (immutably)
+                for (const auto& [id, obj] : model.scene.objects) {
+                    auto child_it = std::find(obj.children.begin(), obj.children.end(), payload.object_id);
+                    if (child_it != obj.children.end()) {
+                        SceneObject updated_parent = obj;
+                        updated_parent.children.erase(std::find(updated_parent.children.begin(),
+                                                                updated_parent.children.end(), payload.object_id));
+                        model.scene.objects = model.scene.objects.set(id, updated_parent);
+                        break;
+                    }
+                }
+
+                // Remove the object using immer::map::erase()
+                model.scene.objects = model.scene.objects.erase(payload.object_id);
+
+                // Clear selection if removed object was selected
+                if (model.scene.selected_id == payload.object_id) {
+                    model.scene.selected_id.clear();
+                }
+
+                model.scene.version++;
+                model.dirty = true;
+
+                return model;
             }
-
-            model.scene.version++;
-            model.dirty = true;
 
             return model;
-        }
-
-        return model;
-    }, action);
+        },
+        action);
 }
 
 // ============================================================
@@ -307,12 +300,12 @@ void EngineSimulator::initialize_sample_scene() {
          NumericRange{-180.0, 180.0, 1.0}, std::nullopt, false, true, 4},
         {"rotation.z", "Rotation Z", "Z rotation in degrees", "Transform", WidgetType::Slider,
          NumericRange{-180.0, 180.0, 1.0}, std::nullopt, false, true, 5},
-        {"scale.x", "Scale X", "X scale factor", "Transform", WidgetType::DoubleSpinBox,
-         NumericRange{0.01, 100.0, 0.1}, std::nullopt, false, true, 6},
-        {"scale.y", "Scale Y", "Y scale factor", "Transform", WidgetType::DoubleSpinBox,
-         NumericRange{0.01, 100.0, 0.1}, std::nullopt, false, true, 7},
-        {"scale.z", "Scale Z", "Z scale factor", "Transform", WidgetType::DoubleSpinBox,
-         NumericRange{0.01, 100.0, 0.1}, std::nullopt, false, true, 8},
+        {"scale.x", "Scale X", "X scale factor", "Transform", WidgetType::DoubleSpinBox, NumericRange{0.01, 100.0, 0.1},
+         std::nullopt, false, true, 6},
+        {"scale.y", "Scale Y", "Y scale factor", "Transform", WidgetType::DoubleSpinBox, NumericRange{0.01, 100.0, 0.1},
+         std::nullopt, false, true, 7},
+        {"scale.z", "Scale Z", "Z scale factor", "Transform", WidgetType::DoubleSpinBox, NumericRange{0.01, 100.0, 0.1},
+         std::nullopt, false, true, 8},
     };
 
     // ===== Light component metadata =====
@@ -320,16 +313,14 @@ void EngineSimulator::initialize_sample_scene() {
     light_meta.type_name = "Light";
     light_meta.icon_name = "light_icon";
     light_meta.properties = {
-        {"name", "Name", "Object name", "General", WidgetType::LineEdit,
-         std::nullopt, std::nullopt, false, true, 0},
-        {"type", "Light Type", "Type of light source", "Light", WidgetType::ComboBox,
-         std::nullopt, ComboOptions{{"Point", "Directional", "Spot"}, 0}, false, true, 1},
-        {"color", "Color", "Light color", "Light", WidgetType::ColorPicker,
-         std::nullopt, std::nullopt, false, true, 2},
-        {"intensity", "Intensity", "Light intensity", "Light", WidgetType::Slider,
-         NumericRange{0.0, 10.0, 0.1}, std::nullopt, false, true, 3},
-        {"enabled", "Enabled", "Is light enabled", "Light", WidgetType::CheckBox,
-         std::nullopt, std::nullopt, false, true, 4},
+        {"name", "Name", "Object name", "General", WidgetType::LineEdit, std::nullopt, std::nullopt, false, true, 0},
+        {"type", "Light Type", "Type of light source", "Light", WidgetType::ComboBox, std::nullopt,
+         ComboOptions{{"Point", "Directional", "Spot"}, 0}, false, true, 1},
+        {"color", "Color", "Light color", "Light", WidgetType::ColorPicker, std::nullopt, std::nullopt, false, true, 2},
+        {"intensity", "Intensity", "Light intensity", "Light", WidgetType::Slider, NumericRange{0.0, 10.0, 0.1},
+         std::nullopt, false, true, 3},
+        {"enabled", "Enabled", "Is light enabled", "Light", WidgetType::CheckBox, std::nullopt, std::nullopt, false,
+         true, 4},
     };
 
     // ===== Mesh component metadata =====
@@ -337,16 +328,15 @@ void EngineSimulator::initialize_sample_scene() {
     mesh_meta.type_name = "MeshRenderer";
     mesh_meta.icon_name = "mesh_icon";
     mesh_meta.properties = {
-        {"name", "Name", "Object name", "General", WidgetType::LineEdit,
-         std::nullopt, std::nullopt, false, true, 0},
-        {"mesh_path", "Mesh", "Path to mesh file", "Mesh", WidgetType::FileSelector,
-         std::nullopt, std::nullopt, false, true, 1},
-        {"material", "Material", "Material name", "Mesh", WidgetType::LineEdit,
-         std::nullopt, std::nullopt, false, true, 2},
-        {"visible", "Visible", "Is mesh visible", "Mesh", WidgetType::CheckBox,
-         std::nullopt, std::nullopt, false, true, 3},
-        {"cast_shadows", "Cast Shadows", "Does mesh cast shadows", "Mesh", WidgetType::CheckBox,
-         std::nullopt, std::nullopt, false, true, 4},
+        {"name", "Name", "Object name", "General", WidgetType::LineEdit, std::nullopt, std::nullopt, false, true, 0},
+        {"mesh_path", "Mesh", "Path to mesh file", "Mesh", WidgetType::FileSelector, std::nullopt, std::nullopt, false,
+         true, 1},
+        {"material", "Material", "Material name", "Mesh", WidgetType::LineEdit, std::nullopt, std::nullopt, false, true,
+         2},
+        {"visible", "Visible", "Is mesh visible", "Mesh", WidgetType::CheckBox, std::nullopt, std::nullopt, false, true,
+         3},
+        {"cast_shadows", "Cast Shadows", "Does mesh cast shadows", "Mesh", WidgetType::CheckBox, std::nullopt,
+         std::nullopt, false, true, 4},
     };
 
     // ===== Create Root object =====
@@ -357,29 +347,13 @@ void EngineSimulator::initialize_sample_scene() {
     root.children = {"camera_main", "light_sun", "cube_1"};
 
     // Create root data using Builder API for O(n) construction
-    Value position = MapBuilder()
-        .set("x", Value{0.0})
-        .set("y", Value{0.0})
-        .set("z", Value{0.0})
-        .finish();
+    Value position = MapBuilder().set("x", Value{0.0}).set("y", Value{0.0}).set("z", Value{0.0}).finish();
 
-    Value rotation = MapBuilder()
-        .set("x", Value{0.0})
-        .set("y", Value{0.0})
-        .set("z", Value{0.0})
-        .finish();
+    Value rotation = MapBuilder().set("x", Value{0.0}).set("y", Value{0.0}).set("z", Value{0.0}).finish();
 
-    Value scale = MapBuilder()
-        .set("x", Value{1.0})
-        .set("y", Value{1.0})
-        .set("z", Value{1.0})
-        .finish();
+    Value scale = MapBuilder().set("x", Value{1.0}).set("y", Value{1.0}).set("z", Value{1.0}).finish();
 
-    root.data = MapBuilder()
-        .set("position", position)
-        .set("rotation", rotation)
-        .set("scale", scale)
-        .finish();
+    root.data = MapBuilder().set("position", position).set("rotation", rotation).set("scale", scale).finish();
 
     // ===== Create Light object using Builder API =====
     SceneObject light;
@@ -388,12 +362,12 @@ void EngineSimulator::initialize_sample_scene() {
     light.meta = light_meta;
 
     light.data = MapBuilder()
-        .set("name", Value{std::string{"Sun Light"}})
-        .set("type", Value{std::string{"Directional"}})
-        .set("color", Value{std::string{"#FFFFCC"}})
-        .set("intensity", Value{1.5})
-        .set("enabled", Value{true})
-        .finish();
+                     .set("name", Value{std::string{"Sun Light"}})
+                     .set("type", Value{std::string{"Directional"}})
+                     .set("color", Value{std::string{"#FFFFCC"}})
+                     .set("intensity", Value{1.5})
+                     .set("enabled", Value{true})
+                     .finish();
 
     // ===== Create Mesh object using Builder API =====
     SceneObject cube;
@@ -402,12 +376,12 @@ void EngineSimulator::initialize_sample_scene() {
     cube.meta = mesh_meta;
 
     cube.data = MapBuilder()
-        .set("name", Value{std::string{"Main Cube"}})
-        .set("mesh_path", Value{std::string{"/meshes/cube.fbx"}})
-        .set("material", Value{std::string{"default_material"}})
-        .set("visible", Value{true})
-        .set("cast_shadows", Value{true})
-        .finish();
+                    .set("name", Value{std::string{"Main Cube"}})
+                    .set("mesh_path", Value{std::string{"/meshes/cube.fbx"}})
+                    .set("material", Value{std::string{"default_material"}})
+                    .set("visible", Value{true})
+                    .set("cast_shadows", Value{true})
+                    .finish();
 
     // ===== Create Camera object using Builder API =====
     SceneObject camera;
@@ -415,29 +389,14 @@ void EngineSimulator::initialize_sample_scene() {
     camera.type = "Transform";
     camera.meta = transform_meta;
 
-    Value cam_position = MapBuilder()
-        .set("x", Value{0.0})
-        .set("y", Value{5.0})
-        .set("z", Value{-10.0})
-        .finish();
+    Value cam_position = MapBuilder().set("x", Value{0.0}).set("y", Value{5.0}).set("z", Value{-10.0}).finish();
 
-    Value cam_rotation = MapBuilder()
-        .set("x", Value{15.0})
-        .set("y", Value{0.0})
-        .set("z", Value{0.0})
-        .finish();
+    Value cam_rotation = MapBuilder().set("x", Value{15.0}).set("y", Value{0.0}).set("z", Value{0.0}).finish();
 
-    Value cam_scale = MapBuilder()
-        .set("x", Value{1.0})
-        .set("y", Value{1.0})
-        .set("z", Value{1.0})
-        .finish();
+    Value cam_scale = MapBuilder().set("x", Value{1.0}).set("y", Value{1.0}).set("z", Value{1.0}).finish();
 
-    camera.data = MapBuilder()
-        .set("position", cam_position)
-        .set("rotation", cam_rotation)
-        .set("scale", cam_scale)
-        .finish();
+    camera.data =
+        MapBuilder().set("position", cam_position).set("rotation", cam_rotation).set("scale", cam_scale).finish();
 
     // ===== Build scene using Builder API for O(n) construction =====
     using SceneMapBuilder = typename immer::map<std::string, SceneObject>::transient_type;
@@ -456,10 +415,8 @@ SceneState EngineSimulator::get_initial_state() const {
 }
 
 void EngineSimulator::apply_diff(const DiffResult& diff) {
-    std::cout << "[Engine] Applying diff with "
-              << diff.added.size() << " additions, "
-              << diff.removed.size() << " removals, "
-              << diff.modified.size() << " modifications\n";
+    std::cout << "[Engine] Applying diff with " << diff.added.size() << " additions, " << diff.removed.size()
+              << " removals, " << diff.modified.size() << " modifications\n";
 
     // In a real implementation, we would:
     // 1. Parse the paths to find which objects are affected
@@ -467,8 +424,7 @@ void EngineSimulator::apply_diff(const DiffResult& diff) {
     // 3. Trigger necessary updates (e.g., re-render)
 
     for (const auto& mod : diff.modified) {
-        std::cout << "  Modified: " << mod.path.to_dot_notation()
-                  << " = " << value_to_string(mod.new_value) << "\n";
+        std::cout << "  Modified: " << mod.path.to_dot_notation() << " = " << value_to_string(mod.new_value) << "\n";
     }
 
     impl_->fire_event("diff_applied", Value{});
@@ -519,7 +475,7 @@ struct EditorController::Impl {
     EditorModel model;
     EditorEffects effects;
     std::vector<WatchCallback> watchers;
-    Value previous_state_value;  // For diff calculation
+    Value previous_state_value; // For diff calculation
 
     void notify_watchers() {
         for (auto& watcher : watchers) {
@@ -530,7 +486,8 @@ struct EditorController::Impl {
     }
 
     void check_and_notify_changes() {
-        if (!model.dirty) return;
+        if (!model.dirty)
+            return;
 
         // Get current state as Value for diff
         Value current_state_value = scene_to_value(model.scene);
@@ -567,8 +524,8 @@ EditorController::~EditorController() = default;
 
 void EditorController::initialize(const SceneState& initial_state) {
     impl_->model.scene = initial_state;
-    impl_->model.undo_stack = immer::flex_vector<SceneState>{};  // Clear
-    impl_->model.redo_stack = immer::flex_vector<SceneState>{};  // Clear
+    impl_->model.undo_stack = immer::flex_vector<SceneState>{}; // Clear
+    impl_->model.redo_stack = immer::flex_vector<SceneState>{}; // Clear
     impl_->model.dirty = false;
     impl_->previous_state_value = Impl::scene_to_value(initial_state);
 }
@@ -609,7 +566,8 @@ const SceneObject* EditorController::get_selected_object() const {
 
 Value EditorController::get_property(const std::string& path) const {
     const SceneObject* obj = get_selected_object();
-    if (!obj) return Value{};  // null Value indicates no object selected
+    if (!obj)
+        return Value{}; // null Value indicates no object selected
 
     Path parsed_path = parse_property_path(path);
     return get_at_path(obj->data, parsed_path);
@@ -661,10 +619,7 @@ std::function<void()> EditorController::watch(WatchCallback callback) {
 // Qt UI Binding Helpers
 // ============================================================
 
-std::vector<PropertyBinding> generate_property_bindings(
-    EditorController& controller,
-    const SceneObject& object)
-{
+std::vector<PropertyBinding> generate_property_bindings(EditorController& controller, const SceneObject& object) {
     std::vector<PropertyBinding> bindings;
 
     for (const auto& prop : object.meta.properties) {
@@ -674,14 +629,10 @@ std::vector<PropertyBinding> generate_property_bindings(
 
         // Create getter closure
         std::string path = prop.name;
-        binding.getter = [&controller, path]() -> Value {
-            return controller.get_property(path);
-        };
+        binding.getter = [&controller, path]() -> Value { return controller.get_property(path); };
 
         // Create setter closure
-        binding.setter = [&controller, path](Value value) {
-            controller.set_property(path, std::move(value));
-        };
+        binding.setter = [&controller, path](Value value) { controller.set_property(path, std::move(value)); };
 
         bindings.push_back(std::move(binding));
     }

@@ -20,16 +20,16 @@
 #pragma once
 
 #include <lager_ext/api.h>
-#include <lager_ext/value.h>
 #include <lager_ext/serialization.h>
+#include <lager_ext/value.h>
 #include <lager_ext/value_diff.h>
 
+#include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
-#include <atomic>
 #include <string>
-#include <chrono>
 
 namespace lager_ext {
 
@@ -38,27 +38,27 @@ namespace lager_ext {
 // ============================================================
 struct StateUpdate {
     enum class Type : uint8_t {
-        Full = 0,      // Complete state snapshot
-        Diff = 1       // Incremental changes only
+        Full = 0, // Complete state snapshot
+        Diff = 1  // Incremental changes only
     };
 
     Type type;
-    ByteBuffer data;      // Serialized state or diff data
-    uint64_t version;     // Monotonically increasing version number
-    uint64_t timestamp;   // Unix timestamp in milliseconds
+    ByteBuffer data;    // Serialized state or diff data
+    uint64_t version;   // Monotonically increasing version number
+    uint64_t timestamp; // Unix timestamp in milliseconds
 };
 
 // ============================================================
 // SharedMemoryConfig - Configuration for shared memory
 // ============================================================
 struct SharedMemoryConfig {
-    std::string name;              // Shared memory name (e.g., "my_app_state")
-    std::size_t size = 64 * 1024;  // Size in bytes (default: 64KB)
-    bool create = true;            // Create if not exists (for publisher)
+    std::string name;             // Shared memory name (e.g., "my_app_state")
+    std::size_t size = 64 * 1024; // Size in bytes (default: 64KB)
+    bool create = true;           // Create if not exists (for publisher)
 
     // Performance tuning
-    std::chrono::milliseconds poll_interval{10};  // For subscriber polling
-    std::size_t max_history = 100;                // Max diff history to keep
+    std::chrono::milliseconds poll_interval{10}; // For subscriber polling
+    std::size_t max_history = 100;               // Max diff history to keep
 };
 
 // ============================================================
@@ -182,7 +182,7 @@ public:
         uint64_t full_updates = 0;
         uint64_t diff_updates = 0;
         std::size_t total_bytes_read = 0;
-        uint64_t missed_updates = 0;  // Updates that were overwritten before reading
+        uint64_t missed_updates = 0; // Updates that were overwritten before reading
     };
     [[nodiscard]] Stats stats() const noexcept;
 
@@ -207,13 +207,11 @@ struct ModifiedEntry {
 };
 
 struct DiffResult {
-    std::vector<std::pair<Path, Value>> added;    // path -> new value
-    std::vector<std::pair<Path, Value>> removed;  // path -> old value (optional)
-    std::vector<ModifiedEntry> modified;           // path + old/new values
+    std::vector<std::pair<Path, Value>> added;   // path -> new value
+    std::vector<std::pair<Path, Value>> removed; // path -> old value (optional)
+    std::vector<ModifiedEntry> modified;         // path + old/new values
 
-    [[nodiscard]] bool empty() const {
-        return added.empty() && removed.empty() && modified.empty();
-    }
+    [[nodiscard]] bool empty() const { return added.empty() && removed.empty() && modified.empty(); }
 };
 
 // ============================================================

@@ -1,16 +1,17 @@
 // at_lens.cpp
 // Implementation of lager::lenses::at demo (Scheme 3)
-#include "lager_ext/value.h"
 #include "lager_ext/builders.h"
+#include "lager_ext/editor_engine.h"
+#include "lager_ext/lager_lens.h"
+#include "lager_ext/path_utils.h"
 #include "lager_ext/serialization.h"
 #include "lager_ext/static_path.h"
-#include "lager_ext/lager_lens.h"
-#include "lager_ext/editor_engine.h"
-#include "lager_ext/path_utils.h"
+#include "lager_ext/value.h"
 
 #include <lager/lenses/at.hpp>
-#include <iostream>
+
 #include <iomanip>
+#include <iostream>
 namespace lager_ext {
 // ============================================================
 // Demo function for lager::lenses::at with Value
@@ -19,8 +20,7 @@ namespace lager_ext {
 // Value already implements the container interface (at, set, count, size)
 // so lager::lenses::at works out of the box.
 // ============================================================
-void demo_at_lens()
-{
+void demo_at_lens() {
     using namespace lager::lenses;
 
     std::cout << "\n=== Scheme 3: lager::lenses::at with Value Demo ===\n\n";
@@ -36,13 +36,12 @@ void demo_at_lens()
     // -------------------------------------------------------
     std::cout << "\n--- Test 1: Single-level at() ---\n";
 
-    auto config_lens = at(std::string{ "config" });
-    auto config_opt = lager::view(config_lens, data);  // returns optional<Value>
+    auto config_lens = at(std::string{"config"});
+    auto config_opt = lager::view(config_lens, data); // returns optional<Value>
 
     if (config_opt.has_value()) {
         std::cout << "data.at(\"config\") = " << value_to_string(*config_opt) << "\n";
-    }
-    else {
+    } else {
         std::cout << "data.at(\"config\") = (not found)\n";
     }
 
@@ -51,9 +50,9 @@ void demo_at_lens()
     // -------------------------------------------------------
     std::cout << "\n--- Test 2: Nested access ---\n";
 
-    auto config_result = lager::view(at(std::string{ "config" }), data);
+    auto config_result = lager::view(at(std::string{"config"}), data);
     if (config_result.has_value()) {
-        auto theme_result = lager::view(at(std::string{ "theme" }), *config_result);
+        auto theme_result = lager::view(at(std::string{"theme"}), *config_result);
         if (theme_result.has_value()) {
             std::cout << "config.theme = " << value_to_string(*theme_result) << "\n";
         }
@@ -64,13 +63,13 @@ void demo_at_lens()
     // -------------------------------------------------------
     std::cout << "\n--- Test 3: Array access ---\n";
 
-    auto users_result = lager::view(at(std::string{ "users" }), data);
+    auto users_result = lager::view(at(std::string{"users"}), data);
     if (users_result.has_value()) {
-        auto first_user_result = lager::view(at(size_t{ 0 }), *users_result);
+        auto first_user_result = lager::view(at(size_t{0}), *users_result);
         if (first_user_result.has_value()) {
             std::cout << "users[0] = " << value_to_string(*first_user_result) << "\n";
 
-            auto name_result = lager::view(at(std::string{ "name" }), *first_user_result);
+            auto name_result = lager::view(at(std::string{"name"}), *first_user_result);
             if (name_result.has_value()) {
                 std::cout << "users[0].name = " << value_to_string(*name_result) << "\n";
             }
@@ -82,20 +81,18 @@ void demo_at_lens()
     // -------------------------------------------------------
     std::cout << "\n--- Test 4: Set operation ---\n";
 
-    auto config_val = lager::view(at(std::string{ "config" }), data);
+    auto config_val = lager::view(at(std::string{"config"}), data);
     if (config_val.has_value()) {
         // Update version inside config
-        Value new_config = lager::set(at(std::string{ "version" }), *config_val,
-            std::make_optional(Value{ 3 }));
+        Value new_config = lager::set(at(std::string{"version"}), *config_val, std::make_optional(Value{3}));
 
         // Update config in root
-        Value new_data = lager::set(at(std::string{ "config" }), data,
-            std::make_optional(new_config));
+        Value new_data = lager::set(at(std::string{"config"}), data, std::make_optional(new_config));
 
         // Verify
-        auto verify = lager::view(at(std::string{ "config" }), new_data);
+        auto verify = lager::view(at(std::string{"config"}), new_data);
         if (verify.has_value()) {
-            auto ver = lager::view(at(std::string{ "version" }), *verify);
+            auto ver = lager::view(at(std::string{"version"}), *verify);
             if (ver.has_value()) {
                 std::cout << "After set: config.version = " << value_to_string(*ver) << "\n";
             }
@@ -107,11 +104,10 @@ void demo_at_lens()
     // -------------------------------------------------------
     std::cout << "\n--- Test 5: Non-existent key access ---\n";
 
-    auto nonexistent = lager::view(at(std::string{ "nonexistent" }), data);
+    auto nonexistent = lager::view(at(std::string{"nonexistent"}), data);
     if (nonexistent.has_value()) {
         std::cout << "data.nonexistent = " << value_to_string(*nonexistent) << "\n";
-    }
-    else {
+    } else {
         std::cout << "data.nonexistent = (not found, optional is empty)\n";
     }
 
@@ -130,8 +126,7 @@ void demo_at_lens()
     std::cout << "\n=== Demo End ===\n\n";
 }
 
-void demo_lager_lens()
-{
+void demo_lager_lens() {
     std::cout << "\n=== Scheme 2: lager::lens<Value, Value> Demo ===\n\n";
 
     // Use common test data
@@ -150,7 +145,7 @@ void demo_lager_lens()
 
     // Test lager::set
     std::cout << "\n--- Test 2: SET using lager::set ---\n";
-    Value updated = lager::set(lens, data, Value{ std::string{"Alicia"} });
+    Value updated = lager::set(lens, data, Value{std::string{"Alicia"}});
     std::cout << "After lager::set(lens, data, \"Alicia\"):\n";
     std::cout << "New value: " << value_to_string(lager::view(lens, updated)) << "\n";
 
@@ -162,10 +157,10 @@ void demo_lager_lens()
     std::cout << "Original age: " << value_to_string(lager::view(age_lens, data)) << "\n";
     Value incremented = lager::over(age_lens, data, [](Value v) {
         if (auto* n = v.get_if<int>()) {
-            return Value{ *n + 5 };
+            return Value{*n + 5};
         }
         return v;
-        });
+    });
     std::cout << "After lager::over +5: " << value_to_string(lager::view(age_lens, incremented)) << "\n";
 
     // Test composition
@@ -176,8 +171,8 @@ void demo_lager_lens()
     // Compare with static_path_lens (compile-time known path)
     std::cout << "\n--- Test 5: static_path_lens (compile-time) ---\n";
     auto static_lens = static_path_lens("users", 0, "name");
-    std::cout << "static_path_lens(\"users\", 0, \"name\") = "
-        << value_to_string(lager::view(static_lens, data)) << "\n";
+    std::cout << "static_path_lens(\"users\", 0, \"name\") = " << value_to_string(lager::view(static_lens, data))
+              << "\n";
 
     // Test cache (access same path multiple times)
     std::cout << "\n--- Test 6: Lens Cache Demo ---\n";
@@ -198,8 +193,7 @@ void demo_lager_lens()
     std::cout << "\n=== Demo End ===\n\n";
 }
 
-void demo_string_path()
-{
+void demo_string_path() {
     std::cout << "\n=== String Path API Demo ===\n\n";
 
     // Create test data:
@@ -218,7 +212,7 @@ void demo_string_path()
 
     ValueMap alice_profile;
     alice_profile = alice_profile.set("city", ValueBox{"Beijing"});
-    alice_profile = alice_profile.set("tags/skills", ValueBox{alice_tags});  // key with '/'
+    alice_profile = alice_profile.set("tags/skills", ValueBox{alice_tags}); // key with '/'
 
     ValueMap alice;
     alice = alice.set("name", ValueBox{"Alice"});
@@ -237,13 +231,13 @@ void demo_string_path()
 
     ValueMap config;
     config = config.set("version", ValueBox{1});
-    config = config.set("theme~mode", ValueBox{"dark"});  // key with '~'
+    config = config.set("theme~mode", ValueBox{"dark"}); // key with '~'
 
     ValueMap root;
     root = root.set("users", ValueBox{users});
     root = root.set("config", ValueBox{config});
 
-    Value data{ root };
+    Value data{root};
 
     std::cout << "Data structure:\n";
     print_value(data, "", 1);
@@ -252,12 +246,12 @@ void demo_string_path()
     std::cout << "\n--- Test 1: String Path Parsing ---\n";
 
     std::vector<std::string> test_paths = {
-        "",                           // root
-        "/users",                     // simple key
-        "/users/0",                   // array index
-        "/users/0/name",              // nested path
-        "/users/0/profile/city",      // deep nesting
-        "/config/theme~0mode",        // ~ escape: ~0 -> ~
+        "",                               // root
+        "/users",                         // simple key
+        "/users/0",                       // array index
+        "/users/0/name",                  // nested path
+        "/users/0/profile/city",          // deep nesting
+        "/config/theme~0mode",            // ~ escape: ~0 -> ~
         "/users/0/profile/tags~1skills",  // / escape: ~1 -> /
         "/users/0/profile/tags~1skills/0" // array in escaped key
     };
@@ -267,16 +261,18 @@ void demo_string_path()
         auto round_trip = path.to_string_path();
         std::cout << "  \"" << path_str << "\" -> Path{";
         for (size_t i = 0; i < path.size(); ++i) {
-            if (i > 0) std::cout << ", ";
-            std::visit([](const auto& v) {
-                using T = std::decay_t<decltype(v)>;
-                if constexpr (std::is_same_v<T, std::string>) {
-                    std::cout << "\"" << v << "\"";
-                }
-                else {
-                    std::cout << v;
-                }
-                }, path[i]);
+            if (i > 0)
+                std::cout << ", ";
+            std::visit(
+                [](const auto& v) {
+                    using T = std::decay_t<decltype(v)>;
+                    if constexpr (std::is_same_v<T, std::string>) {
+                        std::cout << "\"" << v << "\"";
+                    } else {
+                        std::cout << v;
+                    }
+                },
+                path[i]);
         }
         std::cout << "} -> \"" << round_trip << "\"\n";
     }
@@ -285,43 +281,41 @@ void demo_string_path()
     std::cout << "\n--- Test 2: GET by String Path (using PathLens) ---\n";
 
     // Helper lambda: create PathLens from string path
-    auto path_lens = [](std::string_view path_str) {
-        return PathLens(Path{path_str});
-    };
+    auto path_lens = [](std::string_view path_str) { return PathLens(Path{path_str}); };
 
-    std::cout << "  path_lens(\"/users/0/name\").get(data) = "
-        << value_to_string(path_lens("/users/0/name").get(data)) << "\n";
+    std::cout << "  path_lens(\"/users/0/name\").get(data) = " << value_to_string(path_lens("/users/0/name").get(data))
+              << "\n";
 
     std::cout << "  path_lens(\"/users/1/profile/city\").get(data) = "
-        << value_to_string(path_lens("/users/1/profile/city").get(data)) << "\n";
+              << value_to_string(path_lens("/users/1/profile/city").get(data)) << "\n";
 
     std::cout << "  path_lens(\"/config/version\").get(data) = "
-        << value_to_string(path_lens("/config/version").get(data)) << "\n";
+              << value_to_string(path_lens("/config/version").get(data)) << "\n";
 
     // Access key with special characters (escaped)
-    std::cout << "  path_lens(\"/config/theme~0mode\").get(data) = "  // ~0 -> ~
-        << value_to_string(path_lens("/config/theme~0mode").get(data)) << "\n";
+    std::cout << "  path_lens(\"/config/theme~0mode\").get(data) = " // ~0 -> ~
+              << value_to_string(path_lens("/config/theme~0mode").get(data)) << "\n";
 
-    std::cout << "  path_lens(\"/users/0/profile/tags~1skills\").get(data) = "  // ~1 -> /
-        << value_to_string(path_lens("/users/0/profile/tags~1skills").get(data)) << "\n";
+    std::cout << "  path_lens(\"/users/0/profile/tags~1skills\").get(data) = " // ~1 -> /
+              << value_to_string(path_lens("/users/0/profile/tags~1skills").get(data)) << "\n";
 
     std::cout << "  path_lens(\"/users/0/profile/tags~1skills/0\").get(data) = "
-        << value_to_string(path_lens("/users/0/profile/tags~1skills/0").get(data)) << "\n";
+              << value_to_string(path_lens("/users/0/profile/tags~1skills/0").get(data)) << "\n";
 
     // Non-existent path
-    std::cout << "  path_lens(\"/nonexistent\").get(data) = "
-        << value_to_string(path_lens("/nonexistent").get(data)) << "\n";
+    std::cout << "  path_lens(\"/nonexistent\").get(data) = " << value_to_string(path_lens("/nonexistent").get(data))
+              << "\n";
 
     // --- Test 3: SET operations ---
     std::cout << "\n--- Test 3: SET by String Path ---\n";
 
     // Change Alice's name
-    Value updated1 = path_lens("/users/0/name").set(data, Value{ std::string{"Alicia"} });
+    Value updated1 = path_lens("/users/0/name").set(data, Value{std::string{"Alicia"}});
     std::cout << "  After set(\"/users/0/name\", \"Alicia\"):\n";
     std::cout << "    users[0].name = " << value_to_string(path_lens("/users/0/name").get(updated1)) << "\n";
 
     // Update config version
-    Value updated2 = path_lens("/config/version").set(data, Value{ 2 });
+    Value updated2 = path_lens("/config/version").set(data, Value{2});
     std::cout << "  After set(\"/config/version\", 2):\n";
     std::cout << "    config.version = " << value_to_string(path_lens("/config/version").get(updated2)) << "\n";
 
@@ -331,7 +325,7 @@ void demo_string_path()
     // Increment version using PathLens::over
     Value updated3 = path_lens("/config/version").over(data, [](Value v) {
         if (auto* n = v.get_if<int>()) {
-            return Value{ *n + 10 };
+            return Value{*n + 10};
         }
         return v;
     });
@@ -347,12 +341,13 @@ void demo_string_path()
     std::cout << "  lens = PathLens(\"/users/0/name\")\n";
     std::cout << "  lager::view(lens, data) = " << value_to_string(lager::view(name_lens, data)) << "\n";
 
-    auto after_set = lager::set(name_lens, data, Value{ std::string{"Alice2"} });
-    std::cout << "  lager::set(lens, data, \"Alice2\") -> " << value_to_string(lager::view(name_lens, after_set)) << "\n";
+    auto after_set = lager::set(name_lens, data, Value{std::string{"Alice2"}});
+    std::cout << "  lager::set(lens, data, \"Alice2\") -> " << value_to_string(lager::view(name_lens, after_set))
+              << "\n";
 
     auto after_over = lager::over(name_lens, data, [](Value v) {
         if (auto* s = v.get_if<std::string>()) {
-            return Value{ *s + " (modified)" };
+            return Value{*s + " (modified)"};
         }
         return v;
     });
@@ -369,8 +364,7 @@ void demo_string_path()
     std::cout << "\n=== Demo End ===\n\n";
 }
 
-void demo_immer_diff()
-{
+void demo_immer_diff() {
     std::cout << "\n=== immer::diff Demo ===\n\n";
 
     // --- immer::vector comparison (manual) ---
@@ -378,15 +372,15 @@ void demo_immer_diff()
     std::cout << "Note: immer::diff does NOT support vector, must compare manually\n\n";
 
     ValueVector old_vec;
-    old_vec = old_vec.push_back(ValueBox{ Value{std::string{"Alice"}} });
-    old_vec = old_vec.push_back(ValueBox{ Value{std::string{"Bob"}} });
-    old_vec = old_vec.push_back(ValueBox{ Value{std::string{"Charlie"}} });
+    old_vec = old_vec.push_back(ValueBox{Value{std::string{"Alice"}}});
+    old_vec = old_vec.push_back(ValueBox{Value{std::string{"Bob"}}});
+    old_vec = old_vec.push_back(ValueBox{Value{std::string{"Charlie"}}});
 
     ValueVector new_vec;
-    new_vec = new_vec.push_back(ValueBox{ Value{std::string{"Alice"}} });
-    new_vec = new_vec.push_back(ValueBox{ Value{std::string{"Bobby"}} });
-    new_vec = new_vec.push_back(ValueBox{ Value{std::string{"Charlie"}} });
-    new_vec = new_vec.push_back(ValueBox{ Value{std::string{"David"}} });
+    new_vec = new_vec.push_back(ValueBox{Value{std::string{"Alice"}}});
+    new_vec = new_vec.push_back(ValueBox{Value{std::string{"Bobby"}}});
+    new_vec = new_vec.push_back(ValueBox{Value{std::string{"Charlie"}}});
+    new_vec = new_vec.push_back(ValueBox{Value{std::string{"David"}}});
 
     std::cout << "Old: [Alice, Bob, Charlie]\n";
     std::cout << "New: [Alice, Bobby, Charlie, David]\n\n";
@@ -407,11 +401,9 @@ void demo_immer_diff()
         if (old_str && new_str) {
             if (old_box == new_box) {
                 std::cout << "  [" << i << "] retained: " << *old_str << " (same pointer)\n";
-            }
-            else if (*old_str == *new_str) {
+            } else if (*old_str == *new_str) {
                 std::cout << "  [" << i << "] retained: " << *old_str << " (same value)\n";
-            }
-            else {
+            } else {
                 std::cout << "  [" << i << "] modified: " << *old_str << " -> " << *new_str << "\n";
             }
         }
@@ -433,14 +425,14 @@ void demo_immer_diff()
     std::cout << "\n--- immer::map diff (using immer::diff) ---\n";
 
     ValueMap old_map;
-    old_map = old_map.set("name", ValueBox{ Value{std::string{"Tom"}} });
-    old_map = old_map.set("age", ValueBox{ Value{25} });
-    old_map = old_map.set("city", ValueBox{ Value{std::string{"Beijing"}} });
+    old_map = old_map.set("name", ValueBox{Value{std::string{"Tom"}}});
+    old_map = old_map.set("age", ValueBox{Value{25}});
+    old_map = old_map.set("city", ValueBox{Value{std::string{"Beijing"}}});
 
     ValueMap new_map;
-    new_map = new_map.set("name", ValueBox{ Value{std::string{"Tom"}} });
-    new_map = new_map.set("age", ValueBox{ Value{26} });
-    new_map = new_map.set("email", ValueBox{ Value{std::string{"tom@x.com"}} });
+    new_map = new_map.set("name", ValueBox{Value{std::string{"Tom"}}});
+    new_map = new_map.set("age", ValueBox{Value{26}});
+    new_map = new_map.set("email", ValueBox{Value{std::string{"tom@x.com"}}});
 
     std::cout << "Old: {name: Tom, age: 25, city: Beijing}\n";
     std::cout << "New: {name: Tom, age: 26, email: tom@x.com}\n\n";
@@ -448,70 +440,61 @@ void demo_immer_diff()
     std::cout << "immer::diff results:\n";
 
     immer::diff(
-        old_map,
-        new_map,
-        [](const auto& removed) {
-            std::cout << "  [removed] key=" << removed.first << "\n";
-        },
-        [](const auto& added) {
-            std::cout << "  [added] key=" << added.first << "\n";
-        },
+        old_map, new_map, [](const auto& removed) { std::cout << "  [removed] key=" << removed.first << "\n"; },
+        [](const auto& added) { std::cout << "  [added] key=" << added.first << "\n"; },
         [](const auto& old_kv, const auto& new_kv) {
             if (old_kv.second.get() == new_kv.second.get()) {
                 std::cout << "  [retained] key=" << old_kv.first << " (same pointer)\n";
-            }
-            else {
+            } else {
                 std::cout << "  [modified] key=" << old_kv.first << "\n";
             }
-        }
-    );
+        });
 
     std::cout << "\n=== Demo End ===\n\n";
 }
 
-void demo_recursive_diff_collector()
-{
+void demo_recursive_diff_collector() {
     std::cout << "\n=== DiffEntryCollector Demo ===\n\n";
 
     // Create old state
     ValueMap user1;
-    user1 = user1.set("name", ValueBox{ Value{std::string{"Alice"}} });
-    user1 = user1.set("age", ValueBox{ Value{25} });
+    user1 = user1.set("name", ValueBox{Value{std::string{"Alice"}}});
+    user1 = user1.set("age", ValueBox{Value{25}});
 
     ValueMap user2;
-    user2 = user2.set("name", ValueBox{ Value{std::string{"Bob"}} });
-    user2 = user2.set("age", ValueBox{ Value{30} });
+    user2 = user2.set("name", ValueBox{Value{std::string{"Bob"}}});
+    user2 = user2.set("age", ValueBox{Value{30}});
 
     ValueVector users_old;
-    users_old = users_old.push_back(ValueBox{ Value{user1} });
-    users_old = users_old.push_back(ValueBox{ Value{user2} });
+    users_old = users_old.push_back(ValueBox{Value{user1}});
+    users_old = users_old.push_back(ValueBox{Value{user2}});
 
     ValueMap old_root;
-    old_root = old_root.set("users", ValueBox{ Value{users_old} });
-    old_root = old_root.set("version", ValueBox{ Value{1} });
+    old_root = old_root.set("users", ValueBox{Value{users_old}});
+    old_root = old_root.set("version", ValueBox{Value{1}});
 
-    Value old_state{ old_root };
+    Value old_state{old_root};
 
     // Create new state (with modifications)
     ValueMap user1_new;
-    user1_new = user1_new.set("name", ValueBox{ Value{std::string{"Alice"}} });
-    user1_new = user1_new.set("age", ValueBox{ Value{26} });  // modified
-    user1_new = user1_new.set("email", ValueBox{ Value{std::string{"alice@x.com"}} }); // added
+    user1_new = user1_new.set("name", ValueBox{Value{std::string{"Alice"}}});
+    user1_new = user1_new.set("age", ValueBox{Value{26}});                           // modified
+    user1_new = user1_new.set("email", ValueBox{Value{std::string{"alice@x.com"}}}); // added
 
     ValueMap user3;
-    user3 = user3.set("name", ValueBox{ Value{std::string{"Charlie"}} });
-    user3 = user3.set("age", ValueBox{ Value{35} });
+    user3 = user3.set("name", ValueBox{Value{std::string{"Charlie"}}});
+    user3 = user3.set("age", ValueBox{Value{35}});
 
     ValueVector users_new;
-    users_new = users_new.push_back(ValueBox{ Value{user1_new} });
-    users_new = users_new.push_back(ValueBox{ Value{user2} });  // unchanged
-    users_new = users_new.push_back(ValueBox{ Value{user3} });  // added
+    users_new = users_new.push_back(ValueBox{Value{user1_new}});
+    users_new = users_new.push_back(ValueBox{Value{user2}}); // unchanged
+    users_new = users_new.push_back(ValueBox{Value{user3}}); // added
 
     ValueMap new_root;
-    new_root = new_root.set("users", ValueBox{ Value{users_new} });
-    new_root = new_root.set("version", ValueBox{ Value{2} });  // modified
+    new_root = new_root.set("users", ValueBox{Value{users_new}});
+    new_root = new_root.set("version", ValueBox{Value{2}}); // modified
 
-    Value new_state{ new_root };
+    Value new_state{new_root};
 
     // Print states
     std::cout << "--- Old State ---\n";
@@ -523,22 +506,22 @@ void demo_recursive_diff_collector()
     // Collect diffs (recursive mode - default)
     std::cout << "\n--- Recursive Diff Results ---\n";
     DiffEntryCollector collector;
-    collector.diff(old_state, new_state);  // recursive = true (default)
+    collector.diff(old_state, new_state); // recursive = true (default)
     collector.print_diffs();
     std::cout << "\nDetected " << collector.get_diffs().size() << " change(s)\n";
 
     // Collect diffs (shallow mode)
     std::cout << "\n--- Shallow Diff Results ---\n";
-    collector.diff(old_state, new_state, false);  // recursive = false
+    collector.diff(old_state, new_state, false); // recursive = false
     collector.print_diffs();
     std::cout << "\nDetected " << collector.get_diffs().size() << " change(s)\n";
 
     // Quick check using has_any_difference
     std::cout << "\n--- Quick Difference Check ---\n";
-    std::cout << "has_any_difference (recursive): "
-        << (has_any_difference(old_state, new_state) ? "true" : "false") << "\n";
+    std::cout << "has_any_difference (recursive): " << (has_any_difference(old_state, new_state) ? "true" : "false")
+              << "\n";
     std::cout << "has_any_difference (shallow):   "
-        << (has_any_difference(old_state, new_state, false) ? "true" : "false") << "\n";
+              << (has_any_difference(old_state, new_state, false) ? "true" : "false") << "\n";
 
     std::cout << "\n=== Demo End ===\n\n";
 }
@@ -549,11 +532,11 @@ void demo_shared_state() {
     std::cout << "In real use, Publisher and Subscriber would be in different processes.\n\n";
 
     const std::string shm_name = "lager_ext_demo";
-    const std::size_t shm_size = 1024 * 1024;  // 1MB
+    const std::size_t shm_size = 1024 * 1024; // 1MB
 
     // Create publisher (main process)
     std::cout << "Creating StatePublisher...\n";
-    StatePublisher publisher({ shm_name, shm_size, true });
+    StatePublisher publisher({shm_name, shm_size, true});
 
     if (!publisher.is_valid()) {
         std::cout << "Failed to create publisher!\n";
@@ -569,7 +552,7 @@ void demo_shared_state() {
 
     // Create subscriber (child process)
     std::cout << "\nCreating StateSubscriber...\n";
-    StateSubscriber subscriber({ shm_name, shm_size, false });
+    StateSubscriber subscriber({shm_name, shm_size, false});
 
     if (!subscriber.is_valid()) {
         std::cout << "Failed to create subscriber!\n";
@@ -589,9 +572,9 @@ void demo_shared_state() {
     if (auto* users_vec = modified_state.at("users").get_if<ValueVector>()) {
         if (users_vec->size() > 0) {
             Value alice = (*users_vec)[0].get();
-            alice = alice.set("age", Value{ 26 });
-            auto new_vec = users_vec->set(0, ValueBox{ alice });
-            modified_state = modified_state.set("users", Value{ new_vec });
+            alice = alice.set("age", Value{26});
+            auto new_vec = users_vec->set(0, ValueBox{alice});
+            modified_state = modified_state.set("users", Value{new_vec});
         }
     }
 
@@ -606,8 +589,7 @@ void demo_shared_state() {
         std::cout << "Received update! New state:\n";
         print_value(subscriber.current(), "  ");
         std::cout << "Subscriber version: " << subscriber.version() << "\n";
-    }
-    else {
+    } else {
         std::cout << "No update available.\n";
     }
 
@@ -633,17 +615,28 @@ void demo_shared_state() {
 
 static std::string widget_type_name(WidgetType type) {
     switch (type) {
-    case WidgetType::LineEdit: return "QLineEdit";
-    case WidgetType::SpinBox: return "QSpinBox";
-    case WidgetType::DoubleSpinBox: return "QDoubleSpinBox";
-    case WidgetType::CheckBox: return "QCheckBox";
-    case WidgetType::ColorPicker: return "ColorPicker";
-    case WidgetType::Slider: return "QSlider";
-    case WidgetType::ComboBox: return "QComboBox";
-    case WidgetType::Vector3Edit: return "Vector3Edit";
-    case WidgetType::FileSelector: return "QFileDialog";
-    case WidgetType::ReadOnly: return "QLabel";
-    default: return "Unknown";
+    case WidgetType::LineEdit:
+        return "QLineEdit";
+    case WidgetType::SpinBox:
+        return "QSpinBox";
+    case WidgetType::DoubleSpinBox:
+        return "QDoubleSpinBox";
+    case WidgetType::CheckBox:
+        return "QCheckBox";
+    case WidgetType::ColorPicker:
+        return "ColorPicker";
+    case WidgetType::Slider:
+        return "QSlider";
+    case WidgetType::ComboBox:
+        return "QComboBox";
+    case WidgetType::Vector3Edit:
+        return "Vector3Edit";
+    case WidgetType::FileSelector:
+        return "QFileDialog";
+    case WidgetType::ReadOnly:
+        return "QLabel";
+    default:
+        return "Unknown";
     }
 }
 
@@ -665,17 +658,14 @@ void demo_editor_engine() {
     EditorController editor;
 
     // Set up effects to notify engine of changes
-    editor.set_effects({
-        // on_state_changed - send diff to engine
-        [&engine](const DiffResult& diff) {
-            std::cout << "\n[Editor -> Engine] State changed, sending diff...\n";
-            engine.apply_diff(diff);
-        },
-        // on_selection_changed
-        [](const std::string& object_id) {
-            std::cout << "[Editor] Selection changed to: " << object_id << "\n";
-        }
-        });
+    editor.set_effects(
+        {// on_state_changed - send diff to engine
+         [&engine](const DiffResult& diff) {
+             std::cout << "\n[Editor -> Engine] State changed, sending diff...\n";
+             engine.apply_diff(diff);
+         },
+         // on_selection_changed
+         [](const std::string& object_id) { std::cout << "[Editor] Selection changed to: " << object_id << "\n"; }});
 
     SceneState initial_state = engine.get_initial_state();
     editor.initialize(initial_state);
@@ -684,7 +674,7 @@ void demo_editor_engine() {
     // ===== Step 3: Select an Object for Editing =====
     std::cout << "\n=== Step 3: Select Object for Editing ===\n";
     // SelectObject is a SystemAction - won't be recorded to undo history
-    editor.dispatch(actions::SelectObject{ payloads::SelectObject{"light_sun"} });
+    editor.dispatch(actions::SelectObject{payloads::SelectObject{"light_sun"}});
 
     const SceneObject* selected = editor.get_selected_object();
     if (selected) {
@@ -700,13 +690,11 @@ void demo_editor_engine() {
         std::cout << "Generated " << bindings.size() << " property bindings:\n";
 
         for (const auto& binding : bindings) {
-            std::cout << "  - " << binding.meta.display_name
-                << " (" << binding.property_path << ")"
-                << " -> " << widget_type_name(binding.meta.widget_type);
+            std::cout << "  - " << binding.meta.display_name << " (" << binding.property_path << ")"
+                      << " -> " << widget_type_name(binding.meta.widget_type);
 
             if (binding.meta.range) {
-                std::cout << " [" << binding.meta.range->min_value
-                    << " - " << binding.meta.range->max_value << "]";
+                std::cout << " [" << binding.meta.range->min_value << " - " << binding.meta.range->max_value << "]";
             }
 
             // Show current value
@@ -718,7 +706,7 @@ void demo_editor_engine() {
     // ===== Step 5: Edit Property (simulating Qt UI interaction) =====
     std::cout << "\n=== Step 5: Edit Property (Qt UI Simulation) ===\n";
     std::cout << "Changing light intensity from 1.5 to 2.0...\n";
-    editor.set_property("intensity", Value{ 2.0 });
+    editor.set_property("intensity", Value{2.0});
 
     selected = editor.get_selected_object();
     if (selected) {
@@ -729,7 +717,7 @@ void demo_editor_engine() {
     // ===== Step 6: Edit Another Property =====
     std::cout << "\n=== Step 6: Edit Another Property ===\n";
     std::cout << "Changing light color to #FF0000...\n";
-    editor.set_property("color", Value{ std::string{"#FF0000"} });
+    editor.set_property("color", Value{std::string{"#FF0000"}});
 
     // ===== Step 7: Undo/Redo Demo =====
     std::cout << "\n=== Step 7: Undo/Redo Demo ===\n";
@@ -757,7 +745,7 @@ void demo_editor_engine() {
     // ===== Step 8: Switch to Different Object =====
     std::cout << "\n=== Step 8: Switch to Different Object ===\n";
     // SelectObject is a SystemAction - won't be recorded to undo history
-    editor.dispatch(actions::SelectObject{ payloads::SelectObject{"cube_1"} });
+    editor.dispatch(actions::SelectObject{payloads::SelectObject{"cube_1"}});
 
     selected = editor.get_selected_object();
     if (selected) {
@@ -767,8 +755,7 @@ void demo_editor_engine() {
         auto bindings = generate_property_bindings(editor, *selected);
         for (const auto& binding : bindings) {
             Value current = binding.getter();
-            std::cout << "  " << binding.meta.display_name << ": "
-                << value_to_string(current) << "\n";
+            std::cout << "  " << binding.meta.display_name << ": " << value_to_string(current) << "\n";
         }
     }
 
@@ -796,7 +783,7 @@ void demo_property_editing() {
     editor.initialize(engine.get_initial_state());
 
     // Select the camera object - SystemAction, won't be recorded to undo history
-    editor.dispatch(actions::SelectObject{ payloads::SelectObject{"camera_main"} });
+    editor.dispatch(actions::SelectObject{payloads::SelectObject{"camera_main"}});
 
     const SceneObject* camera = editor.get_selected_object();
     if (!camera) {
@@ -809,22 +796,18 @@ void demo_property_editing() {
 
     // Simulate UI editing - change position Y
     std::cout << "\nSimulating slider change: position.y -> 10.0\n";
-    editor.set_property("position.y", Value{ 10.0 });
+    editor.set_property("position.y", Value{10.0});
 
     std::cout << "New position.y: " << value_to_string(editor.get_property("position.y")) << "\n";
 
     // Batch update - UserAction, will be recorded to undo history
     std::cout << "\nSimulating batch update (drag 3D gizmo):\n";
-    editor.dispatch(actions::SetProperties{ payloads::SetProperties{std::map<std::string, Value>{
-        {"position.x", Value{5.0}},
-        {"position.y", Value{7.5}},
-        {"position.z", Value{-15.0}}
-    }} });
+    editor.dispatch(actions::SetProperties{payloads::SetProperties{std::map<std::string, Value>{
+        {"position.x", Value{5.0}}, {"position.y", Value{7.5}}, {"position.z", Value{-15.0}}}}});
 
-    std::cout << "New position: ("
-        << value_to_string(editor.get_property("position.x")) << ", "
-        << value_to_string(editor.get_property("position.y")) << ", "
-        << value_to_string(editor.get_property("position.z")) << ")\n";
+    std::cout << "New position: (" << value_to_string(editor.get_property("position.x")) << ", "
+              << value_to_string(editor.get_property("position.y")) << ", "
+              << value_to_string(editor.get_property("position.z")) << ")\n";
 
     std::cout << "\n=== Demo End ===\n\n";
 }
@@ -836,34 +819,29 @@ void demo_undo_redo() {
     engine.initialize_sample_scene();
 
     EditorController editor;
-    editor.set_effects({
-        [](const DiffResult& diff) {
-            std::cout << "  [Diff] " << diff.modified.size() << " modifications\n";
-        },
-        nullptr
-        });
+    editor.set_effects(
+        {[](const DiffResult& diff) { std::cout << "  [Diff] " << diff.modified.size() << " modifications\n"; },
+         nullptr});
 
     editor.initialize(engine.get_initial_state());
     // SelectObject is a SystemAction - won't be recorded to undo history
-    editor.dispatch(actions::SelectObject{ payloads::SelectObject{"light_sun"} });
+    editor.dispatch(actions::SelectObject{payloads::SelectObject{"light_sun"}});
 
-    std::cout << "Initial intensity: "
-        << value_to_string(editor.get_property("intensity")) << "\n";
+    std::cout << "Initial intensity: " << value_to_string(editor.get_property("intensity")) << "\n";
 
     // Make several changes
     std::cout << "\n--- Making changes ---\n";
 
     std::cout << "Set intensity = 2.0\n";
-    editor.set_property("intensity", Value{ 2.0 });
+    editor.set_property("intensity", Value{2.0});
 
     std::cout << "Set intensity = 3.0\n";
-    editor.set_property("intensity", Value{ 3.0 });
+    editor.set_property("intensity", Value{3.0});
 
     std::cout << "Set intensity = 4.0\n";
-    editor.set_property("intensity", Value{ 4.0 });
+    editor.set_property("intensity", Value{4.0});
 
-    std::cout << "\nCurrent intensity: "
-        << value_to_string(editor.get_property("intensity")) << "\n";
+    std::cout << "\nCurrent intensity: " << value_to_string(editor.get_property("intensity")) << "\n";
     std::cout << "Undo stack size: " << editor.get_model().undo_stack.size() << "\n";
     std::cout << "Redo stack size: " << editor.get_model().redo_stack.size() << "\n";
 
@@ -871,16 +849,14 @@ void demo_undo_redo() {
     std::cout << "\n--- Undoing all changes ---\n";
     while (editor.can_undo()) {
         editor.undo();
-        std::cout << "After undo: intensity = "
-            << value_to_string(editor.get_property("intensity")) << "\n";
+        std::cout << "After undo: intensity = " << value_to_string(editor.get_property("intensity")) << "\n";
     }
 
     // Redo all changes
     std::cout << "\n--- Redoing all changes ---\n";
     while (editor.can_redo()) {
         editor.redo();
-        std::cout << "After redo: intensity = "
-            << value_to_string(editor.get_property("intensity")) << "\n";
+        std::cout << "After redo: intensity = " << value_to_string(editor.get_property("intensity")) << "\n";
     }
 
     std::cout << "\n=== Demo End ===\n\n";
@@ -900,8 +876,8 @@ void demo_action_categories() {
 
     auto print_undo_status = [&editor]() {
         std::cout << "  Undo stack size: " << editor.get_model().undo_stack.size()
-            << ", Redo stack size: " << editor.get_model().redo_stack.size() << "\n";
-        };
+                  << ", Redo stack size: " << editor.get_model().redo_stack.size() << "\n";
+    };
 
     std::cout << "=== Initial State ===\n";
     print_undo_status();
@@ -910,12 +886,12 @@ void demo_action_categories() {
     std::cout << "\n=== System Actions (should NOT be recorded to undo) ===\n";
 
     std::cout << "\n1. SelectObject (SystemAction) - selecting 'light_sun':\n";
-    editor.dispatch(actions::SelectObject{ payloads::SelectObject{"light_sun"} });
+    editor.dispatch(actions::SelectObject{payloads::SelectObject{"light_sun"}});
     print_undo_status();
     std::cout << "   -> Undo stack unchanged (selection is not undoable)\n";
 
     std::cout << "\n2. SelectObject (SystemAction) - selecting 'cube_1':\n";
-    editor.dispatch(actions::SelectObject{ payloads::SelectObject{"cube_1"} });
+    editor.dispatch(actions::SelectObject{payloads::SelectObject{"cube_1"}});
     print_undo_status();
     std::cout << "   -> Undo stack still unchanged\n";
 
@@ -924,11 +900,9 @@ void demo_action_categories() {
     SceneObject test_obj;
     test_obj.id = "loaded_obj_1";
     test_obj.type = "LoadedMesh";
-    test_obj.data = MapBuilder()
-        .set("name", Value{ std::string{"Loaded Object"} })
-        .finish();
+    test_obj.data = MapBuilder().set("name", Value{std::string{"Loaded Object"}}).finish();
 
-    editor.dispatch(actions::LoadObjects{ payloads::LoadObjects{{test_obj}} });
+    editor.dispatch(actions::LoadObjects{payloads::LoadObjects{{test_obj}}});
     print_undo_status();
     std::cout << "   -> Undo stack still unchanged (loading is not undoable)\n";
     std::cout << "   -> Object count: " << editor.get_model().scene.objects.size() << "\n";
@@ -937,23 +911,21 @@ void demo_action_categories() {
     std::cout << "\n=== User Actions (SHOULD be recorded to undo) ===\n";
 
     // First, select an object to edit
-    editor.dispatch(actions::SelectObject{ payloads::SelectObject{"light_sun"} });
+    editor.dispatch(actions::SelectObject{payloads::SelectObject{"light_sun"}});
 
     std::cout << "\n4. SetProperty (UserAction) - changing intensity to 5.0:\n";
-    editor.set_property("intensity", Value{ 5.0 });
+    editor.set_property("intensity", Value{5.0});
     print_undo_status();
     std::cout << "   -> Undo stack increased by 1 (user edit is undoable)\n";
 
     std::cout << "\n5. SetProperty (UserAction) - changing intensity to 8.0:\n";
-    editor.set_property("intensity", Value{ 8.0 });
+    editor.set_property("intensity", Value{8.0});
     print_undo_status();
     std::cout << "   -> Undo stack increased by 1 again\n";
 
     std::cout << "\n6. SetProperties (UserAction) - batch update:\n";
-    editor.dispatch(actions::SetProperties{ payloads::SetProperties{std::map<std::string, Value>{
-        {"color", Value{std::string{"#00FF00"}}},
-        {"enabled", Value{false}}
-    }} });
+    editor.dispatch(actions::SetProperties{payloads::SetProperties{
+        std::map<std::string, Value>{{"color", Value{std::string{"#00FF00"}}}, {"enabled", Value{false}}}}});
     print_undo_status();
     std::cout << "   -> Undo stack increased by 1 (batch edit is one undoable unit)\n";
 
@@ -961,12 +933,12 @@ void demo_action_categories() {
     std::cout << "\n=== Mixed Operations - Interleaving User and System Actions ===\n";
 
     std::cout << "\n7. Switching selection (SystemAction):\n";
-    editor.dispatch(actions::SelectObject{ payloads::SelectObject{"cube_1"} });
+    editor.dispatch(actions::SelectObject{payloads::SelectObject{"cube_1"}});
     print_undo_status();
     std::cout << "   -> Undo stack unchanged\n";
 
     std::cout << "\n8. SetProperty on new object (UserAction):\n";
-    editor.set_property("visible", Value{ false });
+    editor.set_property("visible", Value{false});
     print_undo_status();
     std::cout << "   -> Undo stack increased by 1\n";
 
@@ -1026,55 +998,55 @@ void demo_action_categories() {
 
 namespace schema {
 
-    using namespace static_path;
+using namespace static_path;
 
-    // ============================================================
-    // Path definitions - These are compile-time constants
-    // ============================================================
+// ============================================================
+// Path definitions - These are compile-time constants
+// ============================================================
 
-    // Root-level paths (using SegmentPath for segment-based definition)
-    using TitlePath = SegmentPath<K<"title">>;
-    using UsersPath = SegmentPath<K<"users">>;
-    using WindowPath = SegmentPath<K<"window">>;
+// Root-level paths (using SegmentPath for segment-based definition)
+using TitlePath = SegmentPath<K<"title">>;
+using UsersPath = SegmentPath<K<"users">>;
+using WindowPath = SegmentPath<K<"window">>;
 
-    // Window sub-paths
-    using WindowWidthPath = SegmentPath<K<"window">, K<"width">>;
-    using WindowHeightPath = SegmentPath<K<"window">, K<"height">>;
+// Window sub-paths
+using WindowWidthPath = SegmentPath<K<"window">, K<"width">>;
+using WindowHeightPath = SegmentPath<K<"window">, K<"height">>;
 
-    // User paths (parameterized by index)
-    template<std::size_t Idx>
-    using UserPath = SegmentPath<K<"users">, I<Idx>>;
+// User paths (parameterized by index)
+template <std::size_t Idx>
+using UserPath = SegmentPath<K<"users">, I<Idx>>;
 
-    template<std::size_t Idx>
-    using UserNamePath = SegmentPath<K<"users">, I<Idx>, K<"name">>;
+template <std::size_t Idx>
+using UserNamePath = SegmentPath<K<"users">, I<Idx>, K<"name">>;
 
-    template<std::size_t Idx>
-    using UserAgePath = SegmentPath<K<"users">, I<Idx>, K<"age">>;
+template <std::size_t Idx>
+using UserAgePath = SegmentPath<K<"users">, I<Idx>, K<"age">>;
 
-    template<std::size_t Idx>
-    using UserEmailPath = SegmentPath<K<"users">, I<Idx>, K<"email">>;
+template <std::size_t Idx>
+using UserEmailPath = SegmentPath<K<"users">, I<Idx>, K<"email">>;
 
-    // ============================================================
-    // Type-safe accessors
-    // ============================================================
+// ============================================================
+// Type-safe accessors
+// ============================================================
 
-    struct AppConfigPaths {
-        // Singleton paths
-        static constexpr auto title() { return TitlePath{}; }
-        static constexpr auto users() { return UsersPath{}; }
-        static constexpr auto window() { return WindowPath{}; }
-        static constexpr auto window_width() { return WindowWidthPath{}; }
-        static constexpr auto window_height() { return WindowHeightPath{}; }
+struct AppConfigPaths {
+    // Singleton paths
+    static constexpr auto title() { return TitlePath{}; }
+    static constexpr auto users() { return UsersPath{}; }
+    static constexpr auto window() { return WindowPath{}; }
+    static constexpr auto window_width() { return WindowWidthPath{}; }
+    static constexpr auto window_height() { return WindowHeightPath{}; }
 
-        // Indexed user access
-        template<std::size_t I>
-        struct user {
-            static constexpr auto path() { return UserPath<I>{}; }
-            static constexpr auto name() { return UserNamePath<I>{}; }
-            static constexpr auto age() { return UserAgePath<I>{}; }
-            static constexpr auto email() { return UserEmailPath<I>{}; }
-        };
+    // Indexed user access
+    template <std::size_t I>
+    struct user {
+        static constexpr auto path() { return UserPath<I>{}; }
+        static constexpr auto name() { return UserNamePath<I>{}; }
+        static constexpr auto age() { return UserAgePath<I>{}; }
+        static constexpr auto email() { return UserEmailPath<I>{}; }
     };
+};
 
 } // namespace schema
 
@@ -1085,42 +1057,28 @@ namespace schema {
 static Value create_sample_state() {
     // Create users using Builder API for O(n) construction
     Value user0 = MapBuilder()
-        .set("name", Value{ "Alice" })
-        .set("age", Value{ 30 })
-        .set("email", Value{ "alice@example.com" })
-        .finish();
+                      .set("name", Value{"Alice"})
+                      .set("age", Value{30})
+                      .set("email", Value{"alice@example.com"})
+                      .finish();
 
-    Value user1 = MapBuilder()
-        .set("name", Value{ "Bob" })
-        .set("age", Value{ 25 })
-        .set("email", Value{ "bob@example.com" })
-        .finish();
+    Value user1 =
+        MapBuilder().set("name", Value{"Bob"}).set("age", Value{25}).set("email", Value{"bob@example.com"}).finish();
 
     Value user2 = MapBuilder()
-        .set("name", Value{ "Charlie" })
-        .set("age", Value{ 35 })
-        .set("email", Value{ "charlie@example.com" })
-        .finish();
+                      .set("name", Value{"Charlie"})
+                      .set("age", Value{35})
+                      .set("email", Value{"charlie@example.com"})
+                      .finish();
 
     // Create users array using Builder API
-    Value users = VectorBuilder()
-        .push_back(user0)
-        .push_back(user1)
-        .push_back(user2)
-        .finish();
+    Value users = VectorBuilder().push_back(user0).push_back(user1).push_back(user2).finish();
 
     // Create window config using Builder API
-    Value window = MapBuilder()
-        .set("width", Value{ 1920 })
-        .set("height", Value{ 1080 })
-        .finish();
+    Value window = MapBuilder().set("width", Value{1920}).set("height", Value{1080}).finish();
 
     // Create root state using Builder API
-    return MapBuilder()
-        .set("title", Value{ "My Application" })
-        .set("users", users)
-        .set("window", window)
-        .finish();
+    return MapBuilder().set("title", Value{"My Application"}).set("users", users).set("window", window).finish();
 }
 
 // ============================================================
@@ -1172,13 +1130,13 @@ void demo_static_path() {
     std::cout << "--- Demo 2: Compile-time Immutable Updates ---\n\n";
 
     // Update title
-    Value state2 = TitlePath::set(state, Value{ "Updated App Title" });
+    Value state2 = TitlePath::set(state, Value{"Updated App Title"});
     std::cout << "After TitlePath::set(state, \"Updated App Title\"):\n";
     std::cout << "  New title = " << value_to_string(TitlePath::get(state2)) << "\n";
     std::cout << "  Original title = " << value_to_string(TitlePath::get(state)) << "\n\n";
 
     // Update nested value
-    Value state3 = UserAgePath<0>::set(state, Value{ 31 });
+    Value state3 = UserAgePath<0>::set(state, Value{31});
     std::cout << "After UserAgePath<0>::set(state, 31):\n";
     std::cout << "  New age = " << value_to_string(UserAgePath<0>::get(state3)) << "\n";
     std::cout << "  Original age = " << value_to_string(UserAgePath<0>::get(state)) << "\n\n";
@@ -1205,7 +1163,7 @@ void demo_static_path() {
 
     // Use it like a regular lens
     auto name1 = user0_name_lens.get(state);
-    auto state4 = user0_name_lens.set(state, Value{ "Alicia" });
+    auto state4 = user0_name_lens.set(state, Value{"Alicia"});
     auto name2 = user0_name_lens.get(state4);
 
     std::cout << "user0_name_lens.get(state) = " << value_to_string(name1) << "\n";
@@ -1223,8 +1181,7 @@ void demo_static_path() {
 
     std::cout << "Convert to runtime path:\n";
     auto runtime_path = UserEmailPath<2>::to_runtime_path();
-    std::cout << "  UserEmailPath<2>::to_runtime_path() = "
-        << runtime_path.to_string_path() << "\n\n";
+    std::cout << "  UserEmailPath<2>::to_runtime_path() = " << runtime_path.to_string_path() << "\n\n";
 
     // --------------------------------------------------------
     // Demo 6: Path composition
@@ -1239,14 +1196,12 @@ void demo_static_path() {
     using FullPath = ConcatPathT<BasePath, FieldPath>;
 
     auto composed_result = FullPath::get(state);
-    std::cout << "ConcatPathT<users[0], name>::get(state) = "
-        << value_to_string(composed_result) << "\n";
+    std::cout << "ConcatPathT<users[0], name>::get(state) = " << value_to_string(composed_result) << "\n";
 
     // Extend path using ExtendPathT
     using ExtendedPath = ExtendPathT<BasePath, K<"age">>;
     auto extended_result = ExtendedPath::get(state);
-    std::cout << "ExtendPathT<users[0], age>::get(state) = "
-        << value_to_string(extended_result) << "\n\n";
+    std::cout << "ExtendPathT<users[0], age>::get(state) = " << value_to_string(extended_result) << "\n\n";
 
     // --------------------------------------------------------
     // Demo 7: Using macros for path definition
@@ -1256,7 +1211,7 @@ void demo_static_path() {
     using MacroPath = SEGMENT_PATH(STATIC_KEY("window"), STATIC_KEY("width"));
     auto macro_result = MacroPath::get(state);
     std::cout << "STATIC_PATH(STATIC_KEY(\"window\"), STATIC_KEY(\"width\"))::get(state) = "
-        << value_to_string(macro_result) << "\n\n";
+              << value_to_string(macro_result) << "\n\n";
 
 #if __cplusplus >= 202002L || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)
     // --------------------------------------------------------
@@ -1274,12 +1229,9 @@ void demo_static_path() {
     auto user0_name_jp = UserNamePathJP::get(state);
     auto width_jp = WindowWidthPathJP::get(state);
 
-    std::cout << "StaticPath<\"/title\">::get(state) = "
-        << value_to_string(title_jp) << "\n";
-    std::cout << "StaticPath<\"/users/0/name\">::get(state) = "
-        << value_to_string(user0_name_jp) << "\n";
-    std::cout << "StaticPath<\"/window/width\">::get(state) = "
-        << value_to_string(width_jp) << "\n\n";
+    std::cout << "StaticPath<\"/title\">::get(state) = " << value_to_string(title_jp) << "\n";
+    std::cout << "StaticPath<\"/users/0/name\">::get(state) = " << value_to_string(user0_name_jp) << "\n";
+    std::cout << "StaticPath<\"/window/width\">::get(state) = " << value_to_string(width_jp) << "\n\n";
 
     // Verify they work the same as manually defined paths
     std::cout << "Verification (should match Demo 1):\n";
@@ -1287,9 +1239,8 @@ void demo_static_path() {
     std::cout << "  UserNamePathJP::depth = " << UserNamePathJP::depth << "\n";
 
     // Set using JSON Pointer path
-    auto state5 = UserNamePathJP::set(state, Value{ "Alice (via JSON Pointer)" });
-    std::cout << "  After set via JSON Pointer: "
-        << value_to_string(UserNamePathJP::get(state5)) << "\n\n";
+    auto state5 = UserNamePathJP::set(state, Value{"Alice (via JSON Pointer)"});
+    std::cout << "  After set via JSON Pointer: " << value_to_string(UserNamePathJP::get(state5)) << "\n\n";
 #else
     std::cout << "--- Demo 8: JSON Pointer Syntax ---\n\n";
     std::cout << "(Requires C++20 - not available in current build)\n\n";

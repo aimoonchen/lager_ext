@@ -80,16 +80,10 @@ public:
     /// Construct from initializer list (for literal paths)
     /// @note The initializer_list's backing array has temporary lifetime,
     ///       but this is safe when used directly in function calls.
-    constexpr PathView(std::initializer_list<PathElement> init) noexcept
-        : data_(init.begin())
-        , size_(init.size())
-    {}
+    constexpr PathView(std::initializer_list<PathElement> init) noexcept : data_(init.begin()), size_(init.size()) {}
 
     /// Construct from pointer and size
-    constexpr PathView(const PathElement* data, std::size_t size) noexcept
-        : data_(data)
-        , size_(size)
-    {}
+    constexpr PathView(const PathElement* data, std::size_t size) noexcept : data_(data), size_(size) {}
 
     /// Construct from any contiguous container with data() and size()
     template <typename Container>
@@ -97,10 +91,7 @@ public:
             { c.data() } -> std::convertible_to<const PathElement*>;
             { c.size() } -> std::convertible_to<std::size_t>;
         }
-    constexpr PathView(const Container& container) noexcept
-        : data_(container.data())
-        , size_(container.size())
-    {}
+    constexpr PathView(const Container& container) noexcept : data_(container.data()), size_(container.size()) {}
 
     // Iterators
     [[nodiscard]] constexpr const_iterator begin() const noexcept { return data_; }
@@ -113,22 +104,23 @@ public:
     [[nodiscard]] constexpr bool empty() const noexcept { return size_ == 0; }
 
     // Element access
-    [[nodiscard]] constexpr const PathElement& operator[](std::size_t i) const noexcept {
-        return data_[i];
-    }
+    [[nodiscard]] constexpr const PathElement& operator[](std::size_t i) const noexcept { return data_[i]; }
 
     [[nodiscard]] constexpr const PathElement& front() const noexcept { return data_[0]; }
     [[nodiscard]] constexpr const PathElement& back() const noexcept { return data_[size_ - 1]; }
 
     // Subviews
     [[nodiscard]] constexpr PathView subpath(std::size_t start) const noexcept {
-        if (start >= size_) return {};
+        if (start >= size_)
+            return {};
         return {data_ + start, size_ - start};
     }
 
     [[nodiscard]] constexpr PathView subpath(std::size_t start, std::size_t count) const noexcept {
-        if (start >= size_) return {};
-        if (start + count > size_) count = size_ - start;
+        if (start >= size_)
+            return {};
+        if (start + count > size_)
+            count = size_ - start;
         return {data_ + start, count};
     }
 
@@ -155,7 +147,7 @@ private:
 // Path - Owning path for dynamic paths
 //
 // Use this when path keys come from runtime data (user input,
-// computed strings, etc.). 
+// computed strings, etc.).
 //
 // Features:
 // - Zero-copy parsing: when constructed from string literal or rvalue string,
@@ -207,19 +199,15 @@ public:
     /// @note String literals have static storage duration, so no copy needed
     /// @param path_str Path string literal (e.g., "/users/0/name")
     /// @example Path path{"/users/0/name"};  // Zero-copy!
-    template<std::size_t N>
-    explicit Path(const char (&path_str)[N])
-        : Path(from_literal_impl(std::string_view{path_str, N - 1}))
-    {}
+    template <std::size_t N>
+    explicit Path(const char (&path_str)[N]) : Path(from_literal_impl(std::string_view{path_str, N - 1})) {}
 
     /// Zero-copy construction from const char* pointer
     /// @note Assumes the string has static storage duration (caller's responsibility)
     /// @warning If the pointed string is temporary/stack-allocated, behavior is undefined!
     /// @param path_str Path string pointer (e.g., "/users/0/name")
     /// @example const char* s = "/users/0/name"; Path path{s};  // Zero-copy!
-    explicit Path(const char* path_str)
-        : Path(from_literal_impl(std::string_view{path_str}))
-    {}
+    explicit Path(const char* path_str) : Path(from_literal_impl(std::string_view{path_str})) {}
 
     /// Zero-copy construction from rvalue string
     /// @note Takes ownership of the string, string_views point into it
@@ -238,7 +226,7 @@ public:
     /// Add a string key from a string literal (zero-copy!)
     /// @note The literal has static storage duration, so we can reference it directly
     /// @example path.push_back("users");  // Zero allocation!
-    template<std::size_t N>
+    template <std::size_t N>
     Path& push_back(const char (&literal)[N]) {
         return push_back_literal(std::string_view{literal, N - 1});
     }
@@ -261,10 +249,9 @@ private:
     Path& push_back_literal(std::string_view literal_sv);
 
 public:
-
     /// Add a PathElement (dispatches to appropriate overload)
     /// @note Uses requires clause to avoid ambiguity with string-like types
-    template<typename T>
+    template <typename T>
         requires std::same_as<std::decay_t<T>, PathElement>
     Path& push_back(T&& elem) {
         if (auto* sv = std::get_if<std::string_view>(&elem)) {
@@ -284,7 +271,7 @@ public:
     void reserve(std::size_t n);
 
     /// Assign from an iterator range
-    template<typename InputIt>
+    template <typename InputIt>
     void assign(InputIt first, InputIt last) {
         clear();
         for (; first != last; ++first) {
@@ -297,9 +284,7 @@ public:
     // ============================================================
 
     /// Implicit conversion to PathView
-    operator PathView() const noexcept {
-        return PathView{elements_.data(), elements_.size()};
-    }
+    operator PathView() const noexcept { return PathView{elements_.data(), elements_.size()}; }
 
     /// Explicit view accessor
     [[nodiscard]] PathView view() const noexcept { return *this; }
@@ -325,9 +310,7 @@ public:
     // Element access
     // ============================================================
 
-    [[nodiscard]] const PathElement& operator[](std::size_t i) const noexcept {
-        return elements_[i];
-    }
+    [[nodiscard]] const PathElement& operator[](std::size_t i) const noexcept { return elements_[i]; }
 
     [[nodiscard]] const PathElement& front() const noexcept { return elements_.front(); }
     [[nodiscard]] const PathElement& back() const noexcept { return elements_.back(); }
@@ -378,9 +361,9 @@ private:
     /// For each string key in storage_: (element_index, offset, length)
     /// Literals are NOT tracked here since they don't need rebuilding.
     struct KeySpan {
-        std::size_t element_idx;  // Index in elements_ vector
-        std::size_t offset;       // Offset in storage_
-        std::size_t length;       // Length of the key
+        std::size_t element_idx; // Index in elements_ vector
+        std::size_t offset;      // Offset in storage_
+        std::size_t length;      // Length of the key
     };
     std::vector<KeySpan> key_spans_;
 
@@ -395,9 +378,11 @@ private:
 // ============================================================
 
 [[nodiscard]] inline bool operator==(PathView a, PathView b) noexcept {
-    if (a.size() != b.size()) return false;
+    if (a.size() != b.size())
+        return false;
     for (std::size_t i = 0; i < a.size(); ++i) {
-        if (a[i] != b[i]) return false;
+        if (a[i] != b[i])
+            return false;
     }
     return true;
 }

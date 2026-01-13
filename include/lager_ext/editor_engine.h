@@ -17,19 +17,19 @@
 #pragma once
 
 #include <lager_ext/api.h>
-#include <lager_ext/scene_types.h>  // Shared types: SceneObject, SceneState, UIMeta, etc.
-#include <lager_ext/value.h>
-#include <lager_ext/shared_state.h>
 #include <lager_ext/lager_lens.h>
-
-#include <lager/store.hpp>
-#include <lager/event_loop/manual.hpp>
-#include <lager/cursor.hpp>
-#include <lager/lenses.hpp>
-#include <lager/lenses/at.hpp>
+#include <lager_ext/scene_types.h> // Shared types: SceneObject, SceneState, UIMeta, etc.
+#include <lager_ext/shared_state.h>
+#include <lager_ext/value.h>
 
 #include <immer/flex_vector.hpp>
 #include <immer/map.hpp>
+
+#include <lager/cursor.hpp>
+#include <lager/event_loop/manual.hpp>
+#include <lager/lenses.hpp>
+#include <lager/lenses/at.hpp>
+#include <lager/store.hpp>
 
 #include <functional>
 #include <map>
@@ -51,13 +51,13 @@ namespace lager_ext {
 /// - User: User-initiated actions that should be recorded in undo history
 /// - System: System/internal actions that should NOT be recorded in undo history
 enum class ActionCategory {
-    User,    // User operations - recorded to undo history
-    System   // System operations - NOT recorded (e.g., loading, selection)
+    User,  // User operations - recorded to undo history
+    System // System operations - NOT recorded (e.g., loading, selection)
 };
 
 /// Tagged action wrapper - carries category metadata
 /// This allows the reducer to determine whether to record the action in undo history
-template<ActionCategory Category, typename Payload>
+template <ActionCategory Category, typename Payload>
 struct TaggedAction {
     Payload payload;
     static constexpr ActionCategory category = Category;
@@ -70,10 +70,10 @@ struct TaggedAction {
 };
 
 /// Convenience aliases for action tagging
-template<typename T>
+template <typename T>
 using UserAction = TaggedAction<ActionCategory::User, T>;
 
-template<typename T>
+template <typename T>
 using SystemAction = TaggedAction<ActionCategory::System, T>;
 
 // ============================================================
@@ -89,13 +89,13 @@ struct SelectObject {
 
 // Modify a property of the selected object (user action - needs undo)
 struct SetProperty {
-    std::string property_path;  // e.g., "position.x" or just "name"
+    std::string property_path; // e.g., "position.x" or just "name"
     Value new_value;
 };
 
 // Batch property update (user action - needs undo)
 struct SetProperties {
-    std::map<std::string, Value> updates;  // path -> value
+    std::map<std::string, Value> updates; // path -> value
 };
 
 // Sync from engine - replaces entire state (system action - clears history)
@@ -136,7 +136,7 @@ namespace actions {
 // ===== Undo/Redo control actions =====
 struct Undo {};
 struct Redo {};
-struct ClearHistory {};  // Clear undo/redo history (e.g., after scene load)
+struct ClearHistory {}; // Clear undo/redo history (e.g., after scene load)
 
 // ===== User Actions (recorded to undo history) =====
 using SetProperty = UserAction<payloads::SetProperty>;
@@ -155,20 +155,11 @@ using SetLoadingState = SystemAction<payloads::SetLoadingState>;
 // Action variant for lager - includes all tagged actions
 using EditorAction = std::variant<
     // Control actions
-    actions::Undo,
-    actions::Redo,
-    actions::ClearHistory,
+    actions::Undo, actions::Redo, actions::ClearHistory,
     // User actions (recorded to undo)
-    actions::SetProperty,
-    actions::SetProperties,
-    actions::AddObject,
-    actions::RemoveObject,
+    actions::SetProperty, actions::SetProperties, actions::AddObject, actions::RemoveObject,
     // System actions (NOT recorded to undo)
-    actions::SelectObject,
-    actions::SyncFromEngine,
-    actions::LoadObjects,
-    actions::SetLoadingState
->;
+    actions::SelectObject, actions::SyncFromEngine, actions::LoadObjects, actions::SetLoadingState>;
 
 // ============================================================
 // Helper: Check if an action should be recorded to undo history
@@ -176,26 +167,27 @@ using EditorAction = std::variant<
 
 /// Determines whether an action should be recorded in the undo history
 /// Returns true for UserAction, false for SystemAction and control actions
-template<typename ActionVariant>
+template <typename ActionVariant>
 bool should_record_undo(const ActionVariant& action) {
-    return std::visit([](const auto& act) -> bool {
-        using T = std::decay_t<decltype(act)>;
+    return std::visit(
+        [](const auto& act) -> bool {
+            using T = std::decay_t<decltype(act)>;
 
-        // Undo/Redo/ClearHistory themselves are never recorded
-        if constexpr (std::is_same_v<T, actions::Undo> ||
-                      std::is_same_v<T, actions::Redo> ||
-                      std::is_same_v<T, actions::ClearHistory>) {
-            return false;
-        }
-        // Check TaggedAction category
-        else if constexpr (requires { T::category; }) {
-            return T::category == ActionCategory::User;
-        }
-        // Untagged actions default to recording (safety)
-        else {
-            return true;
-        }
-    }, action);
+            // Undo/Redo/ClearHistory themselves are never recorded
+            if constexpr (std::is_same_v<T, actions::Undo> || std::is_same_v<T, actions::Redo> ||
+                          std::is_same_v<T, actions::ClearHistory>) {
+                return false;
+            }
+            // Check TaggedAction category
+            else if constexpr (requires { T::category; }) {
+                return T::category == ActionCategory::User;
+            }
+            // Untagged actions default to recording (safety)
+            else {
+                return true;
+            }
+        },
+        action);
 }
 
 // ============================================================
@@ -319,8 +311,7 @@ struct PropertyBinding {
 };
 
 // Generate property bindings for the currently selected object
-LAGER_EXT_API std::vector<PropertyBinding> generate_property_bindings(
-    EditorController& controller,
-    const SceneObject& object);
+LAGER_EXT_API std::vector<PropertyBinding> generate_property_bindings(EditorController& controller,
+                                                                      const SceneObject& object);
 
 } // namespace lager_ext

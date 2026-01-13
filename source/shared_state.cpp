@@ -3,20 +3,19 @@
 //
 // This implementation uses Boost.Interprocess for cross-platform shared memory
 
-#include <lager_ext/shared_state.h>
 #include <lager_ext/path_utils.h>
+#include <lager_ext/shared_state.h>
 
-#include <boost/interprocess/shared_memory_object.hpp>
-#include <boost/interprocess/mapped_region.hpp>
 #include <boost/interprocess/creation_tags.hpp>
+#include <boost/interprocess/mapped_region.hpp>
+#include <boost/interprocess/shared_memory_object.hpp>
 #include <boost/interprocess/sync/named_semaphore.hpp>
-
 #include <chrono>
-#include <thread>
-#include <mutex>
 #include <condition_variable>
 #include <cstring>
 #include <iostream>
+#include <mutex>
+#include <thread>
 
 namespace bip = boost::interprocess;
 
@@ -56,30 +55,20 @@ static_assert(sizeof(SharedMemoryHeader) == HEADER_SIZE, "Header size mismatch")
 class SharedMemoryRegion {
 public:
     SharedMemoryRegion(const std::string& name, std::size_t size, bool create)
-        : size_(size)
-        , is_creator_(create)
-        , name_(name)
-    {
+        : size_(size), is_creator_(create), name_(name) {
         try {
             if (create) {
                 // Remove any existing shared memory with the same name
                 bip::shared_memory_object::remove(name.c_str());
 
                 // Create new shared memory object
-                shm_ = std::make_unique<bip::shared_memory_object>(
-                    bip::create_only,
-                    name.c_str(),
-                    bip::read_write
-                );
+                shm_ = std::make_unique<bip::shared_memory_object>(bip::create_only, name.c_str(), bip::read_write);
 
                 // Set size
                 shm_->truncate(static_cast<bip::offset_t>(size));
 
                 // Map the entire region with read/write access
-                region_ = std::make_unique<bip::mapped_region>(
-                    *shm_,
-                    bip::read_write
-                );
+                region_ = std::make_unique<bip::mapped_region>(*shm_, bip::read_write);
 
                 // Initialize header
                 auto* header = reinterpret_cast<SharedMemoryHeader*>(region_->get_address());
@@ -90,21 +79,14 @@ public:
                 header->data_size = 0;
             } else {
                 // Open existing shared memory object (read-only for subscriber)
-                shm_ = std::make_unique<bip::shared_memory_object>(
-                    bip::open_only,
-                    name.c_str(),
-                    bip::read_only
-                );
+                shm_ = std::make_unique<bip::shared_memory_object>(bip::open_only, name.c_str(), bip::read_only);
 
                 // Map the region with read-only access
-                region_ = std::make_unique<bip::mapped_region>(
-                    *shm_,
-                    bip::read_only
-                );
+                region_ = std::make_unique<bip::mapped_region>(*shm_, bip::read_only);
             }
         } catch (const bip::interprocess_exception& e) {
-            std::cerr << "[SharedMemory] Failed to " << (create ? "create" : "open")
-                      << " shared memory '" << name << "': " << e.what() << "\n";
+            std::cerr << "[SharedMemory] Failed to " << (create ? "create" : "open") << " shared memory '" << name
+                      << "': " << e.what() << "\n";
             shm_.reset();
             region_.reset();
         }
@@ -127,12 +109,8 @@ public:
 
     // Movable
     SharedMemoryRegion(SharedMemoryRegion&& other) noexcept
-        : shm_(std::move(other.shm_))
-        , region_(std::move(other.region_))
-        , size_(other.size_)
-        , is_creator_(other.is_creator_)
-        , name_(std::move(other.name_))
-    {
+        : shm_(std::move(other.shm_)), region_(std::move(other.region_)), size_(other.size_),
+          is_creator_(other.is_creator_), name_(std::move(other.name_)) {
         other.size_ = 0;
         other.is_creator_ = false;
     }
@@ -208,17 +186,12 @@ struct StatePublisher::Impl {
     std::string sem_name;
 
     Impl(const SharedMemoryConfig& cfg)
-        : shm(cfg.name, cfg.size, true)
-        , config(cfg)
-        , sem_name(semaphore_name_for(cfg.name))
-    {
+        : shm(cfg.name, cfg.size, true), config(cfg), sem_name(semaphore_name_for(cfg.name)) {
         // Remove and create semaphore for notification
         try {
             bip::named_semaphore::remove(sem_name.c_str());
-            notify_sem = std::make_unique<bip::named_semaphore>(
-                bip::create_only,
-                sem_name.c_str(),
-                0  // Initial count = 0 (no updates pending)
+            notify_sem = std::make_unique<bip::named_semaphore>(bip::create_only, sem_name.c_str(),
+                                                                0 // Initial count = 0 (no updates pending)
             );
         } catch (const bip::interprocess_exception& e) {
             std::cerr << "[StatePublisher] Failed to create semaphore: " << e.what() << "\n";
@@ -234,14 +207,15 @@ struct StatePublisher::Impl {
     }
 
     void write_update(StateUpdate::Type type, const ByteBuffer& data) {
-        if (!shm.is_valid()) return;
+        if (!shm.is_valid())
+            return;
 
         auto* header = reinterpret_cast<SharedMemoryHeader*>(shm.data());
 
         // Check size
         if (HEADER_SIZE + data.size() > shm.size()) {
-            std::cerr << "[StatePublisher] Data too large for shared memory: "
-                      << data.size() << " > " << (shm.size() - HEADER_SIZE) << "\n";
+            std::cerr << "[StatePublisher] Data too large for shared memory: " << data.size() << " > "
+                      << (shm.size() - HEADER_SIZE) << "\n";
             return;
         }
 
@@ -279,9 +253,7 @@ struct StatePublisher::Impl {
     }
 };
 
-StatePublisher::StatePublisher(const SharedMemoryConfig& config)
-    : impl_(std::make_unique<Impl>(config))
-{}
+StatePublisher::StatePublisher(const SharedMemoryConfig& config) : impl_(std::make_unique<Impl>(config)) {}
 
 StatePublisher::~StatePublisher() {
     close();
@@ -301,14 +273,15 @@ void StatePublisher::publish(const Value& state) {
 }
 
 bool StatePublisher::publish_diff(const Value& old_state, const Value& new_state) {
-    if (!impl_->shm.is_valid()) return false;
+    if (!impl_->shm.is_valid())
+        return false;
 
     // Collect diff
     DiffResult diff = collect_diff(old_state, new_state);
 
     // If no changes, don't publish
     if (diff.added.empty() && diff.removed.empty() && diff.modified.empty()) {
-        return true;  // No update needed
+        return true; // No update needed
     }
 
     // Encode diff
@@ -330,7 +303,8 @@ bool StatePublisher::publish_diff(const Value& old_state, const Value& new_state
 }
 
 void StatePublisher::publish_full(const Value& state) {
-    if (!impl_->shm.is_valid()) return;
+    if (!impl_->shm.is_valid())
+        return;
 
     ByteBuffer data = serialize(state);
     impl_->write_update(StateUpdate::Type::Full, data);
@@ -338,7 +312,8 @@ void StatePublisher::publish_full(const Value& state) {
 }
 
 uint64_t StatePublisher::version() const noexcept {
-    if (!impl_->shm.is_valid()) return 0;
+    if (!impl_->shm.is_valid())
+        return 0;
     auto* header = reinterpret_cast<const SharedMemoryHeader*>(impl_->shm.data());
     return header->version;
 }
@@ -366,7 +341,7 @@ struct StateSubscriber::Impl {
     std::mutex callback_mutex;
 
     std::atomic<bool> polling{false};
-    std::atomic<bool> use_semaphore_wait{true};  // Prefer semaphore-based waiting
+    std::atomic<bool> use_semaphore_wait{true}; // Prefer semaphore-based waiting
     std::thread poll_thread;
 
     // Named semaphore for efficient event-driven updates
@@ -374,20 +349,15 @@ struct StateSubscriber::Impl {
     std::string sem_name;
 
     Impl(const SharedMemoryConfig& cfg)
-        : shm(cfg.name, cfg.size, false)  // Open existing, don't create
-        , config(cfg)
-        , sem_name(semaphore_name_for(cfg.name))
-    {
+        : shm(cfg.name, cfg.size, false) // Open existing, don't create
+          ,
+          config(cfg), sem_name(semaphore_name_for(cfg.name)) {
         // Try to open existing semaphore (created by publisher)
         try {
-            notify_sem = std::make_unique<bip::named_semaphore>(
-                bip::open_only,
-                sem_name.c_str()
-            );
+            notify_sem = std::make_unique<bip::named_semaphore>(bip::open_only, sem_name.c_str());
         } catch (const bip::interprocess_exception& e) {
             // Semaphore not available - fallback to polling
-            std::cerr << "[StateSubscriber] Semaphore not available, using polling: "
-                      << e.what() << "\n";
+            std::cerr << "[StateSubscriber] Semaphore not available, using polling: " << e.what() << "\n";
             use_semaphore_wait = false;
         }
     }
@@ -403,7 +373,7 @@ struct StateSubscriber::Impl {
         // If using semaphore wait, post to unblock waiting thread
         if (notify_sem && use_semaphore_wait) {
             try {
-                notify_sem->post();  // Wake up waiting thread
+                notify_sem->post(); // Wake up waiting thread
             } catch (...) {
                 // Ignore errors during shutdown
             }
@@ -414,7 +384,8 @@ struct StateSubscriber::Impl {
     }
 
     bool check_and_read() {
-        if (!shm.is_valid()) return false;
+        if (!shm.is_valid())
+            return false;
 
         auto* header = reinterpret_cast<const SharedMemoryHeader*>(shm.data());
 
@@ -425,7 +396,7 @@ struct StateSubscriber::Impl {
 
         // Check version
         if (header->version == current_version) {
-            return false;  // No update
+            return false; // No update
         }
 
         // Check for missed updates
@@ -481,9 +452,7 @@ struct StateSubscriber::Impl {
     }
 };
 
-StateSubscriber::StateSubscriber(const SharedMemoryConfig& config)
-    : impl_(std::make_unique<Impl>(config))
-{
+StateSubscriber::StateSubscriber(const SharedMemoryConfig& config) : impl_(std::make_unique<Impl>(config)) {
     // Try to read initial state
     impl_->check_and_read();
 }
@@ -513,7 +482,7 @@ Value StateSubscriber::try_get_update() {
     if (poll()) {
         return impl_->current_state;
     }
-    return Value{};  // null Value indicates no update available
+    return Value{}; // null Value indicates no update available
 }
 
 Value StateSubscriber::wait_for_update(std::chrono::milliseconds timeout) {
@@ -556,7 +525,7 @@ Value StateSubscriber::wait_for_update(std::chrono::milliseconds timeout) {
         if (timeout.count() > 0) {
             auto elapsed = std::chrono::steady_clock::now() - start;
             if (elapsed >= timeout) {
-                return impl_->current_state;  // Return current state on timeout
+                return impl_->current_state; // Return current state on timeout
             }
         }
 
@@ -570,7 +539,8 @@ void StateSubscriber::on_update(UpdateCallback callback) {
 }
 
 void StateSubscriber::start_polling() {
-    if (impl_->polling) return;
+    if (impl_->polling)
+        return;
 
     impl_->polling = true;
     impl_->poll_thread = std::thread([this]() {
@@ -619,9 +589,8 @@ bool StateSubscriber::is_valid() const noexcept {
 // Helper: Compare two Values and collect differences
 // OPTIMIZATION: Uses path_stack for zero-allocation path building during recursion.
 // Only creates Path objects when adding to result (unavoidable copy at that point).
-static void collect_diff_recursive(const Value& old_val, const Value& new_val,
-                                    std::vector<PathElement>& path_stack,
-                                    std::size_t path_depth, DiffResult& result) {
+static void collect_diff_recursive(const Value& old_val, const Value& new_val, std::vector<PathElement>& path_stack,
+                                   std::size_t path_depth, DiffResult& result) {
     // Same value (early exit for identical data)
     // Note: For Value types, we compare the variant data directly
     // Structural sharing is detected at the box level in container comparisons below
@@ -653,8 +622,7 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val,
             if (auto* old_box = old_map->find(key)) {
                 // Key exists in both - check if same box (structural sharing)
                 if (old_box->get() != new_box.get()) [[unlikely]] {
-                    collect_diff_recursive(old_box->get(), new_box.get(), 
-                                           path_stack, path_depth + 1, result);
+                    collect_diff_recursive(old_box->get(), new_box.get(), path_stack, path_depth + 1, result);
                 }
             } else {
                 // Key only in new - added
@@ -695,8 +663,7 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val,
             // Check if same box (structural sharing)
             if (old_box.get() != new_box.get()) [[unlikely]] {
                 path_stack[path_depth] = i;
-                collect_diff_recursive(old_box.get(), new_box.get(), 
-                                       path_stack, path_depth + 1, result);
+                collect_diff_recursive(old_box.get(), new_box.get(), path_stack, path_depth + 1, result);
             }
         }
 
@@ -735,8 +702,7 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val,
 
             if (old_box.get() != new_box.get()) [[unlikely]] {
                 path_stack[path_depth] = i;
-                collect_diff_recursive(old_box.get(), new_box.get(), 
-                                       path_stack, path_depth + 1, result);
+                collect_diff_recursive(old_box.get(), new_box.get(), path_stack, path_depth + 1, result);
             }
         }
 
@@ -767,7 +733,7 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val,
 DiffResult collect_diff(const Value& old_val, const Value& new_val) {
     DiffResult result;
     std::vector<PathElement> path_stack;
-    path_stack.reserve(16);  // Pre-allocate for typical path depths
+    path_stack.reserve(16); // Pre-allocate for typical path depths
     collect_diff_recursive(old_val, new_val, path_stack, 0, result);
     return result;
 }
@@ -794,7 +760,7 @@ static void write_path(ByteBuffer& buf, const Path& path) {
 
     for (const auto& elem : path) {
         if (auto* s = std::get_if<std::string_view>(&elem)) {
-            buf.push_back(0);  // String type
+            buf.push_back(0); // String type
             uint32_t len = static_cast<uint32_t>(s->size());
             buf.push_back(len & 0xFF);
             buf.push_back((len >> 8) & 0xFF);
@@ -802,7 +768,7 @@ static void write_path(ByteBuffer& buf, const Path& path) {
             buf.push_back((len >> 24) & 0xFF);
             buf.insert(buf.end(), s->begin(), s->end());
         } else if (auto* idx = std::get_if<std::size_t>(&elem)) {
-            buf.push_back(1);  // Index type
+            buf.push_back(1); // Index type
             uint64_t val = *idx;
             for (int i = 0; i < 8; ++i) {
                 buf.push_back((val >> (i * 8)) & 0xFF);
@@ -812,7 +778,8 @@ static void write_path(ByteBuffer& buf, const Path& path) {
 }
 
 static Path read_path(const uint8_t*& ptr, const uint8_t* end) {
-    if (ptr + 4 > end) throw std::runtime_error("Invalid path data");
+    if (ptr + 4 > end)
+        throw std::runtime_error("Invalid path data");
 
     uint32_t count = ptr[0] | (ptr[1] << 8) | (ptr[2] << 16) | (ptr[3] << 24);
     ptr += 4;
@@ -821,18 +788,22 @@ static Path read_path(const uint8_t*& ptr, const uint8_t* end) {
     path.reserve(count);
 
     for (uint32_t i = 0; i < count; ++i) {
-        if (ptr >= end) throw std::runtime_error("Invalid path element");
+        if (ptr >= end)
+            throw std::runtime_error("Invalid path element");
 
         uint8_t type = *ptr++;
-        if (type == 0) {  // String
-            if (ptr + 4 > end) throw std::runtime_error("Invalid string length");
+        if (type == 0) { // String
+            if (ptr + 4 > end)
+                throw std::runtime_error("Invalid string length");
             uint32_t len = ptr[0] | (ptr[1] << 8) | (ptr[2] << 16) | (ptr[3] << 24);
             ptr += 4;
-            if (ptr + len > end) throw std::runtime_error("Invalid string data");
+            if (ptr + len > end)
+                throw std::runtime_error("Invalid string data");
             path.push_back(std::string(reinterpret_cast<const char*>(ptr), len));
             ptr += len;
-        } else {  // Index
-            if (ptr + 8 > end) throw std::runtime_error("Invalid index data");
+        } else { // Index
+            if (ptr + 8 > end)
+                throw std::runtime_error("Invalid index data");
             uint64_t val = 0;
             for (int j = 0; j < 8; ++j) {
                 val |= static_cast<uint64_t>(ptr[j]) << (j * 8);
@@ -853,7 +824,8 @@ static void write_uint32(ByteBuffer& buf, uint32_t val) {
 }
 
 static uint32_t read_uint32(const uint8_t*& ptr, const uint8_t* end) {
-    if (ptr + 4 > end) throw std::runtime_error("Invalid uint32 data");
+    if (ptr + 4 > end)
+        throw std::runtime_error("Invalid uint32 data");
     uint32_t val = ptr[0] | (ptr[1] << 8) | (ptr[2] << 16) | (ptr[3] << 24);
     ptr += 4;
     return val;
@@ -861,7 +833,7 @@ static uint32_t read_uint32(const uint8_t*& ptr, const uint8_t* end) {
 
 ByteBuffer encode_diff(const DiffResult& diff) {
     ByteBuffer buf;
-    buf.reserve(1024);  // Pre-allocate
+    buf.reserve(1024); // Pre-allocate
 
     // Write added entries
     write_uint32(buf, static_cast<uint32_t>(diff.added.size()));
@@ -902,7 +874,8 @@ DiffResult decode_diff(const ByteBuffer& data) {
     for (uint32_t i = 0; i < added_count; ++i) {
         Path path = read_path(ptr, end);
         uint32_t value_size = read_uint32(ptr, end);
-        if (ptr + value_size > end) throw std::runtime_error("Invalid value data");
+        if (ptr + value_size > end)
+            throw std::runtime_error("Invalid value data");
         Value value = deserialize(ptr, value_size);
         ptr += value_size;
         diff.added.emplace_back(std::move(path), std::move(value));
@@ -913,7 +886,7 @@ DiffResult decode_diff(const ByteBuffer& data) {
     diff.removed.reserve(removed_count);
     for (uint32_t i = 0; i < removed_count; ++i) {
         Path path = read_path(ptr, end);
-        diff.removed.emplace_back(std::move(path), Value{});  // Empty value for removed
+        diff.removed.emplace_back(std::move(path), Value{}); // Empty value for removed
     }
 
     // Read modified entries
@@ -922,7 +895,8 @@ DiffResult decode_diff(const ByteBuffer& data) {
     for (uint32_t i = 0; i < modified_count; ++i) {
         Path path = read_path(ptr, end);
         uint32_t value_size = read_uint32(ptr, end);
-        if (ptr + value_size > end) throw std::runtime_error("Invalid value data");
+        if (ptr + value_size > end)
+            throw std::runtime_error("Invalid value data");
         Value new_value = deserialize(ptr, value_size);
         ptr += value_size;
         diff.modified.push_back({std::move(path), Value{}, std::move(new_value)});

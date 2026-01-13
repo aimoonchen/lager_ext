@@ -11,7 +11,7 @@
 // Example usage:
 //   // Zoom a lager cursor to a Value path
 //   auto user_cursor = zoom_value(cursor, "users" / 0 / "name");
-//   
+//
 //   // Use middleware with lager store
 //   auto store = lager::make_store<Action>(init_state, loop, value_middleware());
 //
@@ -23,16 +23,16 @@
 #pragma once
 
 #include <lager_ext/api.h>
-#include <lager_ext/value.h>
 #include <lager_ext/lager_lens.h>
 #include <lager_ext/path.h>
+#include <lager_ext/value.h>
 
 #include <lager/cursor.hpp>
+#include <lager/lens.hpp>
+#include <lager/lenses.hpp>
 #include <lager/reader.hpp>
 #include <lager/state.hpp>
 #include <lager/watch.hpp>
-#include <lager/lens.hpp>
-#include <lager/lenses.hpp>
 
 #include <functional>
 #include <memory>
@@ -60,26 +60,23 @@ namespace lager_ext {
 /// Example:
 ///   lager::reader<Value> state_reader = /* ... */;
 ///   auto user_reader = zoom_value(state_reader, root / "users" / 0);
-template<typename ReaderT>
+template <typename ReaderT>
     requires std::is_same_v<typename ReaderT::value_type, Value>
-[[nodiscard]] auto zoom_value(ReaderT reader, const PathLens& lens)
-{
+[[nodiscard]] auto zoom_value(ReaderT reader, const PathLens& lens) {
     return reader.zoom(lens.to_lens());
 }
 
 /// @brief Zoom a lager::reader<Value> using a Path
-template<typename ReaderT>
+template <typename ReaderT>
     requires std::is_same_v<typename ReaderT::value_type, Value>
-[[nodiscard]] auto zoom_value(ReaderT reader, const Path& path)
-{
+[[nodiscard]] auto zoom_value(ReaderT reader, const Path& path) {
     return reader.zoom(lager_path_lens(path));
 }
 
 /// @brief Zoom using variadic path elements (e.g., zoom_value(r, "users", 0, "name"))
-template<typename ReaderT, PathElementType... Elements>
+template <typename ReaderT, PathElementType... Elements>
     requires std::is_same_v<typename ReaderT::value_type, Value>
-[[nodiscard]] auto zoom_value(ReaderT reader, Elements&&... elements)
-{
+[[nodiscard]] auto zoom_value(ReaderT reader, Elements&&... elements) {
     return zoom_value(std::move(reader), make_path(std::forward<Elements>(elements)...));
 }
 
@@ -94,37 +91,29 @@ template<typename ReaderT, PathElementType... Elements>
 
 /// @brief Configuration for value_middleware
 struct ValueMiddlewareConfig {
-    bool enable_diff_logging = false;     ///< Log all state diffs to console
-    bool enable_deep_diff = true;         ///< Use recursive diff (vs shallow)
+    bool enable_diff_logging = false; ///< Log all state diffs to console
+    bool enable_deep_diff = true;     ///< Use recursive diff (vs shallow)
     std::function<void(const Value& old_state, const Value& new_state)> on_change;
 };
 
 namespace detail {
 
 /// Internal: Creates the actual middleware enhancer
-template<typename Config>
-auto make_value_middleware_impl(Config config)
-{
+template <typename Config>
+auto make_value_middleware_impl(Config config) {
     return [config = std::move(config)](auto next) {
-        return [config, next](auto action,
-                              auto&& model,
-                              auto&& reducer,
-                              auto&& loop,
-                              auto&& deps,
-                              auto&& tags) {
+        return [config, next](auto action, auto&& model, auto&& reducer, auto&& loop, auto&& deps, auto&& tags) {
             // Wrap the reducer to intercept state changes
-            auto wrapped_reducer = [original_reducer = std::forward<decltype(reducer)>(reducer),
-                                    config](auto&& state, auto&& act) {
+            auto wrapped_reducer = [original_reducer = std::forward<decltype(reducer)>(reducer), config](auto&& state,
+                                                                                                         auto&& act) {
                 auto old_state = state;
-                auto result = original_reducer(
-                    std::forward<decltype(state)>(state),
-                    std::forward<decltype(act)>(act)
-                );
-                
+                auto result = original_reducer(std::forward<decltype(state)>(state), std::forward<decltype(act)>(act));
+
                 // If the state is a Value and we have a callback, notify
                 if constexpr (std::is_same_v<std::decay_t<decltype(state)>, Value>) {
                     if (config.on_change) {
-                        // Extract new state from result (handles both Model and pair<Model, Effect>)
+                        // Extract new state from result (handles both Model and pair<Model,
+                        // Effect>)
                         if constexpr (requires { result.first; }) {
                             config.on_change(old_state, result.first);
                         } else {
@@ -132,15 +121,12 @@ auto make_value_middleware_impl(Config config)
                         }
                     }
                 }
-                
+
                 return result;
             };
-            
-            return next(action,
-                        std::forward<decltype(model)>(model),
-                        std::move(wrapped_reducer),
-                        std::forward<decltype(loop)>(loop),
-                        std::forward<decltype(deps)>(deps),
+
+            return next(action, std::forward<decltype(model)>(model), std::move(wrapped_reducer),
+                        std::forward<decltype(loop)>(loop), std::forward<decltype(deps)>(deps),
                         std::forward<decltype(tags)>(tags));
         };
     };
@@ -162,8 +148,7 @@ auto make_value_middleware_impl(Config config)
 ///           }
 ///       })
 ///   );
-[[nodiscard]] inline auto value_middleware(ValueMiddlewareConfig config = {})
-{
+[[nodiscard]] inline auto value_middleware(ValueMiddlewareConfig config = {}) {
     return detail::make_value_middleware_impl(std::move(config));
 }
 
@@ -177,7 +162,7 @@ auto make_value_middleware_impl(Config config)
 // ============================================================
 
 /// @brief Watch a specific path in a lager reader/cursor for changes
-/// 
+///
 /// Unlike lager::watch which watches the entire value, this watches
 /// only the value at a specific path and only triggers when that
 /// value changes.
@@ -186,32 +171,28 @@ auto make_value_middleware_impl(Config config)
 /// @param path The path to watch
 /// @param callback Called with the new value when the path's value changes
 /// @return A watch connection that can be used to unwatch
-template<typename Watchable, typename Callback>
+template <typename Watchable, typename Callback>
     requires std::is_same_v<typename Watchable::value_type, Value>
-auto watch_path(Watchable& watchable, const Path& path, Callback&& callback)
-{
+auto watch_path(Watchable& watchable, const Path& path, Callback&& callback) {
     // Create a zoomed reader/cursor that only tracks the specific path
     auto zoomed = zoom_value(watchable, path);
-    
+
     // Watch the zoomed value
     return lager::watch(zoomed, std::forward<Callback>(callback));
 }
 
 /// @brief Watch a path using PathLens
-template<typename Watchable, typename Callback>
+template <typename Watchable, typename Callback>
     requires std::is_same_v<typename Watchable::value_type, Value>
-auto watch_path(Watchable& watchable, const PathLens& lens, Callback&& callback)
-{
+auto watch_path(Watchable& watchable, const PathLens& lens, Callback&& callback) {
     return watch_path(watchable, lens.path(), std::forward<Callback>(callback));
 }
 
 /// @brief Watch a path using variadic elements
-template<typename Watchable, typename Callback, PathElementType... Elements>
+template <typename Watchable, typename Callback, PathElementType... Elements>
     requires std::is_same_v<typename Watchable::value_type, Value>
-auto watch_path(Watchable& watchable, Callback&& callback, Elements&&... elements)
-{
-    return watch_path(watchable, 
-                      make_path(std::forward<Elements>(elements)...).path(),
+auto watch_path(Watchable& watchable, Callback&& callback, Elements&&... elements) {
+    return watch_path(watchable, make_path(std::forward<Elements>(elements)...).path(),
                       std::forward<Callback>(callback));
 }
 

@@ -22,7 +22,7 @@
 /// // Use abstract interface
 /// IUndoController& undo = get_undo_controller();
 /// undo.set_property("obj1", "name", Value{"NewName"});
-/// 
+///
 /// if (undo.can_undo()) {
 ///     undo.undo();
 /// }
@@ -42,7 +42,7 @@
 namespace lager_ext {
 
 /// @brief Abstract interface for undo/redo controllers
-/// 
+///
 /// This interface provides a unified API for both snapshot-based and delta-based
 /// undo implementations. Clients can program against this interface without
 /// knowing the underlying implementation.
@@ -154,10 +154,10 @@ public:
 };
 
 /// @brief RAII helper for transactions
-/// 
+///
 /// Automatically calls begin_transaction on construction and
 /// end_transaction on destruction (or commit).
-/// 
+///
 /// @example
 /// @code
 /// {
@@ -171,8 +171,7 @@ class LAGER_EXT_API UndoTransaction {
 public:
     /// Begin a transaction
     explicit UndoTransaction(IUndoController& controller, const std::string& description)
-        : controller_(controller), committed_(false)
-    {
+        : controller_(controller), committed_(false) {
         controller_.begin_transaction(description);
     }
 
@@ -213,12 +212,12 @@ private:
 
 /// @brief Undo implementation type
 enum class UndoType {
-    Snapshot,  ///< Snapshot-based (stores complete states)
-    Delta      ///< Delta-based (stores reversible operations)
+    Snapshot, ///< Snapshot-based (stores complete states)
+    Delta     ///< Delta-based (stores reversible operations)
 };
 
 /// @brief Factory function to create an undo controller
-/// 
+///
 /// @param type The implementation type to use
 /// @return Unique pointer to the undo controller
 [[nodiscard]] LAGER_EXT_API std::unique_ptr<IUndoController> create_undo_controller(UndoType type = UndoType::Delta);

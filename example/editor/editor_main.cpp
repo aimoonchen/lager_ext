@@ -12,55 +12,55 @@
 
 #include <lager/store.hpp>
 
+#include <iostream>
 #include <QApplication>
 #include <QMainWindow>
 #include <QMessageBox>
-#include <iostream>
 
 #if defined(EDITOR_USE_QML) && EDITOR_USE_QML && defined(EDITOR_HAS_QML)
-    #define USE_QML_UI 1
+#define USE_QML_UI 1
 #else
-    #define USE_QML_UI 0
+#define USE_QML_UI 0
 #endif
 
 #if USE_QML_UI
-    #include <lager/event_loop/qml.hpp>
-    #include <QQmlApplicationEngine>
-    #include <QQmlContext>
-    #include <QQuickStyle>
+#include <lager/event_loop/qml.hpp>
+
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QQuickStyle>
 #else
-    #include <lager/event_loop/qt.hpp>
+#include <lager/event_loop/qt.hpp>
 #endif
 
 #include <lager/extra/qt.hpp>
 
 // Qt Widgets includes
-#include <QDockWidget>
-#include <QTreeWidget>
-#include <QTreeWidgetItem>
-#include <QScrollArea>
-#include <QFormLayout>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QGroupBox>
-#include <QLabel>
-#include <QLineEdit>
-#include <QSpinBox>
-#include <QDoubleSpinBox>
+#include <map>
+#include <memory>
+#include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
-#include <QSlider>
-#include <QPushButton>
-#include <QToolBar>
-#include <QAction>
-#include <QStatusBar>
-#include <QSplitter>
+#include <QDockWidget>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QHBoxLayout>
 #include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QSlider>
+#include <QSpinBox>
+#include <QSplitter>
+#include <QStatusBar>
 #include <QStyle>
 #include <QTimer>
-
-#include <memory>
-#include <map>
+#include <QToolBar>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QVBoxLayout>
 
 using namespace lager_ext;
 
@@ -69,72 +69,73 @@ using namespace lager_ext;
 // ============================================================
 
 QVariant valueToQVariant(const Value& val) {
-    return std::visit([](const auto& v) -> QVariant {
-        using T = std::decay_t<decltype(v)>;
-        if constexpr (std::is_same_v<T, std::monostate>) {
-            return QVariant();
-        } else if constexpr (std::is_same_v<T, bool>) {
-            return QVariant(v);
-        } else if constexpr (std::is_same_v<T, int>) {
-            return QVariant(v);
-        } else if constexpr (std::is_same_v<T, int64_t>) {
-            return QVariant(static_cast<qlonglong>(v));
-        } else if constexpr (std::is_same_v<T, float>) {
-            return QVariant(static_cast<double>(v));
-        } else if constexpr (std::is_same_v<T, double>) {
-            return QVariant(v);
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            return QVariant(QString::fromStdString(v));
-        } else if constexpr (std::is_same_v<T, ValueVector>) {
-            QVariantList list;
-            for (const auto& item : v) {
-                list.append(valueToQVariant(*item));
+    return std::visit(
+        [](const auto& v) -> QVariant {
+            using T = std::decay_t<decltype(v)>;
+            if constexpr (std::is_same_v<T, std::monostate>) {
+                return QVariant();
+            } else if constexpr (std::is_same_v<T, bool>) {
+                return QVariant(v);
+            } else if constexpr (std::is_same_v<T, int>) {
+                return QVariant(v);
+            } else if constexpr (std::is_same_v<T, int64_t>) {
+                return QVariant(static_cast<qlonglong>(v));
+            } else if constexpr (std::is_same_v<T, float>) {
+                return QVariant(static_cast<double>(v));
+            } else if constexpr (std::is_same_v<T, double>) {
+                return QVariant(v);
+            } else if constexpr (std::is_same_v<T, std::string>) {
+                return QVariant(QString::fromStdString(v));
+            } else if constexpr (std::is_same_v<T, ValueVector>) {
+                QVariantList list;
+                for (const auto& item : v) {
+                    list.append(valueToQVariant(*item));
+                }
+                return list;
+            } else if constexpr (std::is_same_v<T, ValueMap>) {
+                QVariantMap map;
+                for (const auto& [key, val] : v) {
+                    map[QString::fromStdString(key)] = valueToQVariant(*val);
+                }
+                return map;
+            } else {
+                return QVariant();
             }
-            return list;
-        } else if constexpr (std::is_same_v<T, ValueMap>) {
-            QVariantMap map;
-            for (const auto& [key, val] : v) {
-                map[QString::fromStdString(key)] = valueToQVariant(*val);
-            }
-            return map;
-        } else {
-            return QVariant();
-        }
-    }, val.data);
+        },
+        val.data);
 }
 
 Value qvariantToValue(const QVariant& var) {
     switch (var.typeId()) {
-        case QMetaType::UnknownType:
-            return Value{};
-        case QMetaType::Bool:
-            return Value{var.toBool()};
-        case QMetaType::Int:
-        case QMetaType::LongLong:
-            return Value{static_cast<int64_t>(var.toLongLong())};
-        case QMetaType::Double:
-        case QMetaType::Float:
-            return Value{var.toDouble()};
-        case QMetaType::QString:
-            return Value{var.toString().toStdString()};
-        case QMetaType::QVariantList: {
-            ValueVector vec;
-            for (const auto& item : var.toList()) {
-                vec = vec.push_back(ValueBox(qvariantToValue(item)));
-            }
-            return Value{vec};
+    case QMetaType::UnknownType:
+        return Value{};
+    case QMetaType::Bool:
+        return Value{var.toBool()};
+    case QMetaType::Int:
+    case QMetaType::LongLong:
+        return Value{static_cast<int64_t>(var.toLongLong())};
+    case QMetaType::Double:
+    case QMetaType::Float:
+        return Value{var.toDouble()};
+    case QMetaType::QString:
+        return Value{var.toString().toStdString()};
+    case QMetaType::QVariantList: {
+        ValueVector vec;
+        for (const auto& item : var.toList()) {
+            vec = vec.push_back(ValueBox(qvariantToValue(item)));
         }
-        case QMetaType::QVariantMap: {
-            ValueMap map;
-            const auto qmap = var.toMap();
-            for (auto it = qmap.begin(); it != qmap.end(); ++it) {
-                map = map.set(it.key().toStdString(),
-                              ValueBox(qvariantToValue(it.value())));
-            }
-            return Value{map};
+        return Value{vec};
+    }
+    case QMetaType::QVariantMap: {
+        ValueMap map;
+        const auto qmap = var.toMap();
+        for (auto it = qmap.begin(); it != qmap.end(); ++it) {
+            map = map.set(it.key().toStdString(), ValueBox(qvariantToValue(it.value())));
         }
-        default:
-            return Value{var.toString().toStdString()};
+        return Value{map};
+    }
+    default:
+        return Value{var.toString().toStdString()};
     }
 }
 
@@ -142,15 +143,11 @@ Value qvariantToValue(const QVariant& var) {
 // PropertyWidget - Creates appropriate widget for property type
 // ============================================================
 
-class PropertyWidget : public QWidget
-{
+class PropertyWidget : public QWidget {
     Q_OBJECT
 
 public:
-    PropertyWidget(const PropertyMeta& meta, QWidget* parent = nullptr)
-        : QWidget(parent)
-        , meta_(meta)
-    {
+    PropertyWidget(const PropertyMeta& meta, QWidget* parent = nullptr) : QWidget(parent), meta_(meta) {
         auto* layout = new QHBoxLayout(this);
         layout->setContentsMargins(0, 0, 0, 0);
 
@@ -163,9 +160,7 @@ public:
         blockSignals(false);
     }
 
-    Value getValue() const {
-        return getWidgetValue();
-    }
+    Value getValue() const { return getWidgetValue(); }
 
 signals:
     void valueChanged(const Value& newValue);
@@ -173,141 +168,127 @@ signals:
 private:
     void createWidget(QHBoxLayout* layout) {
         switch (meta_.widget_type) {
-            case WidgetType::LineEdit: {
-                auto* edit = new QLineEdit(this);
-                edit->setReadOnly(meta_.read_only);
-                connect(edit, &QLineEdit::editingFinished, this, [this, edit]() {
-                    emit valueChanged(Value{edit->text().toStdString()});
-                });
-                widget_ = edit;
-                break;
+        case WidgetType::LineEdit: {
+            auto* edit = new QLineEdit(this);
+            edit->setReadOnly(meta_.read_only);
+            connect(edit, &QLineEdit::editingFinished, this,
+                    [this, edit]() { emit valueChanged(Value{edit->text().toStdString()}); });
+            widget_ = edit;
+            break;
+        }
+        case WidgetType::SpinBox: {
+            auto* spin = new QSpinBox(this);
+            spin->setReadOnly(meta_.read_only);
+            if (meta_.range) {
+                spin->setRange(static_cast<int>(meta_.range->min_value), static_cast<int>(meta_.range->max_value));
+                spin->setSingleStep(static_cast<int>(meta_.range->step));
             }
-            case WidgetType::SpinBox: {
-                auto* spin = new QSpinBox(this);
-                spin->setReadOnly(meta_.read_only);
-                if (meta_.range) {
-                    spin->setRange(static_cast<int>(meta_.range->min_value),
-                                   static_cast<int>(meta_.range->max_value));
-                    spin->setSingleStep(static_cast<int>(meta_.range->step));
+            connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+                    [this](int val) { emit valueChanged(Value{static_cast<int64_t>(val)}); });
+            widget_ = spin;
+            break;
+        }
+        case WidgetType::DoubleSpinBox: {
+            auto* spin = new QDoubleSpinBox(this);
+            spin->setReadOnly(meta_.read_only);
+            spin->setDecimals(3);
+            if (meta_.range) {
+                spin->setRange(meta_.range->min_value, meta_.range->max_value);
+                spin->setSingleStep(meta_.range->step);
+            }
+            connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+                    [this](double val) { emit valueChanged(Value{val}); });
+            widget_ = spin;
+            break;
+        }
+        case WidgetType::CheckBox: {
+            auto* check = new QCheckBox(this);
+            check->setEnabled(!meta_.read_only);
+            connect(check, &QCheckBox::toggled, this, [this](bool checked) { emit valueChanged(Value{checked}); });
+            widget_ = check;
+            break;
+        }
+        case WidgetType::Slider: {
+            auto* container = new QWidget(this);
+            auto* hbox = new QHBoxLayout(container);
+            hbox->setContentsMargins(0, 0, 0, 0);
+
+            auto* slider = new QSlider(Qt::Horizontal, this);
+            auto* label = new QLabel(this);
+            label->setMinimumWidth(50);
+
+            if (meta_.range) {
+                slider->setRange(static_cast<int>(meta_.range->min_value), static_cast<int>(meta_.range->max_value));
+            }
+            slider->setEnabled(!meta_.read_only);
+
+            connect(slider, &QSlider::valueChanged, this, [this, label](int val) {
+                label->setText(QString::number(val));
+                emit valueChanged(Value{static_cast<int64_t>(val)});
+            });
+
+            hbox->addWidget(slider, 1);
+            hbox->addWidget(label);
+            widget_ = container;
+            slider_ = slider;
+            sliderLabel_ = label;
+            break;
+        }
+        case WidgetType::ComboBox: {
+            auto* combo = new QComboBox(this);
+            combo->setEnabled(!meta_.read_only);
+            if (meta_.combo_options) {
+                for (const auto& opt : meta_.combo_options->options) {
+                    combo->addItem(QString::fromStdString(opt));
                 }
-                connect(spin, QOverload<int>::of(&QSpinBox::valueChanged),
-                        this, [this](int val) {
-                    emit valueChanged(Value{static_cast<int64_t>(val)});
-                });
-                widget_ = spin;
-                break;
             }
-            case WidgetType::DoubleSpinBox: {
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+                    [this, combo](int) { emit valueChanged(Value{combo->currentText().toStdString()}); });
+            widget_ = combo;
+            break;
+        }
+        case WidgetType::Vector3Edit: {
+            auto* container = new QWidget(this);
+            auto* hbox = new QHBoxLayout(container);
+            hbox->setContentsMargins(0, 0, 0, 0);
+            hbox->setSpacing(4);
+
+            auto createSpinBox = [this, hbox](const QString& label) {
+                hbox->addWidget(new QLabel(label, this));
                 auto* spin = new QDoubleSpinBox(this);
-                spin->setReadOnly(meta_.read_only);
-                spin->setDecimals(3);
-                if (meta_.range) {
-                    spin->setRange(meta_.range->min_value, meta_.range->max_value);
-                    spin->setSingleStep(meta_.range->step);
-                }
-                connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-                        this, [this](double val) {
-                    emit valueChanged(Value{val});
-                });
-                widget_ = spin;
-                break;
-            }
-            case WidgetType::CheckBox: {
-                auto* check = new QCheckBox(this);
-                check->setEnabled(!meta_.read_only);
-                connect(check, &QCheckBox::toggled, this, [this](bool checked) {
-                    emit valueChanged(Value{checked});
-                });
-                widget_ = check;
-                break;
-            }
-            case WidgetType::Slider: {
-                auto* container = new QWidget(this);
-                auto* hbox = new QHBoxLayout(container);
-                hbox->setContentsMargins(0, 0, 0, 0);
+                spin->setDecimals(2);
+                spin->setRange(-10000, 10000);
+                spin->setEnabled(!meta_.read_only);
+                hbox->addWidget(spin, 1);
+                return spin;
+            };
 
-                auto* slider = new QSlider(Qt::Horizontal, this);
-                auto* label = new QLabel(this);
-                label->setMinimumWidth(50);
+            xSpin_ = createSpinBox("X:");
+            ySpin_ = createSpinBox("Y:");
+            zSpin_ = createSpinBox("Z:");
 
-                if (meta_.range) {
-                    slider->setRange(static_cast<int>(meta_.range->min_value),
-                                     static_cast<int>(meta_.range->max_value));
-                }
-                slider->setEnabled(!meta_.read_only);
+            auto emitVector = [this]() {
+                ValueMap map;
+                map = map.set("x", ValueBox(Value{xSpin_->value()}));
+                map = map.set("y", ValueBox(Value{ySpin_->value()}));
+                map = map.set("z", ValueBox(Value{zSpin_->value()}));
+                emit valueChanged(Value{map});
+            };
 
-                connect(slider, &QSlider::valueChanged, this, [this, label](int val) {
-                    label->setText(QString::number(val));
-                    emit valueChanged(Value{static_cast<int64_t>(val)});
-                });
+            connect(xSpin_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, emitVector);
+            connect(ySpin_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, emitVector);
+            connect(zSpin_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, emitVector);
 
-                hbox->addWidget(slider, 1);
-                hbox->addWidget(label);
-                widget_ = container;
-                slider_ = slider;
-                sliderLabel_ = label;
-                break;
-            }
-            case WidgetType::ComboBox: {
-                auto* combo = new QComboBox(this);
-                combo->setEnabled(!meta_.read_only);
-                if (meta_.combo_options) {
-                    for (const auto& opt : meta_.combo_options->options) {
-                        combo->addItem(QString::fromStdString(opt));
-                    }
-                }
-                connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                        this, [this, combo](int) {
-                    emit valueChanged(Value{combo->currentText().toStdString()});
-                });
-                widget_ = combo;
-                break;
-            }
-            case WidgetType::Vector3Edit: {
-                auto* container = new QWidget(this);
-                auto* hbox = new QHBoxLayout(container);
-                hbox->setContentsMargins(0, 0, 0, 0);
-                hbox->setSpacing(4);
-
-                auto createSpinBox = [this, hbox](const QString& label) {
-                    hbox->addWidget(new QLabel(label, this));
-                    auto* spin = new QDoubleSpinBox(this);
-                    spin->setDecimals(2);
-                    spin->setRange(-10000, 10000);
-                    spin->setEnabled(!meta_.read_only);
-                    hbox->addWidget(spin, 1);
-                    return spin;
-                };
-
-                xSpin_ = createSpinBox("X:");
-                ySpin_ = createSpinBox("Y:");
-                zSpin_ = createSpinBox("Z:");
-
-                auto emitVector = [this]() {
-                    ValueMap map;
-                    map = map.set("x", ValueBox(Value{xSpin_->value()}));
-                    map = map.set("y", ValueBox(Value{ySpin_->value()}));
-                    map = map.set("z", ValueBox(Value{zSpin_->value()}));
-                    emit valueChanged(Value{map});
-                };
-
-                connect(xSpin_, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-                        this, emitVector);
-                connect(ySpin_, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-                        this, emitVector);
-                connect(zSpin_, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-                        this, emitVector);
-
-                widget_ = container;
-                break;
-            }
-            case WidgetType::ReadOnly:
-            default: {
-                auto* label = new QLabel(this);
-                label->setStyleSheet("color: gray;");
-                widget_ = label;
-                break;
-            }
+            widget_ = container;
+            break;
+        }
+        case WidgetType::ReadOnly:
+        default: {
+            auto* label = new QLabel(this);
+            label->setStyleSheet("color: gray;");
+            widget_ = label;
+            break;
+        }
         }
 
         layout->addWidget(widget_);
@@ -315,135 +296,139 @@ private:
 
     void updateWidgetValue(const Value& val) {
         switch (meta_.widget_type) {
-            case WidgetType::LineEdit: {
-                if (auto* edit = qobject_cast<QLineEdit*>(widget_)) {
-                    if (auto* str = val.get_if<std::string>()) {
-                        edit->setText(QString::fromStdString(*str));
+        case WidgetType::LineEdit: {
+            if (auto* edit = qobject_cast<QLineEdit*>(widget_)) {
+                if (auto* str = val.get_if<std::string>()) {
+                    edit->setText(QString::fromStdString(*str));
+                }
+            }
+            break;
+        }
+        case WidgetType::SpinBox: {
+            if (auto* spin = qobject_cast<QSpinBox*>(widget_)) {
+                if (auto* num = val.get_if<int64_t>()) {
+                    spin->setValue(static_cast<int>(*num));
+                } else if (auto* d = val.get_if<double>()) {
+                    spin->setValue(static_cast<int>(*d));
+                }
+            }
+            break;
+        }
+        case WidgetType::DoubleSpinBox: {
+            if (auto* spin = qobject_cast<QDoubleSpinBox*>(widget_)) {
+                if (auto* num = val.get_if<double>()) {
+                    spin->setValue(*num);
+                } else if (auto* i = val.get_if<int64_t>()) {
+                    spin->setValue(static_cast<double>(*i));
+                }
+            }
+            break;
+        }
+        case WidgetType::CheckBox: {
+            if (auto* check = qobject_cast<QCheckBox*>(widget_)) {
+                if (auto* b = val.get_if<bool>()) {
+                    check->setChecked(*b);
+                }
+            }
+            break;
+        }
+        case WidgetType::Slider: {
+            if (slider_) {
+                if (auto* num = val.get_if<int64_t>()) {
+                    slider_->setValue(static_cast<int>(*num));
+                    if (sliderLabel_)
+                        sliderLabel_->setText(QString::number(*num));
+                }
+            }
+            break;
+        }
+        case WidgetType::ComboBox: {
+            if (auto* combo = qobject_cast<QComboBox*>(widget_)) {
+                if (auto* str = val.get_if<std::string>()) {
+                    combo->setCurrentText(QString::fromStdString(*str));
+                }
+            }
+            break;
+        }
+        case WidgetType::Vector3Edit: {
+            if (xSpin_ && ySpin_ && zSpin_) {
+                if (auto* map = val.get_if<ValueMap>()) {
+                    if (auto it = map->find("x"); it) {
+                        if (auto* d = (*it)->get_if<double>())
+                            xSpin_->setValue(*d);
+                    }
+                    if (auto it = map->find("y"); it) {
+                        if (auto* d = (*it)->get_if<double>())
+                            ySpin_->setValue(*d);
+                    }
+                    if (auto it = map->find("z"); it) {
+                        if (auto* d = (*it)->get_if<double>())
+                            zSpin_->setValue(*d);
                     }
                 }
-                break;
             }
-            case WidgetType::SpinBox: {
-                if (auto* spin = qobject_cast<QSpinBox*>(widget_)) {
-                    if (auto* num = val.get_if<int64_t>()) {
-                        spin->setValue(static_cast<int>(*num));
-                    } else if (auto* d = val.get_if<double>()) {
-                        spin->setValue(static_cast<int>(*d));
-                    }
-                }
-                break;
+            break;
+        }
+        case WidgetType::ReadOnly:
+        default: {
+            if (auto* label = qobject_cast<QLabel*>(widget_)) {
+                label->setText(QString::fromStdString(value_to_string(val)));
             }
-            case WidgetType::DoubleSpinBox: {
-                if (auto* spin = qobject_cast<QDoubleSpinBox*>(widget_)) {
-                    if (auto* num = val.get_if<double>()) {
-                        spin->setValue(*num);
-                    } else if (auto* i = val.get_if<int64_t>()) {
-                        spin->setValue(static_cast<double>(*i));
-                    }
-                }
-                break;
-            }
-            case WidgetType::CheckBox: {
-                if (auto* check = qobject_cast<QCheckBox*>(widget_)) {
-                    if (auto* b = val.get_if<bool>()) {
-                        check->setChecked(*b);
-                    }
-                }
-                break;
-            }
-            case WidgetType::Slider: {
-                if (slider_) {
-                    if (auto* num = val.get_if<int64_t>()) {
-                        slider_->setValue(static_cast<int>(*num));
-                        if (sliderLabel_) sliderLabel_->setText(QString::number(*num));
-                    }
-                }
-                break;
-            }
-            case WidgetType::ComboBox: {
-                if (auto* combo = qobject_cast<QComboBox*>(widget_)) {
-                    if (auto* str = val.get_if<std::string>()) {
-                        combo->setCurrentText(QString::fromStdString(*str));
-                    }
-                }
-                break;
-            }
-            case WidgetType::Vector3Edit: {
-                if (xSpin_ && ySpin_ && zSpin_) {
-                    if (auto* map = val.get_if<ValueMap>()) {
-                        if (auto it = map->find("x"); it) {
-                            if (auto* d = (*it)->get_if<double>()) xSpin_->setValue(*d);
-                        }
-                        if (auto it = map->find("y"); it) {
-                            if (auto* d = (*it)->get_if<double>()) ySpin_->setValue(*d);
-                        }
-                        if (auto it = map->find("z"); it) {
-                            if (auto* d = (*it)->get_if<double>()) zSpin_->setValue(*d);
-                        }
-                    }
-                }
-                break;
-            }
-            case WidgetType::ReadOnly:
-            default: {
-                if (auto* label = qobject_cast<QLabel*>(widget_)) {
-                    label->setText(QString::fromStdString(value_to_string(val)));
-                }
-                break;
-            }
+            break;
+        }
         }
     }
 
     Value getWidgetValue() const {
         switch (meta_.widget_type) {
-            case WidgetType::LineEdit: {
-                if (auto* edit = qobject_cast<QLineEdit*>(widget_)) {
-                    return Value{edit->text().toStdString()};
-                }
-                break;
+        case WidgetType::LineEdit: {
+            if (auto* edit = qobject_cast<QLineEdit*>(widget_)) {
+                return Value{edit->text().toStdString()};
             }
-            case WidgetType::SpinBox: {
-                if (auto* spin = qobject_cast<QSpinBox*>(widget_)) {
-                    return Value{static_cast<int64_t>(spin->value())};
-                }
-                break;
+            break;
+        }
+        case WidgetType::SpinBox: {
+            if (auto* spin = qobject_cast<QSpinBox*>(widget_)) {
+                return Value{static_cast<int64_t>(spin->value())};
             }
-            case WidgetType::DoubleSpinBox: {
-                if (auto* spin = qobject_cast<QDoubleSpinBox*>(widget_)) {
-                    return Value{spin->value()};
-                }
-                break;
+            break;
+        }
+        case WidgetType::DoubleSpinBox: {
+            if (auto* spin = qobject_cast<QDoubleSpinBox*>(widget_)) {
+                return Value{spin->value()};
             }
-            case WidgetType::CheckBox: {
-                if (auto* check = qobject_cast<QCheckBox*>(widget_)) {
-                    return Value{check->isChecked()};
-                }
-                break;
+            break;
+        }
+        case WidgetType::CheckBox: {
+            if (auto* check = qobject_cast<QCheckBox*>(widget_)) {
+                return Value{check->isChecked()};
             }
-            case WidgetType::Slider: {
-                if (slider_) {
-                    return Value{static_cast<int64_t>(slider_->value())};
-                }
-                break;
+            break;
+        }
+        case WidgetType::Slider: {
+            if (slider_) {
+                return Value{static_cast<int64_t>(slider_->value())};
             }
-            case WidgetType::ComboBox: {
-                if (auto* combo = qobject_cast<QComboBox*>(widget_)) {
-                    return Value{combo->currentText().toStdString()};
-                }
-                break;
+            break;
+        }
+        case WidgetType::ComboBox: {
+            if (auto* combo = qobject_cast<QComboBox*>(widget_)) {
+                return Value{combo->currentText().toStdString()};
             }
-            case WidgetType::Vector3Edit: {
-                if (xSpin_ && ySpin_ && zSpin_) {
-                    ValueMap map;
-                    map = map.set("x", ValueBox(Value{xSpin_->value()}));
-                    map = map.set("y", ValueBox(Value{ySpin_->value()}));
-                    map = map.set("z", ValueBox(Value{zSpin_->value()}));
-                    return Value{map};
-                }
-                break;
+            break;
+        }
+        case WidgetType::Vector3Edit: {
+            if (xSpin_ && ySpin_ && zSpin_) {
+                ValueMap map;
+                map = map.set("x", ValueBox(Value{xSpin_->value()}));
+                map = map.set("y", ValueBox(Value{ySpin_->value()}));
+                map = map.set("z", ValueBox(Value{zSpin_->value()}));
+                return Value{map};
             }
-            default:
-                break;
+            break;
+        }
+        default:
+            break;
         }
         return Value{};
     }
@@ -461,14 +446,11 @@ private:
 // PropertyPanel - Dynamic property editor panel
 // ============================================================
 
-class PropertyPanel : public QScrollArea
-{
+class PropertyPanel : public QScrollArea {
     Q_OBJECT
 
 public:
-    explicit PropertyPanel(QWidget* parent = nullptr)
-        : QScrollArea(parent)
-    {
+    explicit PropertyPanel(QWidget* parent = nullptr) : QScrollArea(parent) {
         setWidgetResizable(true);
 
         auto* container = new QWidget(this);
@@ -488,8 +470,7 @@ public:
         setWidget(container);
     }
 
-    void setObject(const SceneObject* obj,
-                   std::function<void(const std::string&, Value)> setter) {
+    void setObject(const SceneObject* obj, std::function<void(const std::string&, Value)> setter) {
         clearProperties();
 
         if (!obj) {
@@ -538,8 +519,7 @@ signals:
     void propertyChanged(const QString& path, const Value& value);
 
 private:
-    PropertyWidget* createPropertyWidget(const PropertyMeta& meta,
-                                         const SceneObject& obj,
+    PropertyWidget* createPropertyWidget(const PropertyMeta& meta, const SceneObject& obj,
                                          std::function<void(const std::string&, Value)> setter) {
         auto* widget = new PropertyWidget(meta, this);
 
@@ -549,8 +529,7 @@ private:
             }
         }
 
-        connect(widget, &PropertyWidget::valueChanged,
-                this, [this, name = meta.name, setter](const Value& val) {
+        connect(widget, &PropertyWidget::valueChanged, this, [this, name = meta.name, setter](const Value& val) {
             setter(name, val);
             emit propertyChanged(QString::fromStdString(name), val);
         });
@@ -582,22 +561,18 @@ private:
 // ObjectTreeWidget - Scene hierarchy tree view
 // ============================================================
 
-class ObjectTreeWidget : public QTreeWidget
-{
+class ObjectTreeWidget : public QTreeWidget {
     Q_OBJECT
 
 public:
-    explicit ObjectTreeWidget(QWidget* parent = nullptr)
-        : QTreeWidget(parent)
-    {
+    explicit ObjectTreeWidget(QWidget* parent = nullptr) : QTreeWidget(parent) {
         setHeaderLabels({"Name", "Type"});
         setSelectionMode(QAbstractItemView::SingleSelection);
         setAlternatingRowColors(true);
         header()->setSectionResizeMode(0, QHeaderView::Stretch);
         header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 
-        connect(this, &QTreeWidget::currentItemChanged,
-                this, &ObjectTreeWidget::onSelectionChanged);
+        connect(this, &QTreeWidget::currentItemChanged, this, &ObjectTreeWidget::onSelectionChanged);
     }
 
     void setScene(const SceneState& scene) {
@@ -621,9 +596,12 @@ public:
             item->setData(0, Qt::UserRole, QString::fromStdString(id));
 
             QStyle::StandardPixmap icon = QStyle::SP_FileIcon;
-            if (obj.type == "Transform") icon = QStyle::SP_DirIcon;
-            else if (obj.type == "Light") icon = QStyle::SP_DialogYesButton;
-            else if (obj.type == "Camera") icon = QStyle::SP_ComputerIcon;
+            if (obj.type == "Transform")
+                icon = QStyle::SP_DirIcon;
+            else if (obj.type == "Light")
+                icon = QStyle::SP_DialogYesButton;
+            else if (obj.type == "Camera")
+                icon = QStyle::SP_ComputerIcon;
             item->setIcon(0, style()->standardIcon(icon));
 
             addTopLevelItem(item);
@@ -664,18 +642,13 @@ private:
 // EditorMainWindow - Main application window (Qt Widgets version)
 // ============================================================
 
-class EditorMainWindow : public QMainWindow
-{
+class EditorMainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
     EditorMainWindow(QWidget* parent = nullptr)
-        : QMainWindow(parent)
-        , store_(lager::make_store<EditorAction>(
-            EditorModel{},
-            lager::with_qt_event_loop{*this},
-            lager::with_reducer(editor_update)))
-    {
+        : QMainWindow(parent), store_(lager::make_store<EditorAction>(EditorModel{}, lager::with_qt_event_loop{*this},
+                                                                      lager::with_reducer(editor_update))) {
         setWindowTitle("Lager Editor - Scene Editor");
         resize(1200, 800);
 
@@ -727,37 +700,29 @@ private:
     }
 
     void setupActions() {
-        connect(undoAction_, &QAction::triggered, this, [this]() {
-            store_.dispatch(actions::Undo{});
-        });
+        connect(undoAction_, &QAction::triggered, this, [this]() { store_.dispatch(actions::Undo{}); });
 
-        connect(redoAction_, &QAction::triggered, this, [this]() {
-            store_.dispatch(actions::Redo{});
-        });
+        connect(redoAction_, &QAction::triggered, this, [this]() { store_.dispatch(actions::Redo{}); });
 
         connect(syncAction_, &QAction::triggered, this, [this]() {
             const auto& model = store_.get();
-            std::cout << "[Editor] Syncing to engine, version: "
-                      << model.scene.version << std::endl;
+            std::cout << "[Editor] Syncing to engine, version: " << model.scene.version << std::endl;
             statusBar()->showMessage("Synced to engine", 3000);
         });
     }
 
     void setupConnections() {
-        connect(objectTree_, &ObjectTreeWidget::objectSelected,
-                this, [this](const QString& objectId) {
+        connect(objectTree_, &ObjectTreeWidget::objectSelected, this, [this](const QString& objectId) {
             store_.dispatch(actions::SelectObject{payloads::SelectObject{objectId.toStdString()}});
         });
 
-        store_.watch([this](const EditorModel& model) {
-            updateUI(model);
-        });
+        store_.watch([this](const EditorModel& model) { updateUI(model); });
     }
 
     void updateUI(const EditorModel& model) {
         // Check if scene objects changed (compare version or object count)
-        bool sceneChanged = (lastSceneVersion_ != model.scene.version) ||
-                           (lastObjectCount_ != model.scene.objects.size());
+        bool sceneChanged =
+            (lastSceneVersion_ != model.scene.version) || (lastObjectCount_ != model.scene.objects.size());
 
         // Check if selection changed
         bool selectionChanged = (lastSelectedId_ != model.scene.selected_id);
@@ -782,10 +747,9 @@ private:
             if (!model.scene.selected_id.empty()) {
                 const SceneObject* obj_ptr = model.scene.objects.find(model.scene.selected_id);
                 if (obj_ptr != nullptr) {
-                    propertyPanel_->setObject(obj_ptr,
-                        [this](const std::string& path, Value val) {
-                            store_.dispatch(actions::SetProperty{payloads::SetProperty{path, std::move(val)}});
-                        });
+                    propertyPanel_->setObject(obj_ptr, [this](const std::string& path, Value val) {
+                        store_.dispatch(actions::SetProperty{payloads::SetProperty{path, std::move(val)}});
+                    });
                 } else {
                     propertyPanel_->setObject(nullptr, nullptr);
                 }
@@ -803,13 +767,11 @@ private:
         undoAction_->setEnabled(!model.undo_stack.empty());
         redoAction_->setEnabled(!model.redo_stack.empty());
 
-        historyLabel_->setText(QString("History: %1 undo / %2 redo")
-            .arg(model.undo_stack.size())
-            .arg(model.redo_stack.size()));
+        historyLabel_->setText(
+            QString("History: %1 undo / %2 redo").arg(model.undo_stack.size()).arg(model.redo_stack.size()));
 
         if (model.dirty) {
-            statusBar()->showMessage(QString("State changed, version: %1")
-                .arg(model.scene.version), 2000);
+            statusBar()->showMessage(QString("State changed, version: %1").arg(model.scene.version), 2000);
         }
     }
 
@@ -836,8 +798,7 @@ private:
 // Main function
 // ============================================================
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
     QApplication app(argc, argv);
 
     app.setStyle("Fusion");
@@ -867,8 +828,7 @@ int main(int argc, char** argv)
 
     // TODO: Create QML version of EditorApp class
 
-    engine.load(QUrl::fromLocalFile(
-        QString(LAGER_EXT_QML_DIR) + "/main.qml"));
+    engine.load(QUrl::fromLocalFile(QString(LAGER_EXT_QML_DIR) + "/main.qml"));
 
     if (engine.rootObjects().isEmpty()) {
         std::cerr << "[Editor] Failed to load QML!" << std::endl;
@@ -883,4 +843,3 @@ int main(int argc, char** argv)
 
     return app.exec();
 }
-

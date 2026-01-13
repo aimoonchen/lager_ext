@@ -14,7 +14,7 @@
 ///   #include <lager_ext/value_fwd.h>
 ///   Value create_config();                    // ✅ Forward declaration
 ///   MapBuilder& configure_builder();          // ✅ Forward declaration
-///   
+///
 ///   // In implementation file:
 ///   #include <lager_ext/value.h>
 ///   #include <lager_ext/builders.h>           // Include full definitions when needed
@@ -32,18 +32,15 @@ namespace lager_ext {
 // ============================================================
 
 #ifndef LAGER_EXT_ENABLE_THREAD_SAFE
-#  define LAGER_EXT_ENABLE_THREAD_SAFE 0
+#define LAGER_EXT_ENABLE_THREAD_SAFE 0
 #endif
 
 // ============================================================
 // Memory Policy Forward Declarations
 // ============================================================
 
-using unsafe_memory_policy = immer::memory_policy<
-    immer::unsafe_free_list_heap_policy<immer::cpp_heap>,
-    immer::unsafe_refcount_policy,
-    immer::no_lock_policy
->;
+using unsafe_memory_policy = immer::memory_policy<immer::unsafe_free_list_heap_policy<immer::cpp_heap>,
+                                                  immer::unsafe_refcount_policy, immer::no_lock_policy>;
 
 using thread_safe_memory_policy = immer::default_memory_policy;
 
@@ -69,23 +66,27 @@ using SyncValue = BasicValue<thread_safe_memory_policy>;
 // ============================================================
 
 // Forward declare builder templates
-template <typename MemoryPolicy> class BasicMapBuilder;
-template <typename MemoryPolicy> class BasicVectorBuilder;
-template <typename MemoryPolicy> class BasicArrayBuilder;
-template <typename MemoryPolicy> class BasicTableBuilder;
+template <typename MemoryPolicy>
+class BasicMapBuilder;
+template <typename MemoryPolicy>
+class BasicVectorBuilder;
+template <typename MemoryPolicy>
+class BasicArrayBuilder;
+template <typename MemoryPolicy>
+class BasicTableBuilder;
 
 // Unsafe (single-threaded) builder aliases
-using MapBuilder    = BasicMapBuilder<unsafe_memory_policy>;
+using MapBuilder = BasicMapBuilder<unsafe_memory_policy>;
 using VectorBuilder = BasicVectorBuilder<unsafe_memory_policy>;
-using ArrayBuilder  = BasicArrayBuilder<unsafe_memory_policy>;
-using TableBuilder  = BasicTableBuilder<unsafe_memory_policy>;
+using ArrayBuilder = BasicArrayBuilder<unsafe_memory_policy>;
+using TableBuilder = BasicTableBuilder<unsafe_memory_policy>;
 
 // Thread-safe builder aliases - only available when enabled
 #if LAGER_EXT_ENABLE_THREAD_SAFE
-using SyncMapBuilder    = BasicMapBuilder<thread_safe_memory_policy>;
+using SyncMapBuilder = BasicMapBuilder<thread_safe_memory_policy>;
 using SyncVectorBuilder = BasicVectorBuilder<thread_safe_memory_policy>;
-using SyncArrayBuilder  = BasicArrayBuilder<thread_safe_memory_policy>;
-using SyncTableBuilder  = BasicTableBuilder<thread_safe_memory_policy>;
+using SyncArrayBuilder = BasicArrayBuilder<thread_safe_memory_policy>;
+using SyncTableBuilder = BasicTableBuilder<thread_safe_memory_policy>;
 #endif
 
 } // namespace lager_ext

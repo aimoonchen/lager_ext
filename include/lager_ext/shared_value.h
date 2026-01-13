@@ -34,20 +34,20 @@
 
 // Transient headers (deep_copy functions use transient for optimization)
 #include <immer/map_transient.hpp>
-#include <immer/vector_transient.hpp>
 #include <immer/table_transient.hpp>
+#include <immer/vector_transient.hpp>
 
 // NOTE: Boost.Interprocess is used internally but hidden from public API.
 // The implementation is in source/shared_value_impl.cpp to prevent
 // boost headers from polluting user's include path.
 
-#include <cstdint>
 #include <cstddef>
-#include <new>
-#include <string>
-#include <stdexcept>
-#include <memory>
+#include <cstdint>
 #include <functional>
+#include <memory>
+#include <new>
+#include <stdexcept>
+#include <string>
 
 namespace shared_memory {
 
@@ -70,23 +70,22 @@ namespace shared_memory {
 // NOTE: This header is designed for single-writer scenarios.
 // Only one process should write to the shared memory at a time.
 struct alignas(64) SharedMemoryHeader {
-    uint32_t magic;                       // Magic number for validation
-    uint32_t version;                     // Version number
-    void*    fixed_base_address;          // Fixed mapping base address
-    size_t   total_size;                  // Total size
-    size_t   heap_offset;                 // Heap area start offset
-    size_t   heap_size;                   // Heap area size
-    size_t   heap_used;                   // Heap area used size
-    size_t   value_offset;                // Value object offset (0 = uninitialized)
-    uint64_t _padding;                    // Explicit padding for 64-byte alignment
+    uint32_t magic;           // Magic number for validation
+    uint32_t version;         // Version number
+    void* fixed_base_address; // Fixed mapping base address
+    size_t total_size;        // Total size
+    size_t heap_offset;       // Heap area start offset
+    size_t heap_size;         // Heap area size
+    size_t heap_used;         // Heap area used size
+    size_t value_offset;      // Value object offset (0 = uninitialized)
+    uint64_t _padding;        // Explicit padding for 64-byte alignment
 
     static constexpr uint32_t MAGIC = 0x53484D56; // "SHMV"
     static constexpr uint32_t CURRENT_VERSION = 1;
 };
 
 // Ensure header is exactly 64 bytes for cross-compiler compatibility
-static_assert(sizeof(SharedMemoryHeader) == 64,
-    "SharedMemoryHeader must be 64 bytes for cache line alignment");
+static_assert(sizeof(SharedMemoryHeader) == 64, "SharedMemoryHeader must be 64 bytes for cache line alignment");
 
 /// @brief Shared memory region management using PIMPL pattern
 ///
@@ -167,7 +166,7 @@ public:
     size_t local_cursor() const;
 
 private:
-    struct Impl;  // Forward declaration - hides boost dependency
+    struct Impl; // Forward declaration - hides boost dependency
     std::unique_ptr<Impl> impl_;
 };
 
@@ -188,12 +187,12 @@ private:
 // memory regions is linked against the same DLL instance.
 
 namespace detail {
-    /// Thread-local storage accessor (function-local static for DLL safety)
-    /// @return Reference to the thread-local region pointer
-    inline SharedMemoryRegion*& current_shared_region_storage() {
-        thread_local SharedMemoryRegion* region = nullptr;
-        return region;
-    }
+/// Thread-local storage accessor (function-local static for DLL safety)
+/// @return Reference to the thread-local region pointer
+inline SharedMemoryRegion*& current_shared_region_storage() {
+    thread_local SharedMemoryRegion* region = nullptr;
+    return region;
+}
 } // namespace detail
 
 /// Get the current thread's shared memory region
@@ -227,9 +226,7 @@ public:
     static constexpr size_t SSO_CAPACITY = 15;
     static constexpr size_t MAX_STRING_SIZE = 256 * 1024 * 1024; // 256 MB safety limit
 
-    SharedString() noexcept : size_(0) {
-        inline_data_[0] = '\0';
-    }
+    SharedString() noexcept : size_(0) { inline_data_[0] = '\0'; }
 
     SharedString(const char* str) {
         if (!str) {
@@ -340,9 +337,7 @@ public:
     ~SharedString() = default;
 
     // Basic accessors
-    const char* data() const noexcept {
-        return is_inline() ? inline_data_ : heap_data_;
-    }
+    const char* data() const noexcept { return is_inline() ? inline_data_ : heap_data_; }
 
     const char* c_str() const noexcept { return data(); }
     size_t size() const noexcept { return size_; }
@@ -354,7 +349,8 @@ public:
 
     char operator[](size_t pos) const noexcept { return data()[pos]; }
     char at(size_t pos) const {
-        if (pos >= size_) throw std::out_of_range("SharedString::at");
+        if (pos >= size_)
+            throw std::out_of_range("SharedString::at");
         return data()[pos];
     }
 
@@ -362,29 +358,27 @@ public:
     operator std::string() const { return to_string(); }
 
     bool operator==(const SharedString& other) const noexcept {
-        if (size_ != other.size_) return false;
+        if (size_ != other.size_)
+            return false;
         return std::memcmp(data(), other.data(), size_) == 0;
     }
 
-    bool operator!=(const SharedString& other) const noexcept {
-        return !(*this == other);
-    }
+    bool operator!=(const SharedString& other) const noexcept { return !(*this == other); }
 
     bool operator<(const SharedString& other) const noexcept {
-        int cmp = std::memcmp(data(), other.data(),
-                              size_ < other.size_ ? size_ : other.size_);
-        if (cmp != 0) return cmp < 0;
+        int cmp = std::memcmp(data(), other.data(), size_ < other.size_ ? size_ : other.size_);
+        if (cmp != 0)
+            return cmp < 0;
         return size_ < other.size_;
     }
 
     bool operator==(const std::string& other) const noexcept {
-        if (size_ != other.size()) return false;
+        if (size_ != other.size())
+            return false;
         return std::memcmp(data(), other.data(), size_) == 0;
     }
 
-    bool operator==(const char* other) const noexcept {
-        return std::strcmp(data(), other ? other : "") == 0;
-    }
+    bool operator==(const char* other) const noexcept { return std::strcmp(data(), other ? other : "") == 0; }
 
     // Hash support (for immer::map keys)
     size_t hash() const noexcept {
@@ -398,9 +392,7 @@ public:
     }
 
 private:
-    bool is_inline() const noexcept {
-        return size_ <= SSO_CAPACITY;
-    }
+    bool is_inline() const noexcept { return size_ <= SSO_CAPACITY; }
 
     void init_from(const char* str, size_t len) {
         size_ = len;
@@ -458,15 +450,11 @@ private:
 };
 
 struct SharedStringHash {
-    size_t operator()(const SharedString& s) const noexcept {
-        return s.hash();
-    }
+    size_t operator()(const SharedString& s) const noexcept { return s.hash(); }
 };
 
 struct SharedStringEqual {
-    bool operator()(const SharedString& a, const SharedString& b) const noexcept {
-        return a == b;
-    }
+    bool operator()(const SharedString& a, const SharedString& b) const noexcept { return a == b; }
 };
 
 } // namespace shared_memory
@@ -474,9 +462,7 @@ struct SharedStringEqual {
 namespace std {
 template <>
 struct hash<shared_memory::SharedString> {
-    size_t operator()(const shared_memory::SharedString& s) const noexcept {
-        return s.hash();
-    }
+    size_t operator()(const shared_memory::SharedString& s) const noexcept { return s.hash(); }
 };
 } // namespace std
 
@@ -504,26 +490,25 @@ namespace shared_memory {
 class shared_memory_error : public std::bad_alloc {
 public:
     enum class error_type {
-        no_region,          // g_current_shared_region is nullptr
-        invalid_region,     // Region is closed or not properly initialized
-        out_of_memory       // Heap exhausted
+        no_region,      // g_current_shared_region is nullptr
+        invalid_region, // Region is closed or not properly initialized
+        out_of_memory   // Heap exhausted
     };
 
-    explicit shared_memory_error(error_type type, size_t requested = 0,
-                                  size_t used = 0, size_t total = 0) noexcept
+    explicit shared_memory_error(error_type type, size_t requested = 0, size_t used = 0, size_t total = 0) noexcept
         : type_(type), requested_(requested), used_(used), total_(total) {}
 
     const char* what() const noexcept override {
         switch (type_) {
-            case error_type::no_region:
-                return "shared_heap: g_current_shared_region is nullptr. "
-                       "Call set_current_shared_region() before using SharedValue.";
-            case error_type::invalid_region:
-                return "shared_heap: shared memory region is invalid (closed or uninitialized).";
-            case error_type::out_of_memory:
-                return "shared_heap: out of shared memory. Increase region size.";
-            default:
-                return "shared_heap: unknown error";
+        case error_type::no_region:
+            return "shared_heap: g_current_shared_region is nullptr. "
+                   "Call set_current_shared_region() before using SharedValue.";
+        case error_type::invalid_region:
+            return "shared_heap: shared memory region is invalid (closed or uninitialized).";
+        case error_type::out_of_memory:
+            return "shared_heap: out of shared memory. Increase region size.";
+        default:
+            return "shared_heap: unknown error";
         }
     }
 
@@ -565,20 +550,14 @@ struct shared_heap {
         void* p = g_current_shared_region->allocate(size, ALIGNMENT);
         if (!p) {
             auto* h = g_current_shared_region->header();
-            throw shared_memory_error(
-                shared_memory_error::error_type::out_of_memory,
-                size,
-                g_current_shared_region->local_cursor(),
-                h->heap_size
-            );
+            throw shared_memory_error(shared_memory_error::error_type::out_of_memory, size,
+                                      g_current_shared_region->local_cursor(), h->heap_size);
         }
         return p;
     }
 
     // Allocation interface for gc_transience_policy
-    static void* allocate(size_t size, immer::norefs_tag) {
-        return allocate(size);
-    }
+    static void* allocate(size_t size, immer::norefs_tag) { return allocate(size); }
 
     // Deallocate - no-op! Bump allocator doesn't support individual deallocation
     static void deallocate(size_t, void*) noexcept {
@@ -621,14 +600,9 @@ namespace lager_ext {
 // This is exactly what we want because:
 // - Process B: one-time construction, then entire region is released together
 // - Process A: read-only access, then deep copy to local
-using shared_memory_policy = immer::memory_policy<
-    immer::heap_policy<shared_memory::shared_heap>,
-    immer::no_refcount_policy,
-    immer::no_lock_policy,
-    immer::no_transience_policy,
-    false,
-    false
->;
+using shared_memory_policy =
+    immer::memory_policy<immer::heap_policy<shared_memory::shared_heap>, immer::no_refcount_policy,
+                         immer::no_lock_policy, immer::no_transience_policy, false, false>;
 
 //==============================================================================
 // SharedValue Type - Fully shared memory Value (uses SharedString)
@@ -647,75 +621,48 @@ using shared_memory_policy = immer::memory_policy<
 
 struct SharedValue;
 
-using SharedValueBox    = immer::box<SharedValue, shared_memory_policy>;
-using SharedValueMap    = immer::map<shared_memory::SharedString,
-                                      SharedValueBox,
-                                      shared_memory::SharedStringHash,
-                                      shared_memory::SharedStringEqual,
-                                      shared_memory_policy>;
+using SharedValueBox = immer::box<SharedValue, shared_memory_policy>;
+using SharedValueMap = immer::map<shared_memory::SharedString, SharedValueBox, shared_memory::SharedStringHash,
+                                  shared_memory::SharedStringEqual, shared_memory_policy>;
 using SharedValueVector = immer::vector<SharedValueBox, shared_memory_policy>;
-using SharedValueArray  = immer::array<SharedValueBox, shared_memory_policy>;
+using SharedValueArray = immer::array<SharedValueBox, shared_memory_policy>;
 
 struct SharedTableEntry {
     shared_memory::SharedString id;
     SharedValueBox value;
 
-    bool operator==(const SharedTableEntry& other) const {
-        return id == other.id && value == other.value;
-    }
-    bool operator!=(const SharedTableEntry& other) const {
-        return !(*this == other);
-    }
+    bool operator==(const SharedTableEntry& other) const { return id == other.id && value == other.value; }
+    bool operator!=(const SharedTableEntry& other) const { return !(*this == other); }
 };
 
 struct SharedTableKeyFn {
-    const shared_memory::SharedString& operator()(const SharedTableEntry& e) const {
-        return e.id;
-    }
+    const shared_memory::SharedString& operator()(const SharedTableEntry& e) const { return e.id; }
 };
 
-using SharedValueTable = immer::table<SharedTableEntry,
-                                       SharedTableKeyFn,
-                                       shared_memory::SharedStringHash,
-                                       shared_memory::SharedStringEqual,
-                                       shared_memory_policy>;
+using SharedValueTable = immer::table<SharedTableEntry, SharedTableKeyFn, shared_memory::SharedStringHash,
+                                      shared_memory::SharedStringEqual, shared_memory_policy>;
 
 struct SharedValue {
-    using string_type   = shared_memory::SharedString;
-    using value_box     = SharedValueBox;
-    using value_map     = SharedValueMap;
-    using value_vector  = SharedValueVector;
-    using value_array   = SharedValueArray;
-    using value_table   = SharedValueTable;
-    using table_entry   = SharedTableEntry;
+    using string_type = shared_memory::SharedString;
+    using value_box = SharedValueBox;
+    using value_map = SharedValueMap;
+    using value_vector = SharedValueVector;
+    using value_array = SharedValueArray;
+    using value_table = SharedValueTable;
+    using table_entry = SharedTableEntry;
 
     // Math types (same as Value's math types - fixed-size, trivially copyable)
-    using vec2_type     = Vec2;
-    using vec3_type     = Vec3;
-    using vec4_type     = Vec4;
-    using mat3_type     = Mat3;
-    using mat4x3_type   = Mat4x3;
+    using vec2_type = Vec2;
+    using vec3_type = Vec3;
+    using vec4_type = Vec4;
+    using mat3_type = Mat3;
+    using mat4x3_type = Mat4x3;
 
     // Variant storage - uses fixed-width integer types for cross-platform consistency
-    std::variant<int32_t,
-                 int64_t,
-                 uint32_t,
-                 uint64_t,
-                 float,
-                 double,
-                 bool,
-                 ::shared_memory::SharedString,
-                 value_map,
-                 value_vector,
-                 value_array,
-                 value_table,
+    std::variant<int32_t, int64_t, uint32_t, uint64_t, float, double, bool, ::shared_memory::SharedString, value_map,
+                 value_vector, value_array, value_table,
                  // Math types - trivially copyable, safe in shared memory
-                 Vec2,
-                 Vec3,
-                 Vec4,
-                 Mat3,
-                 Mat4x3,
-                 std::monostate>
+                 Vec2, Vec3, Vec4, Mat3, Mat4x3, std::monostate>
         data;
 
     SharedValue() : data(std::monostate{}) {}
@@ -746,10 +693,14 @@ struct SharedValue {
     SharedValue(Mat4x3 v) : data(v) {}
 
     template <typename T>
-    const T* get_if() const { return std::get_if<T>(&data); }
+    const T* get_if() const {
+        return std::get_if<T>(&data);
+    }
 
     template <typename T>
-    bool is() const { return std::holds_alternative<T>(data); }
+    bool is() const {
+        return std::holds_alternative<T>(data);
+    }
 
     std::size_t type_index() const noexcept { return data.index(); }
     bool is_null() const noexcept { return std::holds_alternative<std::monostate>(data); }
@@ -759,10 +710,14 @@ struct SharedValue {
     }
 
     std::size_t size() const {
-        if (auto* m = get_if<value_map>()) return m->size();
-        if (auto* v = get_if<value_vector>()) return v->size();
-        if (auto* a = get_if<value_array>()) return a->size();
-        if (auto* t = get_if<value_table>()) return t->size();
+        if (auto* m = get_if<value_map>())
+            return m->size();
+        if (auto* v = get_if<value_vector>())
+            return v->size();
+        if (auto* a = get_if<value_array>())
+            return a->size();
+        if (auto* t = get_if<value_table>())
+            return t->size();
         return 0;
     }
 };
@@ -826,10 +781,7 @@ inline ValueArray copy_shared_array_to_local(const SharedValueArray& shared_arr)
 inline ValueTable copy_shared_table_to_local(const SharedValueTable& shared_table) {
     auto transient = ValueTable{}.transient();
     for (const auto& entry : shared_table) {
-        transient.insert(TableEntry{
-            entry.id.to_string(),
-            copy_shared_box_to_local(entry.value)
-        });
+        transient.insert(TableEntry{entry.id.to_string(), copy_shared_box_to_local(entry.value)});
     }
     return transient.persistent();
 }
@@ -841,9 +793,7 @@ inline SharedValueBox copy_local_box_to_shared(const ValueBox& local_box) {
 inline SharedValueMap copy_local_map_to_shared(const ValueMap& local_map) {
     SharedValueMap result;
     for (const auto& [key, value_box] : local_map) {
-        result = std::move(result).set(
-            shared_memory::SharedString(key),
-            copy_local_box_to_shared(value_box));
+        result = std::move(result).set(shared_memory::SharedString(key), copy_local_box_to_shared(value_box));
     }
     return result;
 }
@@ -867,10 +817,8 @@ inline SharedValueArray copy_local_array_to_shared(const ValueArray& local_arr) 
 inline SharedValueTable copy_local_table_to_shared(const ValueTable& local_table) {
     SharedValueTable result;
     for (const auto& entry : local_table) {
-        result = std::move(result).insert(SharedTableEntry{
-            shared_memory::SharedString(entry.id),
-            copy_local_box_to_shared(entry.value)
-        });
+        result = std::move(result).insert(
+            SharedTableEntry{shared_memory::SharedString(entry.id), copy_local_box_to_shared(entry.value)});
     }
     return result;
 }
@@ -878,143 +826,123 @@ inline SharedValueTable copy_local_table_to_shared(const ValueTable& local_table
 } // namespace detail
 
 inline Value deep_copy_to_local(const SharedValue& shared) {
-    return std::visit([](const auto& data) -> Value {
-        using T = std::decay_t<decltype(data)>;
+    return std::visit(
+        [](const auto& data) -> Value {
+            using T = std::decay_t<decltype(data)>;
 
-        if constexpr (std::is_same_v<T, std::monostate>) {
-            return Value{};
-        }
-        // Signed integers
-        else if constexpr (std::is_same_v<T, int32_t>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, int64_t>) {
-            return Value{data};
-        }
-        // Unsigned integers
-        else if constexpr (std::is_same_v<T, uint32_t>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, uint64_t>) {
-            return Value{data};
-        }
-        // Floating-point
-        else if constexpr (std::is_same_v<T, float>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, double>) {
-            return Value{data};
-        }
-        // Boolean
-        else if constexpr (std::is_same_v<T, bool>) {
-            return Value{data};
-        }
-        // String
-        else if constexpr (std::is_same_v<T, shared_memory::SharedString>) {
-            return Value{data.to_string()};
-        }
-        else if constexpr (std::is_same_v<T, SharedValueMap>) {
-            return Value{detail::copy_shared_map_to_local(data)};
-        }
-        else if constexpr (std::is_same_v<T, SharedValueVector>) {
-            return Value{detail::copy_shared_vector_to_local(data)};
-        }
-        else if constexpr (std::is_same_v<T, SharedValueArray>) {
-            return Value{detail::copy_shared_array_to_local(data)};
-        }
-        else if constexpr (std::is_same_v<T, SharedValueTable>) {
-            return Value{detail::copy_shared_table_to_local(data)};
-        }
-        // Math types - trivially copyable, direct copy
-        else if constexpr (std::is_same_v<T, Vec2>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, Vec3>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, Vec4>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, Mat3>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, Mat4x3>) {
-            return Value{data};
-        }
-        else {
-            return Value{};
-        }
-    }, shared.data);
+            if constexpr (std::is_same_v<T, std::monostate>) {
+                return Value{};
+            }
+            // Signed integers
+            else if constexpr (std::is_same_v<T, int32_t>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, int64_t>) {
+                return Value{data};
+            }
+            // Unsigned integers
+            else if constexpr (std::is_same_v<T, uint32_t>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, uint64_t>) {
+                return Value{data};
+            }
+            // Floating-point
+            else if constexpr (std::is_same_v<T, float>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, double>) {
+                return Value{data};
+            }
+            // Boolean
+            else if constexpr (std::is_same_v<T, bool>) {
+                return Value{data};
+            }
+            // String
+            else if constexpr (std::is_same_v<T, shared_memory::SharedString>) {
+                return Value{data.to_string()};
+            } else if constexpr (std::is_same_v<T, SharedValueMap>) {
+                return Value{detail::copy_shared_map_to_local(data)};
+            } else if constexpr (std::is_same_v<T, SharedValueVector>) {
+                return Value{detail::copy_shared_vector_to_local(data)};
+            } else if constexpr (std::is_same_v<T, SharedValueArray>) {
+                return Value{detail::copy_shared_array_to_local(data)};
+            } else if constexpr (std::is_same_v<T, SharedValueTable>) {
+                return Value{detail::copy_shared_table_to_local(data)};
+            }
+            // Math types - trivially copyable, direct copy
+            else if constexpr (std::is_same_v<T, Vec2>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, Vec3>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, Vec4>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, Mat3>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, Mat4x3>) {
+                return Value{data};
+            } else {
+                return Value{};
+            }
+        },
+        shared.data);
 }
 
 inline SharedValue deep_copy_to_shared(const Value& local) {
-    return std::visit([](const auto& data) -> SharedValue {
-        using T = std::decay_t<decltype(data)>;
+    return std::visit(
+        [](const auto& data) -> SharedValue {
+            using T = std::decay_t<decltype(data)>;
 
-        if constexpr (std::is_same_v<T, std::monostate>) {
-            return SharedValue{};
-        }
-        // Signed integers
-        else if constexpr (std::is_same_v<T, int32_t>) {
-            return SharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, int64_t>) {
-            return SharedValue{data};
-        }
-        // Unsigned integers
-        else if constexpr (std::is_same_v<T, uint32_t>) {
-            return SharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, uint64_t>) {
-            return SharedValue{data};
-        }
-        // Floating-point
-        else if constexpr (std::is_same_v<T, float>) {
-            return SharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, double>) {
-            return SharedValue{data};
-        }
-        // Boolean
-        else if constexpr (std::is_same_v<T, bool>) {
-            return SharedValue{data};
-        }
-        // String
-        else if constexpr (std::is_same_v<T, std::string>) {
-            return SharedValue{shared_memory::SharedString(data)};
-        }
-        else if constexpr (std::is_same_v<T, ValueMap>) {
-            return SharedValue{detail::copy_local_map_to_shared(data)};
-        }
-        else if constexpr (std::is_same_v<T, ValueVector>) {
-            return SharedValue{detail::copy_local_vector_to_shared(data)};
-        }
-        else if constexpr (std::is_same_v<T, ValueArray>) {
-            return SharedValue{detail::copy_local_array_to_shared(data)};
-        }
-        else if constexpr (std::is_same_v<T, ValueTable>) {
-            return SharedValue{detail::copy_local_table_to_shared(data)};
-        }
-        // Math types - trivially copyable, direct copy
-        else if constexpr (std::is_same_v<T, Vec2>) {
-            return SharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, Vec3>) {
-            return SharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, Vec4>) {
-            return SharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, Mat3>) {
-            return SharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, Mat4x3>) {
-            return SharedValue{data};
-        }
-        else {
-            return SharedValue{};
-        }
-    }, local.data);
+            if constexpr (std::is_same_v<T, std::monostate>) {
+                return SharedValue{};
+            }
+            // Signed integers
+            else if constexpr (std::is_same_v<T, int32_t>) {
+                return SharedValue{data};
+            } else if constexpr (std::is_same_v<T, int64_t>) {
+                return SharedValue{data};
+            }
+            // Unsigned integers
+            else if constexpr (std::is_same_v<T, uint32_t>) {
+                return SharedValue{data};
+            } else if constexpr (std::is_same_v<T, uint64_t>) {
+                return SharedValue{data};
+            }
+            // Floating-point
+            else if constexpr (std::is_same_v<T, float>) {
+                return SharedValue{data};
+            } else if constexpr (std::is_same_v<T, double>) {
+                return SharedValue{data};
+            }
+            // Boolean
+            else if constexpr (std::is_same_v<T, bool>) {
+                return SharedValue{data};
+            }
+            // String
+            else if constexpr (std::is_same_v<T, std::string>) {
+                return SharedValue{shared_memory::SharedString(data)};
+            } else if constexpr (std::is_same_v<T, ValueMap>) {
+                return SharedValue{detail::copy_local_map_to_shared(data)};
+            } else if constexpr (std::is_same_v<T, ValueVector>) {
+                return SharedValue{detail::copy_local_vector_to_shared(data)};
+            } else if constexpr (std::is_same_v<T, ValueArray>) {
+                return SharedValue{detail::copy_local_array_to_shared(data)};
+            } else if constexpr (std::is_same_v<T, ValueTable>) {
+                return SharedValue{detail::copy_local_table_to_shared(data)};
+            }
+            // Math types - trivially copyable, direct copy
+            else if constexpr (std::is_same_v<T, Vec2>) {
+                return SharedValue{data};
+            } else if constexpr (std::is_same_v<T, Vec3>) {
+                return SharedValue{data};
+            } else if constexpr (std::is_same_v<T, Vec4>) {
+                return SharedValue{data};
+            } else if constexpr (std::is_same_v<T, Mat3>) {
+                return SharedValue{data};
+            } else if constexpr (std::is_same_v<T, Mat4x3>) {
+                return SharedValue{data};
+            } else {
+                return SharedValue{};
+            }
+        },
+        local.data);
 }
 
 //==============================================================================
@@ -1029,7 +957,7 @@ inline SharedValue deep_copy_to_shared(const Value& local) {
 
 // Ensure SharedValue alignment is compatible with shared_heap
 static_assert(alignof(SharedValue) <= shared_memory::shared_heap::ALIGNMENT,
-    "SharedValue alignment must not exceed shared_heap::ALIGNMENT");
+              "SharedValue alignment must not exceed shared_heap::ALIGNMENT");
 
 class SharedValueHandle {
 public:
@@ -1067,7 +995,8 @@ public:
             bool success = false;
             ~RegionGuard() {
                 shared_memory::set_current_shared_region(nullptr);
-                if (!success) region.close();
+                if (!success)
+                    region.close();
             }
         } guard{region_};
 
@@ -1091,21 +1020,17 @@ public:
 
             guard.success = true;
             return true;
-        }
-        catch (const shared_memory::shared_memory_error& e) {
+        } catch (const shared_memory::shared_memory_error& e) {
             last_error_ = e.what();
             return false;
-        }
-        catch (const std::exception& e) {
+        } catch (const std::exception& e) {
             last_error_ = e.what();
             return false;
         }
     }
 
     // Open shared memory (called by process A)
-    bool open(const char* name) {
-        return region_.open(name);
-    }
+    bool open(const char* name) { return region_.open(name); }
 
     // Get shared Value (true zero-copy read-only access!)
     // Note: Must be called after successful open()
@@ -1118,8 +1043,7 @@ public:
         if (offset == 0) {
             return nullptr;
         }
-        return reinterpret_cast<const SharedValue*>(
-            static_cast<char*>(region_.base()) + offset);
+        return reinterpret_cast<const SharedValue*>(static_cast<char*>(region_.base()) + offset);
     }
 
     // Deep copy to local Value
@@ -1135,7 +1059,8 @@ public:
 
     // Check if Value has been initialized
     bool is_value_ready() const noexcept {
-        if (!region_.is_valid()) return false;
+        if (!region_.is_valid())
+            return false;
         return region_.header()->value_offset != 0;
     }
 

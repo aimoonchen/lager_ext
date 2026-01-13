@@ -50,7 +50,8 @@ struct fake_refcount_policy {
 //
 // Core idea:
 // - The real purpose of transient is to "mark as modifiable", avoiding unnecessary copies
-// - In shared memory scenarios: no modification after construction, so no real "ownership check" needed
+// - In shared memory scenarios: no modification after construction, so no real "ownership check"
+// needed
 // - We only need transient's "in-place modification" semantics, not its "safety guarantees"
 //
 // This policy follows the immer transience policy interface:
@@ -100,8 +101,7 @@ struct fake_transience_policy {
 
 // Static member definition
 template <typename HP>
-typename fake_transience_policy::apply<HP>::type::owner
-    fake_transience_policy::apply<HP>::type::noone = {};
+typename fake_transience_policy::apply<HP>::type::owner fake_transience_policy::apply<HP>::type::noone = {};
 
 } // namespace shared_memory
 
@@ -115,15 +115,11 @@ namespace lager_ext {
 //
 // Differences from shared_memory_policy:
 // - shared_memory_policy: no_transience_policy -> does not support transient()
-// - fast_shared_memory_policy: fake_transience_policy -> supports transient(), but no check overhead
-using fast_shared_memory_policy = immer::memory_policy<
-    immer::heap_policy<::shared_memory::shared_heap>,
-    ::shared_memory::fake_refcount_policy,
-    immer::no_lock_policy,
-    ::shared_memory::fake_transience_policy,
-    false,
-    false
->;
+// - fast_shared_memory_policy: fake_transience_policy -> supports transient(), but no check
+// overhead
+using fast_shared_memory_policy =
+    immer::memory_policy<immer::heap_policy<::shared_memory::shared_heap>, ::shared_memory::fake_refcount_policy,
+                         immer::no_lock_policy, ::shared_memory::fake_transience_policy, false, false>;
 
 //==============================================================================
 // FastSharedValue Type Definitions
@@ -131,75 +127,49 @@ using fast_shared_memory_policy = immer::memory_policy<
 
 struct FastSharedValue;
 
-using FastSharedValueBox    = immer::box<FastSharedValue, fast_shared_memory_policy>;
-using FastSharedValueMap    = immer::map<::shared_memory::SharedString,
-                                          FastSharedValueBox,
-                                          ::shared_memory::SharedStringHash,
-                                          ::shared_memory::SharedStringEqual,
-                                          fast_shared_memory_policy>;
+using FastSharedValueBox = immer::box<FastSharedValue, fast_shared_memory_policy>;
+using FastSharedValueMap =
+    immer::map<::shared_memory::SharedString, FastSharedValueBox, ::shared_memory::SharedStringHash,
+               ::shared_memory::SharedStringEqual, fast_shared_memory_policy>;
 using FastSharedValueVector = immer::vector<FastSharedValueBox, fast_shared_memory_policy>;
-using FastSharedValueArray  = immer::array<FastSharedValueBox, fast_shared_memory_policy>;
+using FastSharedValueArray = immer::array<FastSharedValueBox, fast_shared_memory_policy>;
 
 struct FastSharedTableEntry {
     ::shared_memory::SharedString id;
     FastSharedValueBox value;
 
-    bool operator==(const FastSharedTableEntry& other) const {
-        return id == other.id && value == other.value;
-    }
-    bool operator!=(const FastSharedTableEntry& other) const {
-        return !(*this == other);
-    }
+    bool operator==(const FastSharedTableEntry& other) const { return id == other.id && value == other.value; }
+    bool operator!=(const FastSharedTableEntry& other) const { return !(*this == other); }
 };
 
 struct FastSharedTableKeyFn {
-    const ::shared_memory::SharedString& operator()(const FastSharedTableEntry& e) const {
-        return e.id;
-    }
+    const ::shared_memory::SharedString& operator()(const FastSharedTableEntry& e) const { return e.id; }
 };
 
-using FastSharedValueTable = immer::table<FastSharedTableEntry,
-                                           FastSharedTableKeyFn,
-                                           ::shared_memory::SharedStringHash,
-                                           ::shared_memory::SharedStringEqual,
-                                           fast_shared_memory_policy>;
+using FastSharedValueTable = immer::table<FastSharedTableEntry, FastSharedTableKeyFn, ::shared_memory::SharedStringHash,
+                                          ::shared_memory::SharedStringEqual, fast_shared_memory_policy>;
 
 struct FastSharedValue {
-    using string_type   = ::shared_memory::SharedString;
-    using value_box     = FastSharedValueBox;
-    using value_map     = FastSharedValueMap;
-    using value_vector  = FastSharedValueVector;
-    using value_array   = FastSharedValueArray;
-    using value_table   = FastSharedValueTable;
-    using table_entry   = FastSharedTableEntry;
+    using string_type = ::shared_memory::SharedString;
+    using value_box = FastSharedValueBox;
+    using value_map = FastSharedValueMap;
+    using value_vector = FastSharedValueVector;
+    using value_array = FastSharedValueArray;
+    using value_table = FastSharedValueTable;
+    using table_entry = FastSharedTableEntry;
 
     // Math types (same as Value's math types - fixed-size, trivially copyable)
-    using vec2_type     = Vec2;
-    using vec3_type     = Vec3;
-    using vec4_type     = Vec4;
-    using mat3_type     = Mat3;
-    using mat4x3_type   = Mat4x3;
+    using vec2_type = Vec2;
+    using vec3_type = Vec3;
+    using vec4_type = Vec4;
+    using mat3_type = Mat3;
+    using mat4x3_type = Mat4x3;
 
     // Variant storage - uses fixed-width integer types for cross-platform consistency
-    std::variant<int32_t,
-                 int64_t,
-                 uint32_t,
-                 uint64_t,
-                 float,
-                 double,
-                 bool,
-                 ::shared_memory::SharedString,
-                 value_map,
-                 value_vector,
-                 value_array,
-                 value_table,
+    std::variant<int32_t, int64_t, uint32_t, uint64_t, float, double, bool, ::shared_memory::SharedString, value_map,
+                 value_vector, value_array, value_table,
                  // Math types - trivially copyable, safe in shared memory
-                 Vec2,
-                 Vec3,
-                 Vec4,
-                 Mat3,
-                 Mat4x3,
-                 std::monostate>
+                 Vec2, Vec3, Vec4, Mat3, Mat4x3, std::monostate>
         data;
 
     FastSharedValue() : data(std::monostate{}) {}
@@ -230,10 +200,14 @@ struct FastSharedValue {
     FastSharedValue(Mat4x3 v) : data(v) {}
 
     template <typename T>
-    const T* get_if() const { return std::get_if<T>(&data); }
+    const T* get_if() const {
+        return std::get_if<T>(&data);
+    }
 
     template <typename T>
-    bool is() const { return std::holds_alternative<T>(data); }
+    bool is() const {
+        return std::holds_alternative<T>(data);
+    }
 
     std::size_t type_index() const noexcept { return data.index(); }
     bool is_null() const noexcept { return std::holds_alternative<std::monostate>(data); }
@@ -243,10 +217,14 @@ struct FastSharedValue {
     }
 
     std::size_t size() const {
-        if (auto* m = get_if<value_map>()) return m->size();
-        if (auto* v = get_if<value_vector>()) return v->size();
-        if (auto* a = get_if<value_array>()) return a->size();
-        if (auto* t = get_if<value_table>()) return t->size();
+        if (auto* m = get_if<value_map>())
+            return m->size();
+        if (auto* v = get_if<value_vector>())
+            return v->size();
+        if (auto* a = get_if<value_array>())
+            return a->size();
+        if (auto* t = get_if<value_table>())
+            return t->size();
         return 0;
     }
 };
@@ -263,7 +241,8 @@ inline bool operator!=(const FastSharedValue& a, const FastSharedValue& b) {
 //
 // Provides two sets of interfaces:
 // 1. Explicit naming: fast_deep_copy_to_local / fast_deep_copy_to_shared
-// 2. Overloaded naming: deep_copy_to_local / deep_copy_to_shared (consistent with SharedValue interface)
+// 2. Overloaded naming: deep_copy_to_local / deep_copy_to_shared (consistent with SharedValue
+// interface)
 //==============================================================================
 
 Value fast_deep_copy_to_local(const FastSharedValue& shared);
@@ -309,10 +288,7 @@ inline ValueArray copy_fast_shared_array_to_local(const FastSharedValueArray& sh
 inline ValueTable copy_fast_shared_table_to_local(const FastSharedValueTable& shared_table) {
     auto transient = ValueTable{}.transient();
     for (const auto& entry : shared_table) {
-        transient.insert(TableEntry{
-            entry.id.to_string(),
-            copy_fast_shared_box_to_local(entry.value)
-        });
+        transient.insert(TableEntry{entry.id.to_string(), copy_fast_shared_box_to_local(entry.value)});
     }
     return transient.persistent();
 }
@@ -326,9 +302,7 @@ inline FastSharedValueMap copy_local_map_to_fast_shared(const ValueMap& local_ma
     // Key optimization: using transient, O(n) complexity!
     auto transient = FastSharedValueMap{}.transient();
     for (const auto& [key, value_box] : local_map) {
-        transient.set(
-            ::shared_memory::SharedString(key),
-            copy_local_box_to_fast_shared(value_box));
+        transient.set(::shared_memory::SharedString(key), copy_local_box_to_fast_shared(value_box));
     }
     return transient.persistent();
 }
@@ -357,10 +331,8 @@ inline FastSharedValueTable copy_local_table_to_fast_shared(const ValueTable& lo
     // Key optimization: using transient, O(n) complexity!
     auto transient = FastSharedValueTable{}.transient();
     for (const auto& entry : local_table) {
-        transient.insert(FastSharedTableEntry{
-            ::shared_memory::SharedString(entry.id),
-            copy_local_box_to_fast_shared(entry.value)
-        });
+        transient.insert(
+            FastSharedTableEntry{::shared_memory::SharedString(entry.id), copy_local_box_to_fast_shared(entry.value)});
     }
     return transient.persistent();
 }
@@ -368,143 +340,123 @@ inline FastSharedValueTable copy_local_table_to_fast_shared(const ValueTable& lo
 } // namespace detail
 
 inline Value fast_deep_copy_to_local(const FastSharedValue& shared) {
-    return std::visit([](const auto& data) -> Value {
-        using T = std::decay_t<decltype(data)>;
+    return std::visit(
+        [](const auto& data) -> Value {
+            using T = std::decay_t<decltype(data)>;
 
-        if constexpr (std::is_same_v<T, std::monostate>) {
-            return Value{};
-        }
-        // Signed integers
-        else if constexpr (std::is_same_v<T, int32_t>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, int64_t>) {
-            return Value{data};
-        }
-        // Unsigned integers
-        else if constexpr (std::is_same_v<T, uint32_t>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, uint64_t>) {
-            return Value{data};
-        }
-        // Floating-point
-        else if constexpr (std::is_same_v<T, float>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, double>) {
-            return Value{data};
-        }
-        // Boolean
-        else if constexpr (std::is_same_v<T, bool>) {
-            return Value{data};
-        }
-        // String
-        else if constexpr (std::is_same_v<T, ::shared_memory::SharedString>) {
-            return Value{data.to_string()};
-        }
-        else if constexpr (std::is_same_v<T, FastSharedValueMap>) {
-            return Value{detail::copy_fast_shared_map_to_local(data)};
-        }
-        else if constexpr (std::is_same_v<T, FastSharedValueVector>) {
-            return Value{detail::copy_fast_shared_vector_to_local(data)};
-        }
-        else if constexpr (std::is_same_v<T, FastSharedValueArray>) {
-            return Value{detail::copy_fast_shared_array_to_local(data)};
-        }
-        else if constexpr (std::is_same_v<T, FastSharedValueTable>) {
-            return Value{detail::copy_fast_shared_table_to_local(data)};
-        }
-        // Math types - trivially copyable, direct copy
-        else if constexpr (std::is_same_v<T, Vec2>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, Vec3>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, Vec4>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, Mat3>) {
-            return Value{data};
-        }
-        else if constexpr (std::is_same_v<T, Mat4x3>) {
-            return Value{data};
-        }
-        else {
-            return Value{};
-        }
-    }, shared.data);
+            if constexpr (std::is_same_v<T, std::monostate>) {
+                return Value{};
+            }
+            // Signed integers
+            else if constexpr (std::is_same_v<T, int32_t>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, int64_t>) {
+                return Value{data};
+            }
+            // Unsigned integers
+            else if constexpr (std::is_same_v<T, uint32_t>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, uint64_t>) {
+                return Value{data};
+            }
+            // Floating-point
+            else if constexpr (std::is_same_v<T, float>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, double>) {
+                return Value{data};
+            }
+            // Boolean
+            else if constexpr (std::is_same_v<T, bool>) {
+                return Value{data};
+            }
+            // String
+            else if constexpr (std::is_same_v<T, ::shared_memory::SharedString>) {
+                return Value{data.to_string()};
+            } else if constexpr (std::is_same_v<T, FastSharedValueMap>) {
+                return Value{detail::copy_fast_shared_map_to_local(data)};
+            } else if constexpr (std::is_same_v<T, FastSharedValueVector>) {
+                return Value{detail::copy_fast_shared_vector_to_local(data)};
+            } else if constexpr (std::is_same_v<T, FastSharedValueArray>) {
+                return Value{detail::copy_fast_shared_array_to_local(data)};
+            } else if constexpr (std::is_same_v<T, FastSharedValueTable>) {
+                return Value{detail::copy_fast_shared_table_to_local(data)};
+            }
+            // Math types - trivially copyable, direct copy
+            else if constexpr (std::is_same_v<T, Vec2>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, Vec3>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, Vec4>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, Mat3>) {
+                return Value{data};
+            } else if constexpr (std::is_same_v<T, Mat4x3>) {
+                return Value{data};
+            } else {
+                return Value{};
+            }
+        },
+        shared.data);
 }
 
 inline FastSharedValue fast_deep_copy_to_shared(const Value& local) {
-    return std::visit([](const auto& data) -> FastSharedValue {
-        using T = std::decay_t<decltype(data)>;
+    return std::visit(
+        [](const auto& data) -> FastSharedValue {
+            using T = std::decay_t<decltype(data)>;
 
-        if constexpr (std::is_same_v<T, std::monostate>) {
-            return FastSharedValue{};
-        }
-        // Signed integers
-        else if constexpr (std::is_same_v<T, int32_t>) {
-            return FastSharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, int64_t>) {
-            return FastSharedValue{data};
-        }
-        // Unsigned integers
-        else if constexpr (std::is_same_v<T, uint32_t>) {
-            return FastSharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, uint64_t>) {
-            return FastSharedValue{data};
-        }
-        // Floating-point
-        else if constexpr (std::is_same_v<T, float>) {
-            return FastSharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, double>) {
-            return FastSharedValue{data};
-        }
-        // Boolean
-        else if constexpr (std::is_same_v<T, bool>) {
-            return FastSharedValue{data};
-        }
-        // String
-        else if constexpr (std::is_same_v<T, std::string>) {
-            return FastSharedValue{::shared_memory::SharedString(data)};
-        }
-        else if constexpr (std::is_same_v<T, ValueMap>) {
-            return FastSharedValue{detail::copy_local_map_to_fast_shared(data)};
-        }
-        else if constexpr (std::is_same_v<T, ValueVector>) {
-            return FastSharedValue{detail::copy_local_vector_to_fast_shared(data)};
-        }
-        else if constexpr (std::is_same_v<T, ValueArray>) {
-            return FastSharedValue{detail::copy_local_array_to_fast_shared(data)};
-        }
-        else if constexpr (std::is_same_v<T, ValueTable>) {
-            return FastSharedValue{detail::copy_local_table_to_fast_shared(data)};
-        }
-        // Math types - trivially copyable, direct copy
-        else if constexpr (std::is_same_v<T, Vec2>) {
-            return FastSharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, Vec3>) {
-            return FastSharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, Vec4>) {
-            return FastSharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, Mat3>) {
-            return FastSharedValue{data};
-        }
-        else if constexpr (std::is_same_v<T, Mat4x3>) {
-            return FastSharedValue{data};
-        }
-        else {
-            return FastSharedValue{};
-        }
-    }, local.data);
+            if constexpr (std::is_same_v<T, std::monostate>) {
+                return FastSharedValue{};
+            }
+            // Signed integers
+            else if constexpr (std::is_same_v<T, int32_t>) {
+                return FastSharedValue{data};
+            } else if constexpr (std::is_same_v<T, int64_t>) {
+                return FastSharedValue{data};
+            }
+            // Unsigned integers
+            else if constexpr (std::is_same_v<T, uint32_t>) {
+                return FastSharedValue{data};
+            } else if constexpr (std::is_same_v<T, uint64_t>) {
+                return FastSharedValue{data};
+            }
+            // Floating-point
+            else if constexpr (std::is_same_v<T, float>) {
+                return FastSharedValue{data};
+            } else if constexpr (std::is_same_v<T, double>) {
+                return FastSharedValue{data};
+            }
+            // Boolean
+            else if constexpr (std::is_same_v<T, bool>) {
+                return FastSharedValue{data};
+            }
+            // String
+            else if constexpr (std::is_same_v<T, std::string>) {
+                return FastSharedValue{::shared_memory::SharedString(data)};
+            } else if constexpr (std::is_same_v<T, ValueMap>) {
+                return FastSharedValue{detail::copy_local_map_to_fast_shared(data)};
+            } else if constexpr (std::is_same_v<T, ValueVector>) {
+                return FastSharedValue{detail::copy_local_vector_to_fast_shared(data)};
+            } else if constexpr (std::is_same_v<T, ValueArray>) {
+                return FastSharedValue{detail::copy_local_array_to_fast_shared(data)};
+            } else if constexpr (std::is_same_v<T, ValueTable>) {
+                return FastSharedValue{detail::copy_local_table_to_fast_shared(data)};
+            }
+            // Math types - trivially copyable, direct copy
+            else if constexpr (std::is_same_v<T, Vec2>) {
+                return FastSharedValue{data};
+            } else if constexpr (std::is_same_v<T, Vec3>) {
+                return FastSharedValue{data};
+            } else if constexpr (std::is_same_v<T, Vec4>) {
+                return FastSharedValue{data};
+            } else if constexpr (std::is_same_v<T, Mat3>) {
+                return FastSharedValue{data};
+            } else if constexpr (std::is_same_v<T, Mat4x3>) {
+                return FastSharedValue{data};
+            } else {
+                return FastSharedValue{};
+            }
+        },
+        local.data);
 }
 
 // Overloaded version implementation - consistent with SharedValue interface
@@ -522,7 +474,7 @@ inline FastSharedValue deep_copy_to_shared_fast(const Value& local) {
 
 // Ensure FastSharedValue alignment is compatible with shared_heap
 static_assert(alignof(FastSharedValue) <= ::shared_memory::shared_heap::ALIGNMENT,
-    "FastSharedValue alignment must not exceed shared_heap::ALIGNMENT");
+              "FastSharedValue alignment must not exceed shared_heap::ALIGNMENT");
 
 class FastSharedValueHandle {
 public:
@@ -561,7 +513,8 @@ public:
             bool success = false;
             ~RegionGuard() {
                 ::shared_memory::set_current_shared_region(nullptr);
-                if (!success) region.close();
+                if (!success)
+                    region.close();
             }
         } guard{region_};
 
@@ -586,21 +539,17 @@ public:
 
             guard.success = true;
             return true;
-        }
-        catch (const ::shared_memory::shared_memory_error& e) {
+        } catch (const ::shared_memory::shared_memory_error& e) {
             last_error_ = e.what();
             return false;
-        }
-        catch (const std::exception& e) {
+        } catch (const std::exception& e) {
             last_error_ = e.what();
             return false;
         }
     }
 
     // Open shared memory (called by process A)
-    bool open(const char* name) {
-        return region_.open(name);
-    }
+    bool open(const char* name) { return region_.open(name); }
 
     // Get FastSharedValue (true zero-copy read-only access!)
     const FastSharedValue* shared_value() const noexcept {
@@ -612,8 +561,7 @@ public:
         if (offset == 0) {
             return nullptr;
         }
-        return reinterpret_cast<const FastSharedValue*>(
-            static_cast<char*>(region_.base()) + offset);
+        return reinterpret_cast<const FastSharedValue*>(static_cast<char*>(region_.base()) + offset);
     }
 
     // Deep copy to local Value
@@ -628,7 +576,8 @@ public:
     bool is_valid() const noexcept { return region_.is_valid(); }
 
     bool is_value_ready() const noexcept {
-        if (!region_.is_valid()) return false;
+        if (!region_.is_valid())
+            return false;
         return region_.header()->value_offset != 0;
     }
 

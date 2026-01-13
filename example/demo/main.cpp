@@ -1,14 +1,14 @@
 // main.cpp - Path Lens Example
 
-#include <lager_ext/value.h>
-#include <lager_ext/lager_lens.h>
-#include <lager_ext/static_path.h>
-#include <lager_ext/value_diff.h>
-#include <lager_ext/shared_state.h>
 #include <lager_ext/editor_engine.h>
+#include <lager_ext/lager_lens.h>
+#include <lager_ext/shared_state.h>
+#include <lager_ext/static_path.h>
+#include <lager_ext/value.h>
+#include <lager_ext/value_diff.h>
 
-#include <lager/store.hpp>
 #include <lager/event_loop/manual.hpp>
+#include <lager/store.hpp>
 
 #include <iostream>
 #include <string>
@@ -19,13 +19,11 @@ using namespace lager_ext;
 // Application State and Actions
 // ============================================================
 
-struct AddItem
-{
+struct AddItem {
     std::string text;
 };
 
-struct UpdateItem
-{
+struct UpdateItem {
     Path path;
     std::string new_value;
 };
@@ -35,8 +33,7 @@ struct Redo {};
 
 using Action = std::variant<AddItem, UpdateItem, Undo, Redo>;
 
-struct AppState
-{
+struct AppState {
     Value data;
     immer::vector<Value> history;
     immer::vector<Value> future;
@@ -46,29 +43,21 @@ struct AppState
 // Initial State Factory
 // ============================================================
 
-AppState create_initial_state()
-{
-    auto item1 = Value{
-        ValueMap{{"title", immer::box<Value>{"Task 1"}},
-                 {"done", immer::box<Value>{false}}}};
+AppState create_initial_state() {
+    auto item1 = Value{ValueMap{{"title", immer::box<Value>{"Task 1"}}, {"done", immer::box<Value>{false}}}};
 
     auto items = Value{ValueVector{immer::box<Value>{std::move(item1)}}};
 
     auto root = Value{ValueMap{{"items", immer::box<Value>{std::move(items)}}}};
 
-    return AppState{
-        .data    = std::move(root),
-        .history = immer::vector<Value>{},
-        .future  = immer::vector<Value>{}
-    };
+    return AppState{.data = std::move(root), .history = immer::vector<Value>{}, .future = immer::vector<Value>{}};
 }
 
 // ============================================================
 // Reducer
 // ============================================================
 
-AppState reducer(AppState state, Action action)
-{
+AppState reducer(AppState state, Action action) {
     return std::visit(
         [&](auto&& act) -> AppState {
             using T = std::decay_t<decltype(act)>;
@@ -78,10 +67,10 @@ AppState reducer(AppState state, Action action)
                     return state;
 
                 auto new_state = state;
-                auto previous  = new_state.history.back();
+                auto previous = new_state.history.back();
 
                 new_state.future = new_state.future.push_back(new_state.data);
-                new_state.data   = previous;
+                new_state.data = previous;
                 new_state.history = new_state.history.take(new_state.history.size() - 1);
 
                 return new_state;
@@ -91,27 +80,26 @@ AppState reducer(AppState state, Action action)
                     return state;
 
                 auto new_state = state;
-                auto next      = new_state.future.back();
+                auto next = new_state.future.back();
 
                 new_state.history = new_state.history.push_back(new_state.data);
-                new_state.data    = next;
+                new_state.data = next;
                 new_state.future = new_state.future.take(new_state.future.size() - 1);
 
                 return new_state;
 
             } else if constexpr (std::is_same_v<T, AddItem>) {
-                auto new_state    = state;
+                auto new_state = state;
                 new_state.history = new_state.history.push_back(state.data);
-                new_state.future  = immer::vector<Value>{};
+                new_state.future = immer::vector<Value>{};
 
                 Path items_path{"/items"};
                 auto items_lens = lager_path_lens(items_path);
                 auto current_items = lager::view(items_lens, new_state.data);
 
                 if (auto* vec = current_items.get_if<ValueVector>()) {
-                    auto new_item = Value{
-                        ValueMap{{"title", immer::box<Value>{act.text}},
-                                 {"done", immer::box<Value>{false}}}};
+                    auto new_item =
+                        Value{ValueMap{{"title", immer::box<Value>{act.text}}, {"done", immer::box<Value>{false}}}};
                     auto new_vec = vec->push_back(immer::box<Value>{std::move(new_item)});
                     new_state.data = lager::set(items_lens, new_state.data, Value{std::move(new_vec)});
                 }
@@ -119,11 +107,11 @@ AppState reducer(AppState state, Action action)
                 return new_state;
 
             } else if constexpr (std::is_same_v<T, UpdateItem>) {
-                auto new_state    = state;
+                auto new_state = state;
                 new_state.history = new_state.history.push_back(state.data);
-                new_state.future  = immer::vector<Value>{};
+                new_state.future = immer::vector<Value>{};
 
-                auto lens      = lager_path_lens(act.path);
+                auto lens = lager_path_lens(act.path);
                 auto new_value = Value{act.new_value};
                 new_state.data = lager::set(lens, new_state.data, std::move(new_value));
 
@@ -139,26 +127,21 @@ AppState reducer(AppState state, Action action)
 // Main Application
 // ============================================================
 namespace lager_ext {
-    void demo_lager_lens();
-    void demo_at_lens();
-    void demo_string_path();
-    void demo_static_path();
-    void demo_immer_diff();
-    void demo_recursive_diff_collector();
-    void demo_shared_state();
-    void demo_editor_engine();
-    void demo_property_editing();
-    void demo_undo_redo();
-}
+void demo_lager_lens();
+void demo_at_lens();
+void demo_string_path();
+void demo_static_path();
+void demo_immer_diff();
+void demo_recursive_diff_collector();
+void demo_shared_state();
+void demo_editor_engine();
+void demo_property_editing();
+void demo_undo_redo();
+} // namespace lager_ext
 
-int main()
-{
-    auto loop  = lager::with_manual_event_loop{};
-    auto store = lager::make_store<Action>(
-        create_initial_state(),
-        loop,
-        lager::with_reducer(reducer)
-    );
+int main() {
+    auto loop = lager::with_manual_event_loop{};
+    auto store = lager::make_store<Action>(create_initial_state(), loop, lager::with_reducer(reducer));
 
     std::cout << "=== Path Lens Example ===\n";
     std::cout << "Demonstrating 5 schemes for dynamic data access\n\n";

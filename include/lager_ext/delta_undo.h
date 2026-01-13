@@ -27,16 +27,16 @@
 #pragma once
 
 #include <lager_ext/api.h>
-#include <lager_ext/scene_types.h>  // Shared types: SceneObject, SceneState, UIMeta, etc.
-#include <lager_ext/value.h>
-#include <lager_ext/shared_state.h>
 #include <lager_ext/lager_lens.h>
-
-#include <lager/store.hpp>
-#include <lager/event_loop/manual.hpp>
+#include <lager_ext/scene_types.h> // Shared types: SceneObject, SceneState, UIMeta, etc.
+#include <lager_ext/shared_state.h>
+#include <lager_ext/value.h>
 
 #include <immer/flex_vector.hpp>
 #include <immer/map.hpp>
+
+#include <lager/event_loop/manual.hpp>
+#include <lager/store.hpp>
 
 #include <functional>
 #include <map>
@@ -55,13 +55,13 @@ namespace delta_undo {
 
 // Re-use shared types from scene_types.h (in lager_ext namespace)
 // Aliased here for convenience within delta_undo namespace
-using lager_ext::WidgetType;
-using lager_ext::NumericRange;
 using lager_ext::ComboOptions;
+using lager_ext::NumericRange;
 using lager_ext::PropertyMeta;
-using lager_ext::UIMeta;
 using lager_ext::SceneObject;
 using lager_ext::SceneState;
+using lager_ext::UIMeta;
+using lager_ext::WidgetType;
 
 // Forward declarations for types defined in this header
 struct DeltaModel;
@@ -78,7 +78,7 @@ struct DeltaModel;
 /// Both functions operate on the CURRENT state, not restoring snapshots.
 /// This is the key difference from snapshot-based undo.
 struct Delta {
-    std::string description;  // Human-readable description of the operation
+    std::string description; // Human-readable description of the operation
 
     /// Apply the change to produce the new state (forward)
     std::function<SceneState(const SceneState&)> apply_fn;
@@ -87,17 +87,14 @@ struct Delta {
     std::function<SceneState(const SceneState&)> unapply_fn;
 
     /// Constructor for creating a delta
-    Delta(std::string desc,
-          std::function<SceneState(const SceneState&)> apply,
+    Delta(std::string desc, std::function<SceneState(const SceneState&)> apply,
           std::function<SceneState(const SceneState&)> unapply)
-        : description(std::move(desc))
-        , apply_fn(std::move(apply))
-        , unapply_fn(std::move(unapply))
-    {}
+        : description(std::move(desc)), apply_fn(std::move(apply)), unapply_fn(std::move(unapply)) {}
 
     /// Default constructor for variant compatibility
-    Delta() : description("empty"), apply_fn([](const SceneState& s) { return s; }),
-              unapply_fn([](const SceneState& s) { return s; }) {}
+    Delta()
+        : description("empty"), apply_fn([](const SceneState& s) { return s; }),
+          unapply_fn([](const SceneState& s) { return s; }) {}
 };
 
 // ============================================================
@@ -129,7 +126,7 @@ struct SetProperty {
 /// Set multiple properties atomically - creates a single delta
 struct SetProperties {
     std::string object_id;
-    std::map<std::string, Value> updates;  // path -> new_value
+    std::map<std::string, Value> updates; // path -> new_value
 };
 
 /// Add a new object - delta removes it on undo
@@ -179,22 +176,12 @@ struct SetSystemState {
 // Action variant
 using DeltaAction = std::variant<
     // Control
-    actions::Undo,
-    actions::Redo,
-    actions::ClearHistory,
+    actions::Undo, actions::Redo, actions::ClearHistory,
     // User actions (create deltas)
-    actions::SetProperty,
-    actions::SetProperties,
-    actions::AddObject,
-    actions::RemoveObject,
-    actions::BeginTransaction,
+    actions::SetProperty, actions::SetProperties, actions::AddObject, actions::RemoveObject, actions::BeginTransaction,
     actions::EndTransaction,
     // System actions (no deltas)
-    actions::SelectObject,
-    actions::SyncFromEngine,
-    actions::LoadObjects,
-    actions::SetSystemState
->;
+    actions::SelectObject, actions::SyncFromEngine, actions::LoadObjects, actions::SetSystemState>;
 
 // ============================================================
 // Delta Model - State with delta-based history
@@ -218,7 +205,7 @@ struct DeltaModel {
 
     // Transaction support - accumulates deltas into a single compound delta
     std::optional<std::string> transaction_description;
-    std::vector<Delta> transaction_deltas;  // Temporary storage during transaction
+    std::vector<Delta> transaction_deltas; // Temporary storage during transaction
 
     // Configuration
     static constexpr std::size_t max_history = 100;
@@ -235,32 +222,22 @@ struct DeltaModel {
 class LAGER_EXT_API DeltaFactory {
 public:
     /// Create delta for setting a single property
-    static Delta create_set_property_delta(
-        const std::string& object_id,
-        const std::string& property_path,
-        const Value& old_value,
-        const Value& new_value);
+    static Delta create_set_property_delta(const std::string& object_id, const std::string& property_path,
+                                           const Value& old_value, const Value& new_value);
 
     /// Create delta for setting multiple properties
-    static Delta create_set_properties_delta(
-        const std::string& object_id,
-        const std::map<std::string, Value>& old_values,
-        const std::map<std::string, Value>& new_values);
+    static Delta create_set_properties_delta(const std::string& object_id,
+                                             const std::map<std::string, Value>& old_values,
+                                             const std::map<std::string, Value>& new_values);
 
     /// Create delta for adding an object
-    static Delta create_add_object_delta(
-        const SceneObject& object,
-        const std::string& parent_id);
+    static Delta create_add_object_delta(const SceneObject& object, const std::string& parent_id);
 
     /// Create delta for removing an object
-    static Delta create_remove_object_delta(
-        const SceneObject& object,
-        const std::string& parent_id);
+    static Delta create_remove_object_delta(const SceneObject& object, const std::string& parent_id);
 
     /// Compose multiple deltas into a single compound delta
-    static Delta compose_deltas(
-        const std::string& description,
-        const std::vector<Delta>& deltas);
+    static Delta compose_deltas(const std::string& description, const std::vector<Delta>& deltas);
 };
 
 // ============================================================

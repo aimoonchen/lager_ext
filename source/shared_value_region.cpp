@@ -11,8 +11,8 @@
 #include <lager_ext/shared_value.h>
 
 // Boost.Interprocess headers - private to this translation unit
-#include <boost/interprocess/windows_shared_memory.hpp>
 #include <boost/interprocess/mapped_region.hpp>
+#include <boost/interprocess/windows_shared_memory.hpp>
 
 namespace bip = boost::interprocess;
 
@@ -32,9 +32,7 @@ struct SharedMemoryRegion::Impl {
 
     Impl() = default;
 
-    ~Impl() {
-        close();
-    }
+    ~Impl() { close(); }
 
     void close() {
         region.reset();
@@ -57,10 +55,7 @@ struct SharedMemoryRegion::Impl {
 // SharedMemoryRegion - Public interface implementation
 //==============================================================================
 
-SharedMemoryRegion::SharedMemoryRegion()
-    : impl_(std::make_unique<Impl>())
-{
-}
+SharedMemoryRegion::SharedMemoryRegion() : impl_(std::make_unique<Impl>()) {}
 
 SharedMemoryRegion::~SharedMemoryRegion() {
     if (impl_) {
@@ -68,9 +63,7 @@ SharedMemoryRegion::~SharedMemoryRegion() {
     }
 }
 
-SharedMemoryRegion::SharedMemoryRegion(SharedMemoryRegion&& other) noexcept
-    : impl_(std::move(other.impl_))
-{
+SharedMemoryRegion::SharedMemoryRegion(SharedMemoryRegion&& other) noexcept : impl_(std::move(other.impl_)) {
     // Ensure other has a valid (empty) impl after move
     other.impl_ = std::make_unique<Impl>();
 }
@@ -91,21 +84,10 @@ bool SharedMemoryRegion::create(const char* name, size_t size, void* base_addres
     impl_->is_owner = true;
 
     try {
-        impl_->shm = std::make_unique<bip::windows_shared_memory>(
-            bip::create_only,
-            name,
-            bip::read_write,
-            size
-        );
+        impl_->shm = std::make_unique<bip::windows_shared_memory>(bip::create_only, name, bip::read_write, size);
 
         // Try to map to fixed address
-        impl_->region = std::make_unique<bip::mapped_region>(
-            *impl_->shm,
-            bip::read_write,
-            0,
-            size,
-            base_address
-        );
+        impl_->region = std::make_unique<bip::mapped_region>(*impl_->shm, bip::read_write, 0, size, base_address);
 
         void* base = impl_->region->get_address();
         if (!base) {
@@ -125,8 +107,7 @@ bool SharedMemoryRegion::create(const char* name, size_t size, void* base_addres
         header->value_offset = 0;
 
         return true;
-    }
-    catch (const bip::interprocess_exception&) {
+    } catch (const bip::interprocess_exception&) {
         impl_->close();
         return false;
     }
@@ -139,11 +120,7 @@ bool SharedMemoryRegion::open(const char* name) {
     impl_->is_owner = false;
 
     try {
-        impl_->shm = std::make_unique<bip::windows_shared_memory>(
-            bip::open_only,
-            name,
-            bip::read_write
-        );
+        impl_->shm = std::make_unique<bip::windows_shared_memory>(bip::open_only, name, bip::read_write);
 
         // First map header to get fixed base address and size
         bip::mapped_region temp_region(*impl_->shm, bip::read_only, 0, sizeof(SharedMemoryHeader));
@@ -158,13 +135,7 @@ bool SharedMemoryRegion::open(const char* name) {
         impl_->size = temp_header->total_size;
 
         // Try to map to the same fixed address
-        impl_->region = std::make_unique<bip::mapped_region>(
-            *impl_->shm,
-            bip::read_write,
-            0,
-            impl_->size,
-            fixed_base
-        );
+        impl_->region = std::make_unique<bip::mapped_region>(*impl_->shm, bip::read_write, 0, impl_->size, fixed_base);
 
         void* base = impl_->region->get_address();
 
@@ -175,8 +146,7 @@ bool SharedMemoryRegion::open(const char* name) {
         }
 
         return true;
-    }
-    catch (const bip::interprocess_exception&) {
+    } catch (const bip::interprocess_exception&) {
         impl_->close();
         return false;
     }
@@ -208,12 +178,14 @@ SharedMemoryHeader* SharedMemoryRegion::header() const {
 
 void* SharedMemoryRegion::heap_base() const {
     void* b = base();
-    if (!b) return nullptr;
+    if (!b)
+        return nullptr;
     return reinterpret_cast<char*>(b) + header()->heap_offset;
 }
 
 void* SharedMemoryRegion::allocate(size_t size, size_t alignment) {
-    if (!base()) return nullptr;
+    if (!base())
+        return nullptr;
 
     auto* h = header();
     size_t aligned_size = (size + alignment - 1) & ~(alignment - 1);
@@ -227,7 +199,7 @@ void* SharedMemoryRegion::allocate(size_t size, size_t alignment) {
     size_t next = current + aligned_size;
 
     if (next > h->heap_size) {
-        return nullptr;  // Out of memory
+        return nullptr; // Out of memory
     }
 
     impl_->local_heap_cursor = next;

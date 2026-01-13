@@ -38,11 +38,11 @@
 
 #pragma once
 
-#include <lager_ext/value.h>
-#include <lager_ext/path.h>
 #include <lager_ext/api.h>
 #include <lager_ext/lager_lens.h>
+#include <lager_ext/path.h>
 #include <lager_ext/static_path.h>
+#include <lager_ext/value.h>
 
 namespace lager_ext {
 
@@ -55,10 +55,9 @@ namespace detail {
 /// Get value at a single path element (key or index)
 /// @note Internal helper - prefer get_at_path() for public use
 /// @note Uses transparent lookup for zero-allocation string_view access
-[[nodiscard]] inline Value get_at_path_element(const Value& current, const PathElement& elem)
-{
+[[nodiscard]] inline Value get_at_path_element(const Value& current, const PathElement& elem) {
     if (auto* key = std::get_if<std::string_view>(&elem)) {
-        return current.at(*key);  // Zero-allocation: uses transparent lookup
+        return current.at(*key); // Zero-allocation: uses transparent lookup
     } else {
         return current.at(std::get<std::size_t>(elem));
     }
@@ -67,10 +66,9 @@ namespace detail {
 /// Set value at a single path element (key or index)
 /// @note Internal helper - prefer set_at_path() for public use
 /// @note Now uses Value::set(string_view) overload for cleaner code
-[[nodiscard]] inline Value set_at_path_element(const Value& current, const PathElement& elem, Value new_val)
-{
+[[nodiscard]] inline Value set_at_path_element(const Value& current, const PathElement& elem, Value new_val) {
     if (auto* key = std::get_if<std::string_view>(&elem)) {
-        return current.set(*key, std::move(new_val));  // Uses set(string_view) overload
+        return current.set(*key, std::move(new_val)); // Uses set(string_view) overload
     } else {
         return current.set(std::get<std::size_t>(elem), std::move(new_val));
     }
@@ -78,8 +76,7 @@ namespace detail {
 
 /// Erase a key from a map value
 /// @note Internal helper
-[[nodiscard]] inline Value erase_key_from_map(const Value& val, std::string_view key)
-{
+[[nodiscard]] inline Value erase_key_from_map(const Value& val, std::string_view key) {
     if (auto* m = val.get_if<ValueMap>()) {
         return m->erase(std::string{key});
     }
@@ -89,11 +86,10 @@ namespace detail {
 /// Check if a path element can be accessed in the given value
 /// @note Internal helper - prefer is_valid_path() for public use
 /// @note Uses transparent lookup for zero-allocation string_view access
-[[nodiscard]] inline bool can_access_element(const Value& val, const PathElement& elem)
-{
+[[nodiscard]] inline bool can_access_element(const Value& val, const PathElement& elem) {
     if (auto* key = std::get_if<std::string_view>(&elem)) {
         if (const auto* map = val.get_if<ValueMap>()) {
-            return map->count(*key) > 0;  // Zero-allocation: uses transparent lookup
+            return map->count(*key) > 0; // Zero-allocation: uses transparent lookup
         }
         return false;
     } else {
@@ -194,7 +190,7 @@ using PathVec = Path;
 /// @brief Create a lens from compile-time string literal (C++20 NTTP)
 /// @tparam PathStr JSON Pointer style path (e.g., "/users/0/name")
 /// @return Type-erased LagerValueLens
-template<FixedString PathStr>
+template <FixedString PathStr>
 [[nodiscard]] Lens lens() {
     return static_path_lens<PathStr>();
 }
@@ -207,7 +203,7 @@ template<FixedString PathStr>
 }
 
 /// @brief Create a lens from variadic path elements
-template<PathElementType... Elems>
+template <PathElementType... Elems>
 [[nodiscard]] auto lens(Elems&&... elements) {
     return static_path_lens(std::forward<Elems>(elements)...);
 }
@@ -222,7 +218,7 @@ template<PathElementType... Elems>
 }
 
 /// @brief Create a PathLens from variadic elements
-template<PathElementType... Elems>
+template <PathElementType... Elems>
 [[nodiscard]] Builder make(Elems&&... elements) {
     return make_path(std::forward<Elems>(elements)...);
 }
@@ -242,7 +238,7 @@ template<PathElementType... Elems>
 }
 
 /// @brief Get value at variadic path
-template<PathElementType... Elems>
+template <PathElementType... Elems>
 [[nodiscard]] Value get(const Value& data, Elems&&... path_elements) {
     return get_at_path(data, make_path(std::forward<Elems>(path_elements)...).path());
 }
@@ -264,15 +260,15 @@ template<PathElementType... Elems>
 /// @brief Set value at variadic path
 /// @note Parameters: (data, path_elem1, path_elem2, ..., new_value)
 /// @example set(data, "users", 0, "name", Value{"Alice"})
-template<typename... Args>
-    requires (sizeof...(Args) >= 2)  // At least one path element + value
+template <typename... Args>
+    requires(sizeof...(Args) >= 2) // At least one path element + value
 [[nodiscard]] Value set(const Value& data, Args&&... args) {
     // Extract the last argument as value, rest as path elements
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
         auto args_tuple = std::forward_as_tuple(std::forward<Args>(args)...);
         constexpr std::size_t N = sizeof...(Args);
         Path p = make_path(std::get<Is>(std::move(args_tuple))...).path();
-        return set_at_path(data, p, Value{std::get<N-1>(std::move(args_tuple))});
+        return set_at_path(data, p, Value{std::get<N - 1>(std::move(args_tuple))});
     }(std::make_index_sequence<sizeof...(Args) - 1>{});
 }
 
@@ -281,13 +277,13 @@ template<typename... Args>
 // ============================================================
 
 /// @brief Update value at Path container using a function
-template<typename Fn>
+template <typename Fn>
 [[nodiscard]] Value over(const Value& data, const PathVec& path, Fn&& fn) {
     return set_at_path(data, path, std::forward<Fn>(fn)(get_at_path(data, path)));
 }
 
 /// @brief Update value at string path using a function
-template<typename Fn>
+template <typename Fn>
 [[nodiscard]] Value over(const Value& data, std::string_view path_str, Fn&& fn) {
     Path path{path_str};
     return set_at_path(data, path, std::forward<Fn>(fn)(get_at_path(data, path)));
@@ -295,7 +291,7 @@ template<typename Fn>
 
 /// @brief Update value at variadic path using a function
 /// @note Parameters: (data, path_elem1, ..., path_elemN, fn)
-template<typename Fn, PathElementType... Elems>
+template <typename Fn, PathElementType... Elems>
 [[nodiscard]] Value over(const Value& data, Fn&& fn, Elems&&... path_elements) {
     auto path = make_path(std::forward<Elems>(path_elements)...).path();
     return set_at_path(data, path, std::forward<Fn>(fn)(get_at_path(data, path)));
@@ -317,14 +313,14 @@ template<typename Fn, PathElementType... Elems>
 
 /// @brief Set value at variadic path with auto-vivification
 /// @note Parameters: (data, path_elem1, ..., path_elemN, new_value)
-template<typename... Args>
-    requires (sizeof...(Args) >= 2)
+template <typename... Args>
+    requires(sizeof...(Args) >= 2)
 [[nodiscard]] Value set_vivify(const Value& data, Args&&... args) {
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
         auto args_tuple = std::forward_as_tuple(std::forward<Args>(args)...);
         constexpr std::size_t N = sizeof...(Args);
         Path p = make_path(std::get<Is>(std::move(args_tuple))...).path();
-        return set_at_path_vivify(data, p, Value{std::get<N-1>(std::move(args_tuple))});
+        return set_at_path_vivify(data, p, Value{std::get<N - 1>(std::move(args_tuple))});
     }(std::make_index_sequence<sizeof...(Args) - 1>{});
 }
 
@@ -344,7 +340,7 @@ template<typename... Args>
 }
 
 /// @brief Erase value at variadic path
-template<PathElementType... Elems>
+template <PathElementType... Elems>
 [[nodiscard]] Value erase(const Value& data, Elems&&... path_elements) {
     return erase_at_path(data, make_path(std::forward<Elems>(path_elements)...).path());
 }
@@ -364,7 +360,7 @@ template<PathElementType... Elems>
 }
 
 /// @brief Check if a variadic path exists in the data
-template<PathElementType... Elems>
+template <PathElementType... Elems>
 [[nodiscard]] bool exists(const Value& data, Elems&&... path_elements) {
     return is_valid_path(data, make_path(std::forward<Elems>(path_elements)...).path());
 }

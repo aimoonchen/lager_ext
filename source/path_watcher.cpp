@@ -17,22 +17,25 @@ namespace {
 // Hash function for PathElement (string_view or size_t)
 struct PathElementHash {
     std::size_t operator()(const PathElement& elem) const {
-        return std::visit([](const auto& v) -> std::size_t {
-            using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, std::string_view>) {
-                return std::hash<std::string_view>{}(v);
-            } else {
-                return std::hash<std::size_t>{}(v);
-            }
-        }, elem);
+        return std::visit(
+            [](const auto& v) -> std::size_t {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<T, std::string_view>) {
+                    return std::hash<std::string_view>{}(v);
+                } else {
+                    return std::hash<std::size_t>{}(v);
+                }
+            },
+            elem);
     }
 };
 
 // Helper to check if two Values share the same underlying data (structural sharing)
 bool values_share_structure(const Value& a, const Value& b) {
     // Quick check: same variant index?
-    if (a.type_index() != b.type_index()) return false;
-    
+    if (a.type_index() != b.type_index())
+        return false;
+
     // For containers, check if they share the same immer internal pointer
     if (auto* map_a = a.get_if<ValueMap>()) {
         if (auto* map_b = b.get_if<ValueMap>()) {
@@ -57,22 +60,24 @@ bool values_share_structure(const Value& a, const Value& b) {
             return a == b;
         }
     }
-    
+
     // For primitives, just compare values
     return a == b;
 }
 
 // Get child value at path element
 Value get_child(const Value& parent, const PathElement& elem) {
-    return std::visit([&parent](const auto& key) -> Value {
-        using T = std::decay_t<decltype(key)>;
-        if constexpr (std::is_same_v<T, std::string_view>) {
-            // Convert string_view to string for map lookup
-            return parent.at(std::string{key});
-        } else {
-            return parent.at(key);  // size_t index
-        }
-    }, elem);
+    return std::visit(
+        [&parent](const auto& key) -> Value {
+            using T = std::decay_t<decltype(key)>;
+            if constexpr (std::is_same_v<T, std::string_view>) {
+                // Convert string_view to string for map lookup
+                return parent.at(std::string{key});
+            } else {
+                return parent.at(key); // size_t index
+            }
+        },
+        elem);
 }
 
 } // anonymous namespace
@@ -84,24 +89,27 @@ Value get_child(const Value& parent, const PathElement& elem) {
 struct PathWatcher::WatchNode {
     // Callbacks registered at this exact path
     std::vector<ChangeCallback> callbacks;
-    
+
     // Children indexed by next path element
     std::unordered_map<PathElement, std::unique_ptr<WatchNode>, PathElementHash> children;
-    
+
     // Check if this node or any descendant has callbacks
     [[nodiscard]] bool has_any_watches() const {
-        if (!callbacks.empty()) return true;
+        if (!callbacks.empty())
+            return true;
         for (const auto& [_, child] : children) {
-            if (child && child->has_any_watches()) return true;
+            if (child && child->has_any_watches())
+                return true;
         }
         return false;
     }
-    
+
     // Count total watches in this subtree
     [[nodiscard]] std::size_t count_watches() const {
         std::size_t count = callbacks.size();
         for (const auto& [_, child] : children) {
-            if (child) count += child->count_watches();
+            if (child)
+                count += child->count_watches();
         }
         return count;
     }
@@ -133,9 +141,9 @@ void PathWatcher::insert_path(const Path& path, ChangeCallback callback) {
     if (!root_) {
         root_ = std::make_unique<WatchNode>();
     }
-    
+
     WatchNode* node = root_.get();
-    
+
     // Traverse/create trie nodes for each path element
     for (const auto& elem : path) {
         auto& child = node->children[elem];
@@ -144,7 +152,7 @@ void PathWatcher::insert_path(const Path& path, ChangeCallback callback) {
         }
         node = child.get();
     }
-    
+
     // Add callback at the leaf node
     node->callbacks.push_back(std::move(callback));
     ++watch_count_;
@@ -159,46 +167,45 @@ void PathWatcher::unwatch(const Path& path) {
 }
 
 bool PathWatcher::remove_path(const Path& path) {
-    if (!root_) return false;
-    
+    if (!root_)
+        return false;
+
     // Stack to track path for cleanup
     std::vector<std::pair<WatchNode*, const PathElement*>> ancestors;
     WatchNode* node = root_.get();
-    
+
     // Traverse to the target node
     for (const auto& elem : path) {
         auto it = node->children.find(elem);
         if (it == node->children.end() || !it->second) {
-            return false;  // Path not found
+            return false; // Path not found
         }
         ancestors.push_back({node, &elem});
         node = it->second.get();
     }
-    
+
     if (node->callbacks.empty()) {
-        return false;  // No callbacks at this path
+        return false; // No callbacks at this path
     }
-    
+
     // Remove all callbacks at this path
     std::size_t removed = node->callbacks.size();
     node->callbacks.clear();
     watch_count_ -= removed;
-    
+
     // Clean up empty nodes (bottom-up)
     for (auto it = ancestors.rbegin(); it != ancestors.rend(); ++it) {
         WatchNode* parent = it->first;
         const PathElement* elem = it->second;
-        
+
         auto child_it = parent->children.find(*elem);
-        if (child_it != parent->children.end() && 
-            child_it->second && 
-            !child_it->second->has_any_watches()) {
+        if (child_it != parent->children.end() && child_it->second && !child_it->second->has_any_watches()) {
             parent->children.erase(child_it);
         } else {
-            break;  // Stop if this subtree still has watches
+            break; // Stop if this subtree still has watches
         }
     }
-    
+
     return true;
 }
 
@@ -213,40 +220,39 @@ void PathWatcher::clear() {
 
 std::size_t PathWatcher::check(const Value& old_state, const Value& new_state) {
     ++stats_.total_checks;
-    
+
     // Optimization 1: Fast path - identical objects
     if (&old_state == &new_state) {
         ++stats_.skipped_equal;
         return 0;
     }
-    
+
     // Optimization 2: Quick equality check using structural sharing
     if (values_share_structure(old_state, new_state)) {
         ++stats_.skipped_equal;
         return 0;
     }
-    
+
     // No watches registered
     if (!root_ || watch_count_ == 0) {
         return 0;
     }
-    
+
     // Optimization 3: Trie-based traversal with pruning
     std::size_t triggered = check_node(root_.get(), old_state, new_state);
     stats_.callbacks_triggered += triggered;
-    
+
     return triggered;
 }
 
-std::size_t PathWatcher::check_node(WatchNode* node, 
-                                    const Value& old_val, 
-                                    const Value& new_val) {
-    if (!node) return 0;
-    
+std::size_t PathWatcher::check_node(WatchNode* node, const Value& old_val, const Value& new_val) {
+    if (!node)
+        return 0;
+
     ++stats_.nodes_visited;
-    
+
     std::size_t triggered = 0;
-    
+
     // Trigger callbacks at this node if values differ
     if (!node->callbacks.empty()) {
         if (old_val != new_val) {
@@ -256,23 +262,24 @@ std::size_t PathWatcher::check_node(WatchNode* node,
             }
         }
     }
-    
+
     // Recurse into children
     for (const auto& [elem, child] : node->children) {
-        if (!child) continue;
-        
+        if (!child)
+            continue;
+
         Value old_child = get_child(old_val, elem);
         Value new_child = get_child(new_val, elem);
-        
+
         // Optimization: Prune if children share structure (haven't changed)
         if (values_share_structure(old_child, new_child)) {
             ++stats_.nodes_pruned;
-            continue;  // Skip entire subtree!
+            continue; // Skip entire subtree!
         }
-        
+
         triggered += check_node(child.get(), old_child, new_child);
     }
-    
+
     return triggered;
 }
 

@@ -3,9 +3,10 @@
 
 #include <lager_ext/lager_lens.h>
 #include <lager_ext/path_utils.h>
-#include <zug/compose.hpp>
-#include <unordered_map>
+
 #include <list>
+#include <unordered_map>
+#include <zug/compose.hpp>
 
 namespace lager_ext {
 
@@ -16,14 +17,16 @@ struct PathHash {
     std::size_t operator()(const Path& path) const {
         std::size_t hash = 0;
         for (const auto& elem : path) {
-            std::size_t elem_hash = std::visit([](const auto& v) -> std::size_t {
-                using T = std::decay_t<decltype(v)>;
-                if constexpr (std::is_same_v<T, std::string_view>) {
-                    return std::hash<std::string_view>{}(v);
-                } else {
-                    return std::hash<std::size_t>{}(v);
-                }
-            }, elem);
+            std::size_t elem_hash = std::visit(
+                [](const auto& v) -> std::size_t {
+                    using T = std::decay_t<decltype(v)>;
+                    if constexpr (std::is_same_v<T, std::string_view>) {
+                        return std::hash<std::string_view>{}(v);
+                    } else {
+                        return std::hash<std::size_t>{}(v);
+                    }
+                },
+                elem);
             // Combine hashes using FNV-1a style mixing
             hash ^= elem_hash + 0x9e3779b9 + (hash << 6) + (hash >> 2);
         }
@@ -76,7 +79,7 @@ public:
     }
 
     std::size_t size() const { return cache_map_.size(); }
-    
+
     void record_hit() { ++hits_; }
     void record_miss() { ++misses_; }
 
@@ -91,9 +94,7 @@ public:
         }
     };
 
-    Stats stats() const {
-        return Stats{hits_, misses_, cache_map_.size(), capacity_};
-    }
+    Stats stats() const { return Stats{hits_, misses_, cache_map_.size(), capacity_}; }
 
 private:
     using ListType = std::list<std::pair<Key, Value>>;
@@ -112,29 +113,22 @@ LRUCache<Path, LagerValueLens, PathHash>& get_lens_cache() {
     return cache;
 }
 
-LagerValueLens build_path_lens_uncached(const Path& path)
-{
+LagerValueLens build_path_lens_uncached(const Path& path) {
     if (path.empty()) {
         return zug::identity;
     }
 
     // Single lens: capture path once, traverse directly
     return lager::lenses::getset(
-        [path](const Value& root) -> Value {
-            return get_at_path(root, path);
-        },
-        [path](Value root, Value new_val) -> Value {
-            return set_at_path(root, path, std::move(new_val));
-        }
-    );
+        [path](const Value& root) -> Value { return get_at_path(root, path); },
+        [path](Value root, Value new_val) -> Value { return set_at_path(root, path, std::move(new_val)); });
 }
 
 } // anonymous namespace
 
 // Build lens from path using lager::lens<Value, Value>
 // Uses LRU cache for frequently accessed paths
-LagerValueLens lager_path_lens(const Path& path)
-{
+LagerValueLens lager_path_lens(const Path& path) {
     auto& cache = get_lens_cache();
 
     if (const auto* cached = cache.get(path)) {
@@ -149,21 +143,13 @@ LagerValueLens lager_path_lens(const Path& path)
     return lens;
 }
 
-void clear_lens_cache()
-{
+void clear_lens_cache() {
     get_lens_cache().clear();
 }
 
-LensCacheStats get_lens_cache_stats()
-{
+LensCacheStats get_lens_cache_stats() {
     auto stats = get_lens_cache().stats();
-    return LensCacheStats{
-        stats.hits,
-        stats.misses,
-        stats.size,
-        stats.capacity,
-        stats.hit_rate()
-    };
+    return LensCacheStats{stats.hits, stats.misses, stats.size, stats.capacity, stats.hit_rate()};
 }
 
 // ============================================================
@@ -172,69 +158,70 @@ LensCacheStats get_lens_cache_stats()
 
 namespace {
 
-std::string get_error_message(PathErrorCode code, const PathElement& elem, std::size_t index)
-{
-    auto elem_str = std::visit([](const auto& v) -> std::string {
-        using T = std::decay_t<decltype(v)>;
-        if constexpr (std::is_same_v<T, std::string_view>) {
-            return "key \"" + std::string{v} + "\"";
-        } else {
-            return "index " + std::to_string(v);
-        }
-    }, elem);
+std::string get_error_message(PathErrorCode code, const PathElement& elem, std::size_t index) {
+    auto elem_str = std::visit(
+        [](const auto& v) -> std::string {
+            using T = std::decay_t<decltype(v)>;
+            if constexpr (std::is_same_v<T, std::string_view>) {
+                return "key \"" + std::string{v} + "\"";
+            } else {
+                return "index " + std::to_string(v);
+            }
+        },
+        elem);
 
     switch (code) {
-        case PathErrorCode::Success:
-            return "Success";
-        case PathErrorCode::KeyNotFound:
-            return "Key not found: " + elem_str + " at path position " + std::to_string(index);
-        case PathErrorCode::IndexOutOfRange:
-            return "Index out of range: " + elem_str + " at path position " + std::to_string(index);
-        case PathErrorCode::TypeMismatch:
-            return "Type mismatch: expected container at " + elem_str + " (path position " + std::to_string(index) + ")";
-        case PathErrorCode::NullValue:
-            return "Null value encountered at " + elem_str + " (path position " + std::to_string(index) + ")";
-        case PathErrorCode::EmptyPath:
-            return "Empty path";
-        default:
-            return "Unknown error";
+    case PathErrorCode::Success:
+        return "Success";
+    case PathErrorCode::KeyNotFound:
+        return "Key not found: " + elem_str + " at path position " + std::to_string(index);
+    case PathErrorCode::IndexOutOfRange:
+        return "Index out of range: " + elem_str + " at path position " + std::to_string(index);
+    case PathErrorCode::TypeMismatch:
+        return "Type mismatch: expected container at " + elem_str + " (path position " + std::to_string(index) + ")";
+    case PathErrorCode::NullValue:
+        return "Null value encountered at " + elem_str + " (path position " + std::to_string(index) + ")";
+    case PathErrorCode::EmptyPath:
+        return "Empty path";
+    default:
+        return "Unknown error";
     }
 }
 
-std::pair<Value, PathErrorCode> try_get_element(const Value& current, const PathElement& elem)
-{
-    return std::visit([&current](const auto& key) -> std::pair<Value, PathErrorCode> {
-        using T = std::decay_t<decltype(key)>;
+std::pair<Value, PathErrorCode> try_get_element(const Value& current, const PathElement& elem) {
+    return std::visit(
+        [&current](const auto& key) -> std::pair<Value, PathErrorCode> {
+            using T = std::decay_t<decltype(key)>;
 
-        if (current.is_null()) {
-            return {Value{}, PathErrorCode::NullValue};
-        }
+            if (current.is_null()) {
+                return {Value{}, PathErrorCode::NullValue};
+            }
 
-        if constexpr (std::is_same_v<T, std::string_view>) {
-            if (auto* map = current.get_if<ValueMap>()) {
-                // Convert string_view to string for map lookup
-                if (auto found = map->find(std::string{key}); found != nullptr) {
-                    return {found->get(), PathErrorCode::Success};
+            if constexpr (std::is_same_v<T, std::string_view>) {
+                if (auto* map = current.get_if<ValueMap>()) {
+                    // Convert string_view to string for map lookup
+                    if (auto found = map->find(std::string{key}); found != nullptr) {
+                        return {found->get(), PathErrorCode::Success};
+                    }
+                    return {Value{}, PathErrorCode::KeyNotFound};
                 }
-                return {Value{}, PathErrorCode::KeyNotFound};
-            }
-            return {Value{}, PathErrorCode::TypeMismatch};
-        } else {
-            if (auto* vec = current.get_if<ValueVector>()) {
-                if (key < vec->size()) {
-                    return {(*vec)[key].get(), PathErrorCode::Success};
+                return {Value{}, PathErrorCode::TypeMismatch};
+            } else {
+                if (auto* vec = current.get_if<ValueVector>()) {
+                    if (key < vec->size()) {
+                        return {(*vec)[key].get(), PathErrorCode::Success};
+                    }
+                    return {Value{}, PathErrorCode::IndexOutOfRange};
                 }
-                return {Value{}, PathErrorCode::IndexOutOfRange};
+                return {Value{}, PathErrorCode::TypeMismatch};
             }
-            return {Value{}, PathErrorCode::TypeMismatch};
-        }
-    }, elem);
+        },
+        elem);
 }
 
 } // anonymous namespace
 
-PathAccessResult get_at_path_safe(const Value& root, const Path& path)
-{
+PathAccessResult get_at_path_safe(const Value& root, const Path& path) {
     PathAccessResult result;
     result.value = root;
 
@@ -269,8 +256,7 @@ PathAccessResult get_at_path_safe(const Value& root, const Path& path)
     return result;
 }
 
-PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new_val)
-{
+PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new_val) {
     PathAccessResult result;
 
     if (path.empty()) {
@@ -303,14 +289,16 @@ PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new
     }
 
     const auto& last_elem = path.back();
-    bool can_set = std::visit([&current](const auto& key) -> bool {
-        using T = std::decay_t<decltype(key)>;
-        if constexpr (std::is_same_v<T, std::string_view>) {
-            return current.is_null() || current.get_if<ValueMap>() != nullptr;
-        } else {
-            return current.get_if<ValueVector>() != nullptr;
-        }
-    }, last_elem);
+    bool can_set = std::visit(
+        [&current](const auto& key) -> bool {
+            using T = std::decay_t<decltype(key)>;
+            if constexpr (std::is_same_v<T, std::string_view>) {
+                return current.is_null() || current.get_if<ValueMap>() != nullptr;
+            } else {
+                return current.get_if<ValueVector>() != nullptr;
+            }
+        },
+        last_elem);
 
     if (!can_set) {
         result.success = false;
@@ -339,6 +327,5 @@ Value PathLens::get(const Value& root) const {
 Value PathLens::set(const Value& root, Value new_val) const {
     return set_at_path(root, path_, std::move(new_val));
 }
-
 
 } // namespace lager_ext

@@ -28,31 +28,31 @@
 // ============================================================
 
 #if defined(_WIN32) || defined(_WIN64)
-    // Windows platform (MSVC, MinGW, Clang-CL)
-    #ifdef LAGER_EXT_SHARED
-        #ifdef LAGER_EXT_EXPORTS
-            // Building the DLL: export symbols
-            #define LAGER_EXT_API __declspec(dllexport)
-        #else
-            // Using the DLL: import symbols
-            #define LAGER_EXT_API __declspec(dllimport)
-        #endif
-    #else
-        // Static library: no decoration needed
-        #define LAGER_EXT_API
-    #endif
-#elif defined(__GNUC__) || defined(__clang__)
-    // GCC/Clang on Unix-like platforms
-    #if defined(LAGER_EXT_SHARED) && defined(LAGER_EXT_EXPORTS)
-        // Building shared library: set default visibility
-        #define LAGER_EXT_API __attribute__((visibility("default")))
-    #else
-        // Static library or using shared library
-        #define LAGER_EXT_API
-    #endif
+// Windows platform (MSVC, MinGW, Clang-CL)
+#ifdef LAGER_EXT_SHARED
+#ifdef LAGER_EXT_EXPORTS
+// Building the DLL: export symbols
+#define LAGER_EXT_API __declspec(dllexport)
 #else
-    // Unknown compiler: no decoration
-    #define LAGER_EXT_API
+// Using the DLL: import symbols
+#define LAGER_EXT_API __declspec(dllimport)
+#endif
+#else
+// Static library: no decoration needed
+#define LAGER_EXT_API
+#endif
+#elif defined(__GNUC__) || defined(__clang__)
+// GCC/Clang on Unix-like platforms
+#if defined(LAGER_EXT_SHARED) && defined(LAGER_EXT_EXPORTS)
+// Building shared library: set default visibility
+#define LAGER_EXT_API __attribute__((visibility("default")))
+#else
+// Static library or using shared library
+#define LAGER_EXT_API
+#endif
+#else
+// Unknown compiler: no decoration
+#define LAGER_EXT_API
 #endif
 
 // ============================================================
@@ -76,13 +76,13 @@
 // Usage in source:  LAGER_EXT_EXPORT_TEMPLATE class MyTemplate<int>;
 
 #ifdef _MSC_VER
-    // MSVC: extern template prevents instantiation, explicit instantiation exports
-    #define LAGER_EXT_EXTERN_TEMPLATE extern template
-    #define LAGER_EXT_EXPORT_TEMPLATE template class LAGER_EXT_API
+// MSVC: extern template prevents instantiation, explicit instantiation exports
+#define LAGER_EXT_EXTERN_TEMPLATE extern template
+#define LAGER_EXT_EXPORT_TEMPLATE template class LAGER_EXT_API
 #else
-    // GCC/Clang
-    #define LAGER_EXT_EXTERN_TEMPLATE extern template
-    #define LAGER_EXT_EXPORT_TEMPLATE template class
+// GCC/Clang
+#define LAGER_EXT_EXTERN_TEMPLATE extern template
+#define LAGER_EXT_EXPORT_TEMPLATE template class
 #endif
 
 // ============================================================
@@ -90,9 +90,9 @@
 // ============================================================
 
 #if defined(__GNUC__) || defined(__clang__)
-    #define LAGER_EXT_DEPRECATED(msg) __attribute__((deprecated(msg)))
+#define LAGER_EXT_DEPRECATED(msg) __attribute__((deprecated(msg)))
 #elif defined(_MSC_VER)
-    #define LAGER_EXT_DEPRECATED(msg) __declspec(deprecated(msg))
+#define LAGER_EXT_DEPRECATED(msg) __declspec(deprecated(msg))
 #else
-    #define LAGER_EXT_DEPRECATED(msg)
+#define LAGER_EXT_DEPRECATED(msg)
 #endif

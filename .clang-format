@@ -1,0 +1,133 @@
+# LLVM-style with customizations for lager_ext
+# 4-space indent, 100 column limit
+
+BasedOnStyle: LLVM
+
+# Override LLVM defaults
+IndentWidth: 4
+ColumnLimit: 120
+TabWidth: 4
+UseTab: Never
+
+# Namespace settings (LLVM style: no indent inside namespace)
+NamespaceIndentation: None
+CompactNamespaces: false
+FixNamespaceComments: true
+
+# Include sorting
+SortIncludes: CaseInsensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Main module header (matches the .cpp filename)
+  - Regex: '^"(lager_ext/)?[^/]*\.h"'
+    Priority: 1
+    SortPriority: 0
+  # lager_ext headers
+  - Regex: '^[<"]lager_ext/'
+    Priority: 2
+  # immer headers
+  - Regex: '^<immer/'
+    Priority: 3
+  # lager headers
+  - Regex: '^<lager/'
+    Priority: 4
+  # System/external headers
+  - Regex: '^<'
+    Priority: 5
+  # Everything else
+  - Regex: '.*'
+    Priority: 6
+
+# Brace wrapping (LLVM: Attach braces)
+BreakBeforeBraces: Attach
+
+# Class/struct access modifiers
+AccessModifierOffset: -4
+IndentAccessModifiers: false
+
+# Function and control flow formatting
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: All
+
+# Alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignConsecutiveMacros: true
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments: true
+
+# Pointer alignment (left side for LLVM style)
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+# Template formatting
+AlwaysBreakTemplateDeclarations: Yes
+SpaceAfterTemplateKeyword: true
+
+# Space settings
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInAngles: Never
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpaceBeforeSquareBrackets: false
+SpaceAfterCStyleCast: false
+SpaceAroundPointerQualifiers: Default
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList: false
+
+# Line breaks
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+BreakStringLiterals: true
+
+# Constructor initializer list
+ConstructorInitializerIndentWidth: 4
+ContinuationIndentWidth: 4
+
+# Penalties (control line breaking decisions)
+PenaltyBreakAssignment: 2
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 60
+
+# Other
+MaxEmptyLinesToKeep: 1
+ReflowComments: true
+SortUsingDeclarations: true
+Standard: c++20
+
+# Keep lambda formatting readable
+LambdaBodyIndentation: Signature
+
+# Empty line handling
+EmptyLineBeforeAccessModifier: LogicalBlock
+EmptyLineAfterAccessModifier: Never
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# Bin packing (keep arguments together when possible)
+BinPackArguments: true
+BinPackParameters: true
+
+# Attribute macros
+AttributeMacros:
+  - LAGER_EXT_API
+  - LAGER_EXT_CLASS
+  - LAGER_EXT_FUNC
+  - LAGER_EXT_DEPRECATED
+
+# C++20 concepts
+IndentRequiresClause: true
+RequiresClausePosition: OwnLine

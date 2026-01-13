@@ -16,52 +16,50 @@ namespace multi_store {
 // ============================================================
 
 ObjectState object_update(ObjectState state, ObjectAction action) {
-    return std::visit([&state](auto&& act) -> ObjectState {
-        using T = std::decay_t<decltype(act)>;
+    return std::visit(
+        [&state](auto&& act) -> ObjectState {
+            using T = std::decay_t<decltype(act)>;
 
-        if constexpr (std::is_same_v<T, object_actions::SetProperty>) {
-            // Get current data as map
-            auto* map_ptr = state.data.get_if<ValueMap>();
-            if (!map_ptr) {
-                // Initialize as empty map if not a map
-                state.data = Value{ValueMap{}};
-                map_ptr = state.data.get_if<ValueMap>();
+            if constexpr (std::is_same_v<T, object_actions::SetProperty>) {
+                // Get current data as map
+                auto* map_ptr = state.data.get_if<ValueMap>();
+                if (!map_ptr) {
+                    // Initialize as empty map if not a map
+                    state.data = Value{ValueMap{}};
+                    map_ptr = state.data.get_if<ValueMap>();
+                }
+
+                // Set the property
+                state.data = Value{map_ptr->set(act.property_name, ValueBox(act.new_value))};
+                state.version++;
+                return state;
+            } else if constexpr (std::is_same_v<T, object_actions::SetProperties>) {
+                auto* map_ptr = state.data.get_if<ValueMap>();
+                if (!map_ptr) {
+                    state.data = Value{ValueMap{}};
+                    map_ptr = state.data.get_if<ValueMap>();
+                }
+
+                // Use transient for efficient batch update
+                auto trans = map_ptr->transient();
+                for (const auto& [name, value] : act.properties) {
+                    trans.set(name, ValueBox(value));
+                }
+                state.data = Value{trans.persistent()};
+                state.version++;
+                return state;
+            } else if constexpr (std::is_same_v<T, object_actions::ReplaceData>) {
+                state.data = act.new_data;
+                state.version++;
+                return state;
+            } else if constexpr (std::is_same_v<T, object_actions::RestoreState>) {
+                // Complete state restoration for undo/redo
+                return act.state;
             }
 
-            // Set the property
-            state.data = Value{map_ptr->set(act.property_name,
-                                            ValueBox(act.new_value))};
-            state.version++;
             return state;
-        }
-        else if constexpr (std::is_same_v<T, object_actions::SetProperties>) {
-            auto* map_ptr = state.data.get_if<ValueMap>();
-            if (!map_ptr) {
-                state.data = Value{ValueMap{}};
-                map_ptr = state.data.get_if<ValueMap>();
-            }
-
-            // Use transient for efficient batch update
-            auto trans = map_ptr->transient();
-            for (const auto& [name, value] : act.properties) {
-                trans.set(name, ValueBox(value));
-            }
-            state.data = Value{trans.persistent()};
-            state.version++;
-            return state;
-        }
-        else if constexpr (std::is_same_v<T, object_actions::ReplaceData>) {
-            state.data = act.new_data;
-            state.version++;
-            return state;
-        }
-        else if constexpr (std::is_same_v<T, object_actions::RestoreState>) {
-            // Complete state restoration for undo/redo
-            return act.state;
-        }
-
-        return state;
-    }, action);
+        },
+        action);
 }
 
 // ============================================================
@@ -69,29 +67,29 @@ ObjectState object_update(ObjectState state, ObjectAction action) {
 // ============================================================
 
 SceneMetaState scene_update(SceneMetaState state, SceneAction action) {
-    return std::visit([&state](auto&& act) -> SceneMetaState {
-        using T = std::decay_t<decltype(act)>;
+    return std::visit(
+        [&state](auto&& act) -> SceneMetaState {
+            using T = std::decay_t<decltype(act)>;
 
-        if constexpr (std::is_same_v<T, scene_actions::SelectObject>) {
-            state.selected_id = act.object_id;
-            return state;
-        }
-        else if constexpr (std::is_same_v<T, scene_actions::RegisterObject>) {
-            state.object_ids.insert(act.object_id);
-            state.version++;
-            return state;
-        }
-        else if constexpr (std::is_same_v<T, scene_actions::UnregisterObject>) {
-            state.object_ids.erase(act.object_id);
-            if (state.selected_id == act.object_id) {
-                state.selected_id.clear();
+            if constexpr (std::is_same_v<T, scene_actions::SelectObject>) {
+                state.selected_id = act.object_id;
+                return state;
+            } else if constexpr (std::is_same_v<T, scene_actions::RegisterObject>) {
+                state.object_ids.insert(act.object_id);
+                state.version++;
+                return state;
+            } else if constexpr (std::is_same_v<T, scene_actions::UnregisterObject>) {
+                state.object_ids.erase(act.object_id);
+                if (state.selected_id == act.object_id) {
+                    state.selected_id.clear();
+                }
+                state.version++;
+                return state;
             }
-            state.version++;
-            return state;
-        }
 
-        return state;
-    }, action);
+            return state;
+        },
+        action);
 }
 
 // ============================================================
@@ -121,7 +119,7 @@ void UndoManager::record(UndoCommand cmd) {
         composite.sub_commands.push_back(std::move(cmd));
 
         undo_stack_.push_back(std::move(composite));
-        redo_stack_.clear();  // Clear redo on new action
+        redo_stack_.clear(); // Clear redo on new action
 
         trim_history();
     }
@@ -227,10 +225,7 @@ void UndoManager::clear() {
 
 void UndoManager::trim_history() {
     if (max_history_ > 0 && undo_stack_.size() > max_history_) {
-        undo_stack_.erase(
-            undo_stack_.begin(),
-            undo_stack_.begin() + (undo_stack_.size() - max_history_)
-        );
+        undo_stack_.erase(undo_stack_.begin(), undo_stack_.begin() + (undo_stack_.size() - max_history_));
     }
 }
 
@@ -246,17 +241,13 @@ ObjectStoreType* StoreRegistry::get(const std::string& object_id) {
     return nullptr;
 }
 
-ObjectStoreType* StoreRegistry::create(const std::string& object_id,
-                                        ObjectState initial_state) {
+ObjectStoreType* StoreRegistry::create(const std::string& object_id, ObjectState initial_state) {
     if (stores_.count(object_id) > 0) {
-        std::cerr << "[StoreRegistry] Warning: store already exists for: "
-                  << object_id << "\n";
+        std::cerr << "[StoreRegistry] Warning: store already exists for: " << object_id << "\n";
         return stores_[object_id].get();
     }
 
-    auto store = std::make_unique<ObjectStoreType>(
-        make_object_store_impl(std::move(initial_state))
-    );
+    auto store = std::make_unique<ObjectStoreType>(make_object_store_impl(std::move(initial_state)));
 
     auto* ptr = store.get();
     stores_[object_id] = std::move(store);
@@ -285,18 +276,13 @@ std::vector<std::string> StoreRegistry::all_ids() const {
 // ============================================================
 
 MultiStoreController::MultiStoreController()
-    : scene_store_(std::make_unique<SceneStoreType>(
-          make_scene_store_impl(SceneMetaState{})))
-{
-}
+    : scene_store_(std::make_unique<SceneStoreType>(make_scene_store_impl(SceneMetaState{}))) {}
 
 const SceneMetaState& MultiStoreController::get_scene_state() const {
     return scene_store_->get();
 }
 
-void MultiStoreController::add_object(const std::string& id,
-                                      const std::string& type,
-                                      Value initial_data,
+void MultiStoreController::add_object(const std::string& id, const std::string& type, Value initial_data,
                                       bool undoable) {
     if (registry_.exists(id)) {
         std::cerr << "[MultiStoreController] Object already exists: " << id << "\n";
@@ -310,7 +296,7 @@ void MultiStoreController::add_object(const std::string& id,
         UndoCommand cmd;
         cmd.store_id = id;
         cmd.description = "Add " + type + ": " + id;
-        cmd.old_state = std::any{};  // Object didn't exist before
+        cmd.old_state = std::any{}; // Object didn't exist before
         cmd.new_state = state;
         cmd.restore_fn = [this, id](const std::any& state_any) {
             if (state_any.has_value()) {
@@ -349,7 +335,7 @@ void MultiStoreController::remove_object(const std::string& id, bool undoable) {
         cmd.store_id = id;
         cmd.description = "Remove " + old_state.type + ": " + id;
         cmd.old_state = old_state;
-        cmd.new_state = std::any{};  // Object will not exist
+        cmd.new_state = std::any{}; // Object will not exist
         cmd.restore_fn = [this, id](const std::any& state_any) {
             if (state_any.has_value()) {
                 // Undo: restore the object
@@ -390,9 +376,7 @@ std::vector<std::string> MultiStoreController::get_all_object_ids() const {
     return const_cast<StoreRegistry&>(registry_).all_ids();
 }
 
-void MultiStoreController::set_property(const std::string& object_id,
-                                        const std::string& property_name,
-                                        Value new_value,
+void MultiStoreController::set_property(const std::string& object_id, const std::string& property_name, Value new_value,
                                         bool undoable) {
     auto* store = registry_.get(object_id);
     if (!store) {
@@ -420,11 +404,8 @@ void MultiStoreController::set_property(const std::string& object_id,
     }
 }
 
-void MultiStoreController::set_properties(
-    const std::string& object_id,
-    const std::vector<std::pair<std::string, Value>>& properties,
-    bool undoable) {
-
+void MultiStoreController::set_properties(const std::string& object_id,
+                                          const std::vector<std::pair<std::string, Value>>& properties, bool undoable) {
     auto* store = registry_.get(object_id);
     if (!store) {
         std::cerr << "[MultiStoreController] Object not found: " << object_id << "\n";
@@ -439,8 +420,7 @@ void MultiStoreController::set_properties(
 
         UndoCommand cmd;
         cmd.store_id = object_id;
-        cmd.description = "Set " + std::to_string(properties.size()) +
-                         " properties on " + object_id;
+        cmd.description = "Set " + std::to_string(properties.size()) + " properties on " + object_id;
         cmd.old_state = old_state;
         cmd.new_state = new_state;
         cmd.restore_fn = make_object_restore_fn(object_id);
@@ -451,15 +431,13 @@ void MultiStoreController::set_properties(
     }
 }
 
-void MultiStoreController::batch_edit(
-    const std::vector<std::tuple<std::string, std::string, Value>>& edits,
-    bool undoable) {
-
-    if (edits.empty()) return;
+void MultiStoreController::batch_edit(const std::vector<std::tuple<std::string, std::string, Value>>& edits,
+                                      bool undoable) {
+    if (edits.empty())
+        return;
 
     if (undoable) {
-        undo_manager_.begin_transaction("Batch edit " +
-            std::to_string(edits.size()) + " properties");
+        undo_manager_.begin_transaction("Batch edit " + std::to_string(edits.size()) + " properties");
     }
 
     // Group edits by object
@@ -471,7 +449,8 @@ void MultiStoreController::batch_edit(
     // Apply grouped edits
     for (const auto& [obj_id, props] : grouped) {
         auto* store = registry_.get(obj_id);
-        if (!store) continue;
+        if (!store)
+            continue;
 
         if (undoable) {
             ObjectState old_state = store->get();
@@ -480,7 +459,7 @@ void MultiStoreController::batch_edit(
 
             UndoCommand cmd;
             cmd.store_id = obj_id;
-            cmd.description = "";  // Part of transaction
+            cmd.description = ""; // Part of transaction
             cmd.old_state = old_state;
             cmd.new_state = new_state;
             cmd.restore_fn = make_object_restore_fn(obj_id);
@@ -517,13 +496,14 @@ void MultiStoreController::cancel_transaction() {
     undo_manager_.cancel_transaction();
 }
 
-std::function<void(const std::any&)>
-MultiStoreController::make_object_restore_fn(const std::string& object_id) {
+std::function<void(const std::any&)> MultiStoreController::make_object_restore_fn(const std::string& object_id) {
     return [this, object_id](const std::any& state_any) {
-        if (!state_any.has_value()) return;
+        if (!state_any.has_value())
+            return;
 
         auto* store = registry_.get(object_id);
-        if (!store) return;
+        if (!store)
+            return;
 
         auto state = std::any_cast<ObjectState>(state_any);
         store->dispatch(object_actions::RestoreState{state});
@@ -576,8 +556,7 @@ void demo_multi_store_basic() {
     std::size_t undo_before = controller.undo_count();
     controller.select_object("light_sun");
     std::cout << "   Selected: " << controller.get_selected_id() << "\n";
-    std::cout << "   Undo stack before: " << undo_before
-              << ", after: " << controller.undo_count() << "\n\n";
+    std::cout << "   Undo stack before: " << undo_before << ", after: " << controller.undo_count() << "\n\n";
 
     // Undo
     std::cout << "4. Undo property change...\n";
@@ -590,8 +569,7 @@ void demo_multi_store_basic() {
             }
         }
     }
-    std::cout << "   Undo stack: " << controller.undo_count()
-              << ", Redo stack: " << controller.redo_count() << "\n";
+    std::cout << "   Undo stack: " << controller.undo_count() << ", Redo stack: " << controller.redo_count() << "\n";
 }
 
 void demo_multi_store_transactions() {
@@ -620,7 +598,7 @@ void demo_multi_store_transactions() {
     std::vector<std::tuple<std::string, std::string, Value>> edits;
     for (int i = 0; i < 5; ++i) {
         std::string id = "cube_" + std::to_string(i);
-        edits.emplace_back(id, "y", Value{100.0});  // Move all cubes up
+        edits.emplace_back(id, "y", Value{100.0}); // Move all cubes up
     }
 
     controller.batch_edit(edits);

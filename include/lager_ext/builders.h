@@ -6,7 +6,7 @@
 ///
 /// This file provides transient-based builders for constructing Value containers:
 /// - MapBuilder: Build value_map efficiently
-/// - VectorBuilder: Build value_vector efficiently  
+/// - VectorBuilder: Build value_vector efficiently
 /// - ArrayBuilder: Build value_array efficiently
 /// - TableBuilder: Build value_table efficiently
 ///
@@ -33,8 +33,8 @@
 
 #pragma once
 
-#include "value_fwd.h"  // Use forward declarations for better compilation speed
-#include "value.h"      // Include full definitions for implementation
+#include "value.h"     // Include full definitions for implementation
+#include "value_fwd.h" // Use forward declarations for better compilation speed
 
 namespace lager_ext {
 
@@ -58,10 +58,9 @@ public:
     ///   auto result = MapBuilder(config)
     ///       .set("updated", true)
     ///       .finish();
-    explicit BasicMapBuilder(const value_type& existing) 
-        : transient_(existing.template is<value_map>() 
-            ? existing.template get_if<value_map>()->transient()
-            : value_map{}.transient()) {}
+    explicit BasicMapBuilder(const value_type& existing)
+        : transient_(existing.template is<value_map>() ? existing.template get_if<value_map>()->transient()
+                                                       : value_map{}.transient()) {}
 
     // Move operations (allowed)
     BasicMapBuilder(BasicMapBuilder&&) noexcept = default;
@@ -94,9 +93,7 @@ public:
     }
 
     /// Set with const char* key (disambiguation for string literals)
-    BasicMapBuilder& set(const char* key, value_type val) {
-        return set(std::string_view{key}, std::move(val));
-    }
+    BasicMapBuilder& set(const char* key, value_type val) { return set(std::string_view{key}, std::move(val)); }
 
     /// Set with const string& key (disambiguation for string lvalue)
     template <typename T>
@@ -105,9 +102,7 @@ public:
     }
 
     /// Set with const string& key (disambiguation for string lvalue)
-    BasicMapBuilder& set(const std::string& key, value_type val) {
-        return set(std::string_view{key}, std::move(val));
-    }
+    BasicMapBuilder& set(const std::string& key, value_type val) { return set(std::string_view{key}, std::move(val)); }
 
     /// Set with rvalue string key (zero-copy key transfer)
     template <typename T>
@@ -123,14 +118,10 @@ public:
     }
 
     /// Check if the builder contains a key
-    [[nodiscard]] bool contains(std::string_view key) const {
-        return transient_.count(key) > 0;
-    }
+    [[nodiscard]] bool contains(std::string_view key) const { return transient_.count(key) > 0; }
 
     /// Get current size
-    [[nodiscard]] std::size_t size() const {
-        return transient_.size();
-    }
+    [[nodiscard]] std::size_t size() const { return transient_.size(); }
 
     // ============================================================
     // Access and Update Methods (for modifying previously set values)
@@ -152,8 +143,8 @@ public:
     /// @param fn Function taking value_type and returning value_type
     /// @return Reference to this builder for chaining
     /// @note If key doesn't exist, no change is made
-    template<typename Fn>
-    requires ValueTransformer<Fn, value_type>
+    template <typename Fn>
+        requires ValueTransformer<Fn, value_type>
     BasicMapBuilder& update_at(std::string_view key, Fn&& fn) {
         if (auto* found = transient_.find(key)) {
             auto new_val = std::forward<Fn>(fn)(found->get());
@@ -166,8 +157,8 @@ public:
     /// @param key The key to upsert
     /// @param fn Function taking value_type (may be null) and returning value_type
     /// @return Reference to this builder for chaining
-    template<typename Fn>
-    requires ValueTransformer<Fn, value_type>
+    template <typename Fn>
+        requires ValueTransformer<Fn, value_type>
     BasicMapBuilder& upsert(std::string_view key, Fn&& fn) {
         value_type current{};
         if (auto* found = transient_.find(key)) {
@@ -185,23 +176,25 @@ public:
     /// @return Reference to this builder for chaining
     template <typename T>
     BasicMapBuilder& set_at_path(const Path& path, T&& val) {
-        if (path.empty()) return *this;
-        
+        if (path.empty())
+            return *this;
+
         // Get first key (must be string_view for map)
         auto* first_key = std::get_if<std::string_view>(&path[0]);
-        if (!first_key) return *this;
-        
+        if (!first_key)
+            return *this;
+
         if (path.size() == 1) {
             // Single element path, just set directly
             return set(*first_key, std::forward<T>(val));
         }
-        
+
         // Get or create the root value for this key
         value_type root_val = get(*first_key);
-        
+
         // Build sub-path (skip first element)
         Path sub_path(path.begin() + 1, path.end());
-        
+
         // Use recursive vivify to set the nested value
         value_type new_root = set_at_path_vivify_impl(root_val, sub_path, 0, value_type{std::forward<T>(val)});
         transient_.set(std::string{*first_key}, value_box{std::move(new_root)});
@@ -212,20 +205,22 @@ public:
     /// @param path The path to the value
     /// @param fn Function taking value_type and returning value_type
     /// @return Reference to this builder for chaining
-    template<typename Fn>
+    template <typename Fn>
     BasicMapBuilder& update_at_path(const Path& path, Fn&& fn) {
-        if (path.empty()) return *this;
-        
+        if (path.empty())
+            return *this;
+
         auto* first_key = std::get_if<std::string_view>(&path[0]);
-        if (!first_key) return *this;
-        
+        if (!first_key)
+            return *this;
+
         if (path.size() == 1) {
             return update_at(*first_key, std::forward<Fn>(fn));
         }
-        
+
         value_type root_val = get(*first_key);
         Path sub_path(path.begin() + 1, path.end());
-        
+
         // Get current value at path
         value_type current = get_at_path_impl(root_val, sub_path, 0);
         // Apply function
@@ -238,44 +233,35 @@ public:
 
     /// Finish building and return the immutable Value
     /// Note: After calling finish(), the builder is in an undefined state
-    [[nodiscard]] value_type finish() {
-        return value_type{transient_.persistent()};
-    }
+    [[nodiscard]] value_type finish() { return value_type{transient_.persistent()}; }
 
     /// Finish and return just the map (not wrapped in Value)
-    [[nodiscard]] value_map finish_map() {
-        return transient_.persistent();
-    }
+    [[nodiscard]] value_map finish_map() { return transient_.persistent(); }
 
 private:
     transient_type transient_;
 
     // Helper: get value at path
     static value_type get_at_path_impl(const value_type& root, const Path& path, std::size_t idx) {
-        if (idx >= path.size()) return root;
-        
-        value_type child = std::visit([&root](const auto& key_or_idx) {
-            return root.at(key_or_idx);
-        }, path[idx]);
-        
-        if (child.is_null()) return child;
+        if (idx >= path.size())
+            return root;
+
+        value_type child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, path[idx]);
+
+        if (child.is_null())
+            return child;
         return get_at_path_impl(child, path, idx + 1);
     }
 
     // Helper: set value at path with vivification
-    static value_type set_at_path_vivify_impl(
-        const value_type& root,
-        const Path& path,
-        std::size_t idx,
-        value_type new_val)
-    {
-        if (idx >= path.size()) return new_val;
-        
+    static value_type set_at_path_vivify_impl(const value_type& root, const Path& path, std::size_t idx,
+                                              value_type new_val) {
+        if (idx >= path.size())
+            return new_val;
+
         const auto& elem = path[idx];
-        value_type current_child = std::visit([&root](const auto& key_or_idx) {
-            return root.at(key_or_idx);
-        }, elem);
-        
+        value_type current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
+
         // Prepare child for next level if needed
         if (current_child.is_null() && idx + 1 < path.size()) {
             const auto& next = path[idx + 1];
@@ -285,13 +271,15 @@ private:
                 current_child = value_type{value_vector{}};
             }
         }
-        
+
         value_type new_child = set_at_path_vivify_impl(current_child, path, idx + 1, std::move(new_val));
-        
+
         // Set child back to parent
-        return std::visit([&root, &new_child](auto key_or_idx) -> value_type {
-            return root.set_vivify(key_or_idx, std::move(new_child));
-        }, elem);
+        return std::visit(
+            [&root, &new_child](auto key_or_idx) -> value_type {
+                return root.set_vivify(key_or_idx, std::move(new_child));
+            },
+            elem);
     }
 };
 
@@ -309,14 +297,12 @@ public:
     BasicVectorBuilder() : transient_(value_vector{}.transient()) {}
 
     /// Create a builder from an existing vector (for incremental modification)
-    explicit BasicVectorBuilder(const value_vector& existing) 
-        : transient_(existing.transient()) {}
+    explicit BasicVectorBuilder(const value_vector& existing) : transient_(existing.transient()) {}
 
     /// Create a builder from a Value containing a vector
-    explicit BasicVectorBuilder(const value_type& existing) 
-        : transient_(existing.template is<value_vector>() 
-            ? existing.template get_if<value_vector>()->transient()
-            : value_vector{}.transient()) {}
+    explicit BasicVectorBuilder(const value_type& existing)
+        : transient_(existing.template is<value_vector>() ? existing.template get_if<value_vector>()->transient()
+                                                          : value_vector{}.transient()) {}
 
     // Move operations (allowed)
     BasicVectorBuilder(BasicVectorBuilder&&) noexcept = default;
@@ -349,9 +335,7 @@ public:
     }
 
     /// Get current size
-    [[nodiscard]] std::size_t size() const {
-        return transient_.size();
-    }
+    [[nodiscard]] std::size_t size() const { return transient_.size(); }
 
     /// Get a previously set value by index
     [[nodiscard]] value_type get(std::size_t index, value_type default_val = value_type{}) const {
@@ -362,8 +346,8 @@ public:
     }
 
     /// Update a previously set value by index using a function
-    template<typename Fn>
-    requires ValueTransformer<Fn, value_type>
+    template <typename Fn>
+        requires ValueTransformer<Fn, value_type>
     BasicVectorBuilder& update_at(std::size_t index, Fn&& fn) {
         if (index < transient_.size()) {
             auto new_val = std::forward<Fn>(fn)(transient_[index].get());
@@ -375,15 +359,17 @@ public:
     /// Set value at a nested path with auto-vivification
     template <typename T>
     BasicVectorBuilder& set_at_path(const Path& path, T&& val) {
-        if (path.empty()) return *this;
-        
+        if (path.empty())
+            return *this;
+
         auto* first_idx = std::get_if<std::size_t>(&path[0]);
-        if (!first_idx || *first_idx >= transient_.size()) return *this;
-        
+        if (!first_idx || *first_idx >= transient_.size())
+            return *this;
+
         if (path.size() == 1) {
             return set(*first_idx, std::forward<T>(val));
         }
-        
+
         value_type root_val = transient_[*first_idx].get();
         Path sub_path(path.begin() + 1, path.end());
         value_type new_root = set_at_path_vivify_impl(root_val, sub_path, 0, value_type{std::forward<T>(val)});
@@ -392,18 +378,20 @@ public:
     }
 
     /// Update value at a nested path using a function
-    template<typename Fn>
-    requires ValueTransformer<Fn, value_type>
+    template <typename Fn>
+        requires ValueTransformer<Fn, value_type>
     BasicVectorBuilder& update_at_path(const Path& path, Fn&& fn) {
-        if (path.empty()) return *this;
-        
+        if (path.empty())
+            return *this;
+
         auto* first_idx = std::get_if<std::size_t>(&path[0]);
-        if (!first_idx || *first_idx >= transient_.size()) return *this;
-        
+        if (!first_idx || *first_idx >= transient_.size())
+            return *this;
+
         if (path.size() == 1) {
             return update_at(*first_idx, std::forward<Fn>(fn));
         }
-        
+
         value_type root_val = transient_[*first_idx].get();
         Path sub_path(path.begin() + 1, path.end());
         value_type current = get_at_path_impl(root_val, sub_path, 0);
@@ -414,38 +402,29 @@ public:
     }
 
     /// Finish building and return the immutable Value
-    [[nodiscard]] value_type finish() {
-        return value_type{transient_.persistent()};
-    }
+    [[nodiscard]] value_type finish() { return value_type{transient_.persistent()}; }
 
     /// Finish and return just the vector (not wrapped in Value)
-    [[nodiscard]] value_vector finish_vector() {
-        return transient_.persistent();
-    }
+    [[nodiscard]] value_vector finish_vector() { return transient_.persistent(); }
 
 private:
     transient_type transient_;
 
     static value_type get_at_path_impl(const value_type& root, const Path& path, std::size_t idx) {
-        if (idx >= path.size()) return root;
-        value_type child = std::visit([&root](const auto& key_or_idx) {
-            return root.at(key_or_idx);
-        }, path[idx]);
-        if (child.is_null()) return child;
+        if (idx >= path.size())
+            return root;
+        value_type child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, path[idx]);
+        if (child.is_null())
+            return child;
         return get_at_path_impl(child, path, idx + 1);
     }
 
-    static value_type set_at_path_vivify_impl(
-        const value_type& root,
-        const Path& path,
-        std::size_t idx,
-        value_type new_val)
-    {
-        if (idx >= path.size()) return new_val;
+    static value_type set_at_path_vivify_impl(const value_type& root, const Path& path, std::size_t idx,
+                                              value_type new_val) {
+        if (idx >= path.size())
+            return new_val;
         const auto& elem = path[idx];
-        value_type current_child = std::visit([&root](const auto& key_or_idx) {
-            return root.at(key_or_idx);
-        }, elem);
+        value_type current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
         if (current_child.is_null() && idx + 1 < path.size()) {
             const auto& next = path[idx + 1];
             if (std::holds_alternative<std::string_view>(next)) {
@@ -455,9 +434,11 @@ private:
             }
         }
         value_type new_child = set_at_path_vivify_impl(current_child, path, idx + 1, std::move(new_val));
-        return std::visit([&root, &new_child](auto key_or_idx) -> value_type {
-            return root.set_vivify(key_or_idx, std::move(new_child));
-        }, elem);
+        return std::visit(
+            [&root, &new_child](auto key_or_idx) -> value_type {
+                return root.set_vivify(key_or_idx, std::move(new_child));
+            },
+            elem);
     }
 };
 
@@ -471,12 +452,10 @@ public:
     using transient_type = typename value_array::transient_type;
 
     BasicArrayBuilder() : transient_(value_array{}.transient()) {}
-    explicit BasicArrayBuilder(const value_array& existing) 
-        : transient_(existing.transient()) {}
-    explicit BasicArrayBuilder(const value_type& existing) 
-        : transient_(existing.template is<value_array>() 
-            ? existing.template get_if<value_array>()->transient()
-            : value_array{}.transient()) {}
+    explicit BasicArrayBuilder(const value_array& existing) : transient_(existing.transient()) {}
+    explicit BasicArrayBuilder(const value_type& existing)
+        : transient_(existing.template is<value_array>() ? existing.template get_if<value_array>()->transient()
+                                                         : value_array{}.transient()) {}
 
     BasicArrayBuilder(BasicArrayBuilder&&) noexcept = default;
     BasicArrayBuilder& operator=(BasicArrayBuilder&&) noexcept = default;
@@ -494,17 +473,11 @@ public:
         return *this;
     }
 
-    [[nodiscard]] std::size_t size() const {
-        return transient_.size();
-    }
+    [[nodiscard]] std::size_t size() const { return transient_.size(); }
 
-    [[nodiscard]] value_type finish() {
-        return value_type{transient_.persistent()};
-    }
+    [[nodiscard]] value_type finish() { return value_type{transient_.persistent()}; }
 
-    [[nodiscard]] value_array finish_array() {
-        return transient_.persistent();
-    }
+    [[nodiscard]] value_array finish_array() { return transient_.persistent(); }
 
 private:
     transient_type transient_;
@@ -521,12 +494,10 @@ public:
     using transient_type = typename value_table::transient_type;
 
     BasicTableBuilder() : transient_(value_table{}.transient()) {}
-    explicit BasicTableBuilder(const value_table& existing) 
-        : transient_(existing.transient()) {}
-    explicit BasicTableBuilder(const value_type& existing) 
-        : transient_(existing.template is<value_table>() 
-            ? existing.template get_if<value_table>()->transient()
-            : value_table{}.transient()) {}
+    explicit BasicTableBuilder(const value_table& existing) : transient_(existing.transient()) {}
+    explicit BasicTableBuilder(const value_type& existing)
+        : transient_(existing.template is<value_table>() ? existing.template get_if<value_table>()->transient()
+                                                         : value_table{}.transient()) {}
 
     BasicTableBuilder(BasicTableBuilder&&) noexcept = default;
     BasicTableBuilder& operator=(BasicTableBuilder&&) noexcept = default;
@@ -553,9 +524,7 @@ public:
     }
 
     /// Insert with const char* id (disambiguation for string literals)
-    BasicTableBuilder& insert(const char* id, value_type val) {
-        return insert(std::string_view{id}, std::move(val));
-    }
+    BasicTableBuilder& insert(const char* id, value_type val) { return insert(std::string_view{id}, std::move(val)); }
 
     /// Insert with const string& id (disambiguation for string lvalue)
     template <typename T>
@@ -581,9 +550,7 @@ public:
         return *this;
     }
 
-    [[nodiscard]] bool contains(std::string_view id) const {
-        return transient_.count(id) > 0;
-    }
+    [[nodiscard]] bool contains(std::string_view id) const { return transient_.count(id) > 0; }
 
     [[nodiscard]] value_type get(std::string_view id, value_type default_val = value_type{}) const {
         const auto* ptr = transient_.find(id);
@@ -593,8 +560,8 @@ public:
         return default_val;
     }
 
-    template<typename Fn>
-    requires ValueTransformer<Fn, value_type>
+    template <typename Fn>
+        requires ValueTransformer<Fn, value_type>
     BasicTableBuilder& update(std::string_view id, Fn&& fn) {
         const auto* ptr = transient_.find(id);
         if (ptr) {
@@ -604,8 +571,8 @@ public:
         return *this;
     }
 
-    template<typename Fn>
-    requires ValueTransformer<Fn, value_type>
+    template <typename Fn>
+        requires ValueTransformer<Fn, value_type>
     BasicTableBuilder& upsert(std::string_view id, Fn&& fn) {
         value_type current{};
         const auto* ptr = transient_.find(id);
@@ -617,17 +584,11 @@ public:
         return *this;
     }
 
-    [[nodiscard]] std::size_t size() const {
-        return transient_.size();
-    }
+    [[nodiscard]] std::size_t size() const { return transient_.size(); }
 
-    [[nodiscard]] value_type finish() {
-        return value_type{transient_.persistent()};
-    }
+    [[nodiscard]] value_type finish() { return value_type{transient_.persistent()}; }
 
-    [[nodiscard]] value_table finish_table() {
-        return transient_.persistent();
-    }
+    [[nodiscard]] value_table finish_table() { return transient_.persistent(); }
 
 private:
     transient_type transient_;

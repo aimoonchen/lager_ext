@@ -33,18 +33,18 @@
 #pragma once
 
 #include <lager_ext/api.h>
+#include <lager_ext/concepts.h> // for Vec2, Vec3, Vec4, Mat3, Mat4x3
 #include <lager_ext/path.h>
-#include <lager_ext/concepts.h>  // for Vec2, Vec3, Vec4, Mat3, Mat4x3
-#include <tsl/robin_map.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <tsl/robin_map.h>
 #include <variant>
 #include <vector>
-#include <optional>
-#include <array>
 
 namespace lager_ext {
 
@@ -55,7 +55,7 @@ namespace lager_ext {
 /// Transparent hash functor for string types
 /// Supports: std::string, std::string_view, const char*
 struct MutableValueStringHash {
-    using is_transparent = void;  // Enable heterogeneous lookup
+    using is_transparent = void; // Enable heterogeneous lookup
 
     [[nodiscard]] std::size_t operator()(std::string_view sv) const noexcept {
         return std::hash<std::string_view>{}(sv);
@@ -65,18 +65,14 @@ struct MutableValueStringHash {
         return std::hash<std::string_view>{}(s);
     }
 
-    [[nodiscard]] std::size_t operator()(const char* s) const noexcept {
-        return std::hash<std::string_view>{}(s);
-    }
+    [[nodiscard]] std::size_t operator()(const char* s) const noexcept { return std::hash<std::string_view>{}(s); }
 };
 
 /// Transparent equality comparator for string types
 struct MutableValueStringEqual {
-    using is_transparent = void;  // Enable heterogeneous lookup
+    using is_transparent = void; // Enable heterogeneous lookup
 
-    [[nodiscard]] bool operator()(std::string_view a, std::string_view b) const noexcept {
-        return a == b;
-    }
+    [[nodiscard]] bool operator()(std::string_view a, std::string_view b) const noexcept { return a == b; }
 };
 
 // Forward declaration
@@ -87,10 +83,7 @@ using MutableValuePtr = std::unique_ptr<MutableValue>;
 
 /// Map type using robin_map with transparent lookup support
 /// Allows find/count/contains operations with string_view without allocation
-using MutableValueMap = tsl::robin_map<std::string,
-                                        MutableValuePtr,
-                                        MutableValueStringHash,
-                                        MutableValueStringEqual>;
+using MutableValueMap = tsl::robin_map<std::string, MutableValuePtr, MutableValueStringHash, MutableValueStringEqual>;
 
 /// Vector type for arrays
 using MutableValueVector = std::vector<MutableValuePtr>;
@@ -124,28 +117,27 @@ struct LAGER_EXT_API MutableValue {
     /// Variant holding all possible value types
     /// Note: Mat3 and Mat4x3 are boxed (stored via unique_ptr) to reduce variant size
     /// from ~64 bytes to ~40 bytes, improving cache efficiency.
-    using DataVariant = std::variant<
-        std::monostate,     // null (1 byte)
-        bool,               // 1 byte
-        int8_t,             // 1 byte
-        int16_t,            // 2 bytes
-        int32_t,            // 4 bytes
-        int64_t,            // 8 bytes
-        uint8_t,            // 1 byte
-        uint16_t,           // 2 bytes
-        uint32_t,           // 4 bytes
-        uint64_t,           // 8 bytes
-        float,              // 4 bytes
-        double,             // 8 bytes
-        std::string,        // ~32 bytes (MSVC) - largest non-boxed type
-        Vec2,               // 8 bytes
-        Vec3,               // 12 bytes
-        Vec4,               // 16 bytes
-        MutableBoxedMat3,   // 8 bytes (pointer to 36-byte Mat3)
-        MutableBoxedMat4x3, // 8 bytes (pointer to 48-byte Mat4x3)
-        MutableValueMap,    // ~56 bytes -> but boxed implicitly via robin_map internals
-        MutableValueVector  // 24 bytes
-    >;
+    using DataVariant = std::variant<std::monostate,     // null (1 byte)
+                                     bool,               // 1 byte
+                                     int8_t,             // 1 byte
+                                     int16_t,            // 2 bytes
+                                     int32_t,            // 4 bytes
+                                     int64_t,            // 8 bytes
+                                     uint8_t,            // 1 byte
+                                     uint16_t,           // 2 bytes
+                                     uint32_t,           // 4 bytes
+                                     uint64_t,           // 8 bytes
+                                     float,              // 4 bytes
+                                     double,             // 8 bytes
+                                     std::string,        // ~32 bytes (MSVC) - largest non-boxed type
+                                     Vec2,               // 8 bytes
+                                     Vec3,               // 12 bytes
+                                     Vec4,               // 16 bytes
+                                     MutableBoxedMat3,   // 8 bytes (pointer to 36-byte Mat3)
+                                     MutableBoxedMat4x3, // 8 bytes (pointer to 48-byte Mat4x3)
+                                     MutableValueMap,    // ~56 bytes -> but boxed implicitly via robin_map internals
+                                     MutableValueVector  // 24 bytes
+                                     >;
     // Total variant size ≈ max(32, 56) + 8 (discriminant + padding) ≈ 64 bytes
     // With boxing: max(32, 24) + 8 ≈ 40 bytes (if we also box map/vector)
     // Current: ~64 bytes due to MutableValueMap, but Mat3/Mat4x3 no longer contribute
@@ -213,14 +205,10 @@ struct LAGER_EXT_API MutableValue {
     [[nodiscard]] static MutableValue make_vector() { return MutableValue{MutableValueVector{}}; }
 
     /// Create a Vec2 from individual components
-    [[nodiscard]] static MutableValue make_vec2(float x, float y) {
-        return MutableValue{Vec2{x, y}};
-    }
+    [[nodiscard]] static MutableValue make_vec2(float x, float y) { return MutableValue{Vec2{x, y}}; }
 
     /// Create a Vec3 from individual components
-    [[nodiscard]] static MutableValue make_vec3(float x, float y, float z) {
-        return MutableValue{Vec3{x, y, z}};
-    }
+    [[nodiscard]] static MutableValue make_vec3(float x, float y, float z) { return MutableValue{Vec3{x, y, z}}; }
 
     /// Create a Vec4 from individual components
     [[nodiscard]] static MutableValue make_vec4(float x, float y, float z, float w) {
@@ -228,14 +216,10 @@ struct LAGER_EXT_API MutableValue {
     }
 
     /// Create a Vec2 from a float pointer (reads 2 floats)
-    [[nodiscard]] static MutableValue make_vec2(const float* ptr) {
-        return MutableValue{Vec2{ptr[0], ptr[1]}};
-    }
+    [[nodiscard]] static MutableValue make_vec2(const float* ptr) { return MutableValue{Vec2{ptr[0], ptr[1]}}; }
 
     /// Create a Vec3 from a float pointer (reads 3 floats)
-    [[nodiscard]] static MutableValue make_vec3(const float* ptr) {
-        return MutableValue{Vec3{ptr[0], ptr[1], ptr[2]}};
-    }
+    [[nodiscard]] static MutableValue make_vec3(const float* ptr) { return MutableValue{Vec3{ptr[0], ptr[1], ptr[2]}}; }
 
     /// Create a Vec4 from a float pointer (reads 4 floats)
     [[nodiscard]] static MutableValue make_vec4(const float* ptr) {
@@ -264,8 +248,10 @@ struct LAGER_EXT_API MutableValue {
     [[nodiscard]] bool is_null() const { return std::holds_alternative<std::monostate>(data); }
 
     /// Check if value is a specific type
-    template<typename T>
-    [[nodiscard]] bool is() const { return std::holds_alternative<T>(data); }
+    template <typename T>
+    [[nodiscard]] bool is() const {
+        return std::holds_alternative<T>(data);
+    }
 
     /// Check if value is a map
     [[nodiscard]] bool is_map() const { return is<MutableValueMap>(); }
@@ -281,9 +267,8 @@ struct LAGER_EXT_API MutableValue {
 
     /// Check if value holds any numeric type
     [[nodiscard]] bool is_numeric() const {
-        return is<int8_t>() || is<int16_t>() || is<int32_t>() || is<int64_t>() ||
-               is<uint8_t>() || is<uint16_t>() || is<uint32_t>() || is<uint64_t>() ||
-               is<float>() || is<double>();
+        return is<int8_t>() || is<int16_t>() || is<int32_t>() || is<int64_t>() || is<uint8_t>() || is<uint16_t>() ||
+               is<uint32_t>() || is<uint64_t>() || is<float>() || is<double>();
     }
 
     /// Check if value is a Vec2
@@ -302,44 +287,47 @@ struct LAGER_EXT_API MutableValue {
     [[nodiscard]] bool is_mat4x3() const { return is<MutableBoxedMat4x3>(); }
 
     /// Check if value is any vector math type (Vec2, Vec3, Vec4)
-    [[nodiscard]] bool is_vector_math() const {
-        return is_vec2() || is_vec3() || is_vec4();
-    }
+    [[nodiscard]] bool is_vector_math() const { return is_vec2() || is_vec3() || is_vec4(); }
 
     /// Check if value is any matrix math type (Mat3, Mat4x3)
-    [[nodiscard]] bool is_matrix_math() const {
-        return is_mat3() || is_mat4x3();
-    }
+    [[nodiscard]] bool is_matrix_math() const { return is_mat3() || is_mat4x3(); }
 
     /// Check if value is any math type
-    [[nodiscard]] bool is_math_type() const {
-        return is_vector_math() || is_matrix_math();
-    }
+    [[nodiscard]] bool is_math_type() const { return is_vector_math() || is_matrix_math(); }
 
     // ============================================================
     // Value Access
     // ============================================================
 
     /// Get value as specific type (throws if wrong type)
-    template<typename T>
-    [[nodiscard]] T& as() { return std::get<T>(data); }
+    template <typename T>
+    [[nodiscard]] T& as() {
+        return std::get<T>(data);
+    }
 
     /// Get value as specific type (const, throws if wrong type)
-    template<typename T>
-    [[nodiscard]] const T& as() const { return std::get<T>(data); }
+    template <typename T>
+    [[nodiscard]] const T& as() const {
+        return std::get<T>(data);
+    }
 
     /// Get value as specific type (returns nullptr if wrong type)
-    template<typename T>
-    [[nodiscard]] T* get_if() { return std::get_if<T>(&data); }
+    template <typename T>
+    [[nodiscard]] T* get_if() {
+        return std::get_if<T>(&data);
+    }
 
     /// Get value as specific type (const, returns nullptr if wrong type)
-    template<typename T>
-    [[nodiscard]] const T* get_if() const { return std::get_if<T>(&data); }
+    template <typename T>
+    [[nodiscard]] const T* get_if() const {
+        return std::get_if<T>(&data);
+    }
 
     /// Get value as specific type, or return default if wrong type
-    template<typename T>
+    template <typename T>
     [[nodiscard]] T get_or(T default_val = T{}) const {
-        if (auto* p = std::get_if<T>(&data)) return *p;
+        if (auto* p = std::get_if<T>(&data))
+            return *p;
         return default_val;
     }
 
@@ -349,85 +337,119 @@ struct LAGER_EXT_API MutableValue {
 
     /// Get as int (converts from any integer type), or return default
     [[nodiscard]] int as_int(int default_val = 0) const {
-        if (auto* p = get_if<int32_t>()) return *p;
-        if (auto* p = get_if<int64_t>()) return static_cast<int>(*p);
-        if (auto* p = get_if<int16_t>()) return *p;
-        if (auto* p = get_if<int8_t>()) return *p;
-        if (auto* p = get_if<uint32_t>()) return static_cast<int>(*p);
-        if (auto* p = get_if<uint16_t>()) return *p;
-        if (auto* p = get_if<uint8_t>()) return *p;
+        if (auto* p = get_if<int32_t>())
+            return *p;
+        if (auto* p = get_if<int64_t>())
+            return static_cast<int>(*p);
+        if (auto* p = get_if<int16_t>())
+            return *p;
+        if (auto* p = get_if<int8_t>())
+            return *p;
+        if (auto* p = get_if<uint32_t>())
+            return static_cast<int>(*p);
+        if (auto* p = get_if<uint16_t>())
+            return *p;
+        if (auto* p = get_if<uint8_t>())
+            return *p;
         return default_val;
     }
 
     /// Get as int64 (converts from any integer type), or return default
     [[nodiscard]] int64_t as_int64(int64_t default_val = 0) const {
-        if (auto* p = get_if<int64_t>()) return *p;
-        if (auto* p = get_if<int32_t>()) return *p;
-        if (auto* p = get_if<int16_t>()) return *p;
-        if (auto* p = get_if<int8_t>()) return *p;
-        if (auto* p = get_if<uint64_t>()) return static_cast<int64_t>(*p);
-        if (auto* p = get_if<uint32_t>()) return *p;
-        if (auto* p = get_if<uint16_t>()) return *p;
-        if (auto* p = get_if<uint8_t>()) return *p;
+        if (auto* p = get_if<int64_t>())
+            return *p;
+        if (auto* p = get_if<int32_t>())
+            return *p;
+        if (auto* p = get_if<int16_t>())
+            return *p;
+        if (auto* p = get_if<int8_t>())
+            return *p;
+        if (auto* p = get_if<uint64_t>())
+            return static_cast<int64_t>(*p);
+        if (auto* p = get_if<uint32_t>())
+            return *p;
+        if (auto* p = get_if<uint16_t>())
+            return *p;
+        if (auto* p = get_if<uint8_t>())
+            return *p;
         return default_val;
     }
 
     /// Get as float, or return default
     [[nodiscard]] float as_float(float default_val = 0.0f) const {
-        if (auto* p = get_if<float>()) return *p;
-        if (auto* p = get_if<double>()) return static_cast<float>(*p);
+        if (auto* p = get_if<float>())
+            return *p;
+        if (auto* p = get_if<double>())
+            return static_cast<float>(*p);
         return default_val;
     }
 
     /// Get as double (converts from float), or return default
     [[nodiscard]] double as_double(double default_val = 0.0) const {
-        if (auto* p = get_if<double>()) return *p;
-        if (auto* p = get_if<float>()) return *p;
+        if (auto* p = get_if<double>())
+            return *p;
+        if (auto* p = get_if<float>())
+            return *p;
         return default_val;
     }
 
     /// Get as bool, or return default
     [[nodiscard]] bool as_bool(bool default_val = false) const {
-        if (auto* p = get_if<bool>()) return *p;
+        if (auto* p = get_if<bool>())
+            return *p;
         return default_val;
     }
 
     /// Get as string (copy), or return default
     [[nodiscard]] std::string as_string(std::string default_val = "") const {
-        if (auto* p = get_if<std::string>()) return *p;
+        if (auto* p = get_if<std::string>())
+            return *p;
         return default_val;
     }
 
     /// Get as number (double, converts from any numeric type), or return default
     [[nodiscard]] double as_number(double default_val = 0.0) const {
-        if (auto* p = get_if<double>()) return *p;
-        if (auto* p = get_if<float>()) return *p;
-        if (auto* p = get_if<int64_t>()) return static_cast<double>(*p);
-        if (auto* p = get_if<int32_t>()) return *p;
-        if (auto* p = get_if<int16_t>()) return *p;
-        if (auto* p = get_if<int8_t>()) return *p;
-        if (auto* p = get_if<uint64_t>()) return static_cast<double>(*p);
-        if (auto* p = get_if<uint32_t>()) return *p;
-        if (auto* p = get_if<uint16_t>()) return *p;
-        if (auto* p = get_if<uint8_t>()) return *p;
+        if (auto* p = get_if<double>())
+            return *p;
+        if (auto* p = get_if<float>())
+            return *p;
+        if (auto* p = get_if<int64_t>())
+            return static_cast<double>(*p);
+        if (auto* p = get_if<int32_t>())
+            return *p;
+        if (auto* p = get_if<int16_t>())
+            return *p;
+        if (auto* p = get_if<int8_t>())
+            return *p;
+        if (auto* p = get_if<uint64_t>())
+            return static_cast<double>(*p);
+        if (auto* p = get_if<uint32_t>())
+            return *p;
+        if (auto* p = get_if<uint16_t>())
+            return *p;
+        if (auto* p = get_if<uint8_t>())
+            return *p;
         return default_val;
     }
 
     /// Get as Vec2, or return default
     [[nodiscard]] Vec2 as_vec2(Vec2 default_val = {}) const {
-        if (auto* p = get_if<Vec2>()) return *p;
+        if (auto* p = get_if<Vec2>())
+            return *p;
         return default_val;
     }
 
     /// Get as Vec3, or return default
     [[nodiscard]] Vec3 as_vec3(Vec3 default_val = {}) const {
-        if (auto* p = get_if<Vec3>()) return *p;
+        if (auto* p = get_if<Vec3>())
+            return *p;
         return default_val;
     }
 
     /// Get as Vec4, or return default
     [[nodiscard]] Vec4 as_vec4(Vec4 default_val = {}) const {
-        if (auto* p = get_if<Vec4>()) return *p;
+        if (auto* p = get_if<Vec4>())
+            return *p;
         return default_val;
     }
 
@@ -457,7 +479,8 @@ struct LAGER_EXT_API MutableValue {
 
     /// Set map child by key (creates map if needed)
     /// Overloads to avoid unnecessary string copies:
-    /// - string_view: allocates string only if key doesn't exist (const char* and const string& forward here)
+    /// - string_view: allocates string only if key doesn't exist (const char* and const string&
+    /// forward here)
     /// - string&&: moves string if key doesn't exist (zero-copy for caller's owned strings)
     void set(std::string_view key, MutableValue value);
     void set(std::string&& key, MutableValue value);
@@ -539,7 +562,8 @@ struct LAGER_EXT_API MutableValue {
 
 /// Deep clone a MutableValuePtr
 [[nodiscard]] inline MutableValuePtr clone_mutable_value_ptr(const MutableValuePtr& ptr) {
-    if (!ptr) return nullptr;
+    if (!ptr)
+        return nullptr;
     return std::make_unique<MutableValue>(ptr->clone());
 }
 

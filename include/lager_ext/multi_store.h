@@ -15,18 +15,18 @@
 #include <lager_ext/api.h>
 #include <lager_ext/value.h>
 
-#include <lager/store.hpp>
 #include <lager/event_loop/manual.hpp>
+#include <lager/store.hpp>
 
 #include <any>
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <iostream>
 
 namespace lager_ext {
 namespace multi_store {
@@ -39,13 +39,11 @@ namespace multi_store {
 struct ObjectState {
     std::string id;
     std::string type;
-    Value data;           // Object properties as Value map
+    Value data; // Object properties as Value map
     std::size_t version = 0;
 
     bool operator==(const ObjectState& other) const {
-        return id == other.id &&
-               type == other.type &&
-               version == other.version;
+        return id == other.id && type == other.type && version == other.version;
     }
 };
 
@@ -72,12 +70,8 @@ struct RestoreState {
 
 } // namespace object_actions
 
-using ObjectAction = std::variant<
-    object_actions::SetProperty,
-    object_actions::SetProperties,
-    object_actions::ReplaceData,
-    object_actions::RestoreState
->;
+using ObjectAction = std::variant<object_actions::SetProperty, object_actions::SetProperties,
+                                  object_actions::ReplaceData, object_actions::RestoreState>;
 
 // Reducer for individual object stores
 LAGER_EXT_API ObjectState object_update(ObjectState state, ObjectAction action);
@@ -88,7 +82,7 @@ LAGER_EXT_API ObjectState object_update(ObjectState state, ObjectAction action);
 
 struct SceneMetaState {
     std::string selected_id;
-    std::set<std::string> object_ids;      // Just IDs, not full objects
+    std::set<std::string> object_ids; // Just IDs, not full objects
     std::size_t version = 0;
 };
 
@@ -108,11 +102,8 @@ struct UnregisterObject {
 
 } // namespace scene_actions
 
-using SceneAction = std::variant<
-    scene_actions::SelectObject,
-    scene_actions::RegisterObject,
-    scene_actions::UnregisterObject
->;
+using SceneAction =
+    std::variant<scene_actions::SelectObject, scene_actions::RegisterObject, scene_actions::UnregisterObject>;
 
 LAGER_EXT_API SceneMetaState scene_update(SceneMetaState state, SceneAction action);
 
@@ -134,10 +125,10 @@ LAGER_EXT_API SceneMetaState scene_update(SceneMetaState state, SceneAction acti
 //   Current design prioritizes flexibility over absolute performance,
 //   which is acceptable for typical undo/redo use cases (user-driven, not hot path).
 struct UndoCommand {
-    std::string store_id;           // Which store this affects ("__scene__" for scene store)
-    std::string description;        // Human-readable description
-    std::any old_state;             // State before the operation
-    std::any new_state;             // State after the operation
+    std::string store_id;    // Which store this affects ("__scene__" for scene store)
+    std::string description; // Human-readable description
+    std::any old_state;      // State before the operation
+    std::any new_state;      // State after the operation
 
     // Function to restore state - called during undo/redo
     std::function<void(const std::any&)> restore_fn;
@@ -189,7 +180,7 @@ private:
     bool transaction_active_ = false;
     CompositeCommand current_transaction_;
 
-    std::size_t max_history_ = 100;  // Default max history
+    std::size_t max_history_ = 100; // Default max history
 
     void trim_history();
 };
@@ -200,19 +191,13 @@ private:
 
 // Use decltype to get the actual store type from make_store
 inline auto make_object_store_impl(ObjectState initial_state) {
-    return lager::make_store<ObjectAction>(
-        std::move(initial_state),
-        lager::with_manual_event_loop{},
-        lager::with_reducer(object_update)
-    );
+    return lager::make_store<ObjectAction>(std::move(initial_state), lager::with_manual_event_loop{},
+                                           lager::with_reducer(object_update));
 }
 
 inline auto make_scene_store_impl(SceneMetaState initial_state) {
-    return lager::make_store<SceneAction>(
-        std::move(initial_state),
-        lager::with_manual_event_loop{},
-        lager::with_reducer(scene_update)
-    );
+    return lager::make_store<SceneAction>(std::move(initial_state), lager::with_manual_event_loop{},
+                                          lager::with_reducer(scene_update));
 }
 
 using ObjectStoreType = decltype(make_object_store_impl(std::declval<ObjectState>()));
@@ -226,15 +211,15 @@ class LAGER_EXT_API StoreRegistry {
 public:
     StoreRegistry() = default;
     ~StoreRegistry() = default;
-    
+
     // Non-copyable (unique_ptr members)
     StoreRegistry(const StoreRegistry&) = delete;
     StoreRegistry& operator=(const StoreRegistry&) = delete;
-    
+
     // Movable
     StoreRegistry(StoreRegistry&&) = default;
     StoreRegistry& operator=(StoreRegistry&&) = default;
-    
+
     // Get or create a store for an object
     ObjectStoreType* get(const std::string& object_id);
     ObjectStoreType* create(const std::string& object_id, ObjectState initial_state);
@@ -252,7 +237,7 @@ public:
     std::size_t size() const { return stores_.size(); }
 
     // Iterate over all stores
-    template<typename Fn>
+    template <typename Fn>
     void for_each(Fn&& fn) {
         for (auto& [id, store] : stores_) {
             fn(id, *store);
@@ -278,10 +263,7 @@ public:
     // ===== Object Management =====
 
     // Add a new object to the scene
-    void add_object(const std::string& id,
-                   const std::string& type,
-                   Value initial_data,
-                   bool undoable = true);
+    void add_object(const std::string& id, const std::string& type, Value initial_data, bool undoable = true);
 
     // Remove an object from the scene
     void remove_object(const std::string& id, bool undoable = true);
@@ -295,19 +277,15 @@ public:
     // ===== Property Editing =====
 
     // Set a single property on an object
-    void set_property(const std::string& object_id,
-                     const std::string& property_name,
-                     Value new_value,
-                     bool undoable = true);
+    void set_property(const std::string& object_id, const std::string& property_name, Value new_value,
+                      bool undoable = true);
 
     // Set multiple properties at once (single undo operation)
-    void set_properties(const std::string& object_id,
-                       const std::vector<std::pair<std::string, Value>>& properties,
-                       bool undoable = true);
+    void set_properties(const std::string& object_id, const std::vector<std::pair<std::string, Value>>& properties,
+                        bool undoable = true);
 
     // Batch edit across multiple objects (single undo operation)
-    void batch_edit(const std::vector<std::tuple<std::string, std::string, Value>>& edits,
-                   bool undoable = true);
+    void batch_edit(const std::vector<std::tuple<std::string, std::string, Value>>& edits, bool undoable = true);
 
     // ===== Selection =====
 
