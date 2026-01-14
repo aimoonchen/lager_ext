@@ -1358,20 +1358,14 @@ Value from_json(const std::string& json_str, std::string* error_out) {
 //   - Link time (fewer symbols to deduplicate)
 // ============================================================
 
-// Explicit instantiation for unsafe_memory_policy (Value, UnsafeValue)
-template struct BasicValue<unsafe_memory_policy>;
-template struct BasicTableEntry<unsafe_memory_policy>;
-template class BasicMapBuilder<unsafe_memory_policy>;
-template class BasicVectorBuilder<unsafe_memory_policy>;
-template class BasicArrayBuilder<unsafe_memory_policy>;
-template class BasicTableBuilder<unsafe_memory_policy>;
-
-// Conditional instantiation for thread_safe_memory_policy
-LAGER_EXT_IF_THREAD_SAFE(template struct BasicValue<thread_safe_memory_policy>;)
-LAGER_EXT_IF_THREAD_SAFE(template struct BasicTableEntry<thread_safe_memory_policy>;)
-LAGER_EXT_IF_THREAD_SAFE(template class BasicMapBuilder<thread_safe_memory_policy>;)
-LAGER_EXT_IF_THREAD_SAFE(template class BasicVectorBuilder<thread_safe_memory_policy>;)
-LAGER_EXT_IF_THREAD_SAFE(template class BasicArrayBuilder<thread_safe_memory_policy>;)
-LAGER_EXT_IF_THREAD_SAFE(template class BasicTableBuilder<thread_safe_memory_policy>;)
+// Explicit instantiation for immer::default_memory_policy
+// Note: Since IMMER_NO_THREAD_SAFETY=1 is set in immer_config.h,
+// default_memory_policy is already configured for single-threaded use.
+template struct BasicValue<immer::default_memory_policy>;
+template struct BasicTableEntry<immer::default_memory_policy>;
+template class BasicMapBuilder<immer::default_memory_policy>;
+template class BasicVectorBuilder<immer::default_memory_policy>;
+template class BasicArrayBuilder<immer::default_memory_policy>;
+template class BasicTableBuilder<immer::default_memory_policy>;
 
 } // namespace lager_ext

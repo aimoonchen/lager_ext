@@ -21,22 +21,13 @@
 
 #pragma once
 
+// IMPORTANT: Include immer configuration BEFORE any immer headers
+// This ensures consistent macro settings across all compilation units
+#include <lager_ext/immer_config.h>
+
 #include "api.h"
 #include "value_fwd.h" // Include forward declarations to avoid duplication
 
-// Configuration and verbose logging from value_fwd.h
-#if LAGER_EXT_CONFIG_VERBOSE && LAGER_EXT_ENABLE_THREAD_SAFE
-#pragma message("lager_ext: Thread-safe types ENABLED")
-#elif LAGER_EXT_CONFIG_VERBOSE
-#pragma message("lager_ext: Thread-safe types DISABLED (default)")
-#endif
-
-/// Helper macro for conditional compilation
-#if LAGER_EXT_ENABLE_THREAD_SAFE
-#define LAGER_EXT_IF_THREAD_SAFE(x) x
-#else
-#define LAGER_EXT_IF_THREAD_SAFE(x)
-#endif
 
 #include <lager_ext/path.h> // PathElement, PathView, Path
 
@@ -221,7 +212,7 @@ using BoxedMat4 = immer::box<Mat4, MemoryPolicy>;
 /// @brief Byte buffer type for binary serialization
 using ByteBuffer = std::vector<uint8_t>;
 
-template <typename MemoryPolicy = immer::default_memory_policy>
+template <typename MemoryPolicy>
 struct BasicValue {
     using memory_policy = MemoryPolicy;
     using value_box = BasicValueBox<MemoryPolicy>;
@@ -598,53 +589,28 @@ struct BasicValue {
 };
 
 // ============================================================
-// Memory Policy Definitions are now in value_fwd.h
-// ============================================================
-
-// Note: unsafe_memory_policy and thread_safe_memory_policy are now defined
-// in value_fwd.h to avoid duplication and enable forward declarations.
-
-// ============================================================
 // Value Type Aliases
 //
-// Naming conventions:
-//   - Value     : Default type (single-threaded, high performance)
-//   - SyncValue : Thread-safe version (multi-threaded safe, available when macro enabled)
+// Since IMMER_NO_THREAD_SAFETY=1 is set in immer_config.h:
+//   - immer::default_memory_policy is already the optimal single-threaded policy
+//   - No custom memory policy aliases needed
+//   - All templates use immer::default_memory_policy as default parameter
 //
-// Design philosophy:
-//   - Value is the primary type for most use cases
-//   - SyncValue only when you need thread safety and are willing to pay the performance cost
-//   - Clean, simple API with minimal cognitive overhead
+// The default_memory_policy (when IMMER_NO_THREAD_SAFETY=1) provides:
+//   - unsafe_free_list_heap_policy<cpp_heap> (no-lock free list)
+//   - unsafe_refcount_policy (non-atomic reference counting)
+//   - no_lock_policy (no spinlocks)
 // ============================================================
 
-// Value = BasicValue<unsafe_memory_policy> (default, single-threaded, high performance)
-// Features:
-//   - Non-atomic reference counting (10-30% faster)
-//   - No lock overhead
-//   - WARNING: Sharing across threads causes data races and UB!
-using Value = BasicValue<unsafe_memory_policy>;
-using ValueBox = BasicValueBox<unsafe_memory_policy>;
-using ValueMap = BasicValueMap<unsafe_memory_policy>;
-using ValueVector = BasicValueVector<unsafe_memory_policy>;
-using ValueArray = BasicValueArray<unsafe_memory_policy>;
-using ValueTable = BasicValueTable<unsafe_memory_policy>;
-using TableEntry = BasicTableEntry<unsafe_memory_policy>;
-
-// SyncValue aliases - only available when thread-safe types are enabled
-#if LAGER_EXT_ENABLE_THREAD_SAFE
-// SyncValue = BasicValue<thread_safe_memory_policy> (thread-safe but slower)
-// Features:
-//   - Atomic reference counting
-//   - Spinlock-protected free list
-//   - Safe for cross-thread sharing
-using SyncValue = BasicValue<thread_safe_memory_policy>;
-using SyncValueBox = BasicValueBox<thread_safe_memory_policy>;
-using SyncValueMap = BasicValueMap<thread_safe_memory_policy>;
-using SyncValueVector = BasicValueVector<thread_safe_memory_policy>;
-using SyncValueArray = BasicValueArray<thread_safe_memory_policy>;
-using SyncValueTable = BasicValueTable<thread_safe_memory_policy>;
-using SyncTableEntry = BasicTableEntry<thread_safe_memory_policy>;
-#endif // LAGER_EXT_ENABLE_THREAD_SAFE
+// Value = BasicValue<> uses immer::default_memory_policy by default
+// Note: Value is already defined in value_fwd.h, redeclared here for clarity
+using Value = BasicValue<>;
+using ValueBox = BasicValueBox<immer::default_memory_policy>;
+using ValueMap = BasicValueMap<immer::default_memory_policy>;
+using ValueVector = BasicValueVector<immer::default_memory_policy>;
+using ValueArray = BasicValueArray<immer::default_memory_policy>;
+using ValueTable = BasicValueTable<immer::default_memory_policy>;
+using TableEntry = BasicTableEntry<immer::default_memory_policy>;
 
 // ============================================================
 // BasicValue comparison operators (C++20)
@@ -748,10 +714,7 @@ LAGER_EXT_API Value create_sample_data();
 // and object file size.
 // ============================================================
 
-extern template struct BasicValue<unsafe_memory_policy>;
-extern template struct BasicTableEntry<unsafe_memory_policy>;
-
-LAGER_EXT_IF_THREAD_SAFE(extern template struct BasicValue<thread_safe_memory_policy>;)
-LAGER_EXT_IF_THREAD_SAFE(extern template struct BasicTableEntry<thread_safe_memory_policy>;)
+extern template struct BasicValue<immer::default_memory_policy>;
+extern template struct BasicTableEntry<immer::default_memory_policy>;
 
 } // namespace lager_ext

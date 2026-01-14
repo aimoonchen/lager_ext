@@ -598,22 +598,16 @@ private:
 // Builder type aliases are now in value_fwd.h
 // ============================================================
 
-// Note: MapBuilder, VectorBuilder, ArrayBuilder, TableBuilder and their
-// Sync variants are now defined in value_fwd.h to avoid duplication
-// and enable forward declarations.
+// Note: MapBuilder, VectorBuilder, ArrayBuilder, TableBuilder are now
+// defined in value_fwd.h to avoid duplication and enable forward declarations.
 
 // ============================================================
 // Extern Template Declarations for Builders
 // ============================================================
 
-extern template class BasicMapBuilder<unsafe_memory_policy>;
-extern template class BasicVectorBuilder<unsafe_memory_policy>;
-extern template class BasicArrayBuilder<unsafe_memory_policy>;
-extern template class BasicTableBuilder<unsafe_memory_policy>;
-
-LAGER_EXT_IF_THREAD_SAFE(extern template class BasicMapBuilder<thread_safe_memory_policy>;)
-LAGER_EXT_IF_THREAD_SAFE(extern template class BasicVectorBuilder<thread_safe_memory_policy>;)
-LAGER_EXT_IF_THREAD_SAFE(extern template class BasicArrayBuilder<thread_safe_memory_policy>;)
-LAGER_EXT_IF_THREAD_SAFE(extern template class BasicTableBuilder<thread_safe_memory_policy>;)
+extern template class BasicMapBuilder<immer::default_memory_policy>;
+extern template class BasicVectorBuilder<immer::default_memory_policy>;
+extern template class BasicArrayBuilder<immer::default_memory_policy>;
+extern template class BasicTableBuilder<immer::default_memory_policy>;
 
 } // namespace lager_ext

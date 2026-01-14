@@ -23,70 +23,60 @@
 
 #pragma once
 
+// IMPORTANT: Include immer configuration BEFORE any immer headers
+// This ensures consistent macro settings across all compilation units
+#include <lager_ext/immer_config.h>
+
 #include <immer/memory_policy.hpp>
 
 namespace lager_ext {
 
 // ============================================================
-// Configuration (must match value.h)
-// ============================================================
-
-#ifndef LAGER_EXT_ENABLE_THREAD_SAFE
-#define LAGER_EXT_ENABLE_THREAD_SAFE 0
-#endif
-
-// ============================================================
-// Memory Policy Forward Declarations
-// ============================================================
-
-using unsafe_memory_policy = immer::memory_policy<immer::unsafe_free_list_heap_policy<immer::cpp_heap>,
-                                                  immer::unsafe_refcount_policy, immer::no_lock_policy>;
-
-using thread_safe_memory_policy = immer::default_memory_policy;
-
-// ============================================================
 // Value Type Forward Declarations
+// ============================================================
+//
+// Since IMMER_NO_THREAD_SAFETY=1 is set in immer_config.h:
+//   - immer::default_memory_policy is already the optimal single-threaded policy
+//   - No custom memory policy aliases needed
+//   - BasicValue template uses immer::default_memory_policy as default parameter
+//
 // ============================================================
 
 // Forward declare the basic template
-template <typename MemoryPolicy>
+template <typename MemoryPolicy = immer::default_memory_policy>
 struct BasicValue;
 
-// Main type aliases - these can be forward declared since
-// we're providing the template parameter explicitly
-using Value = BasicValue<unsafe_memory_policy>;
-
-// Conditional thread-safe forward declarations
-#if LAGER_EXT_ENABLE_THREAD_SAFE
-using SyncValue = BasicValue<thread_safe_memory_policy>;
-#endif
+/// @brief The primary Value type - optimized for single-threaded use
+/// 
+/// This is the main type for representing JSON-like dynamic data.
+/// Uses immer::default_memory_policy which is configured for single-threaded
+/// high-performance use via immer_config.h.
+using Value = BasicValue<>;
 
 // ============================================================
 // Builder Type Forward Declarations
 // ============================================================
 
 // Forward declare builder templates
-template <typename MemoryPolicy>
+template <typename MemoryPolicy = immer::default_memory_policy>
 class BasicMapBuilder;
-template <typename MemoryPolicy>
+template <typename MemoryPolicy = immer::default_memory_policy>
 class BasicVectorBuilder;
-template <typename MemoryPolicy>
+template <typename MemoryPolicy = immer::default_memory_policy>
 class BasicArrayBuilder;
-template <typename MemoryPolicy>
+template <typename MemoryPolicy = immer::default_memory_policy>
 class BasicTableBuilder;
 
-// Unsafe (single-threaded) builder aliases
-using MapBuilder = BasicMapBuilder<unsafe_memory_policy>;
-using VectorBuilder = BasicVectorBuilder<unsafe_memory_policy>;
-using ArrayBuilder = BasicArrayBuilder<unsafe_memory_policy>;
-using TableBuilder = BasicTableBuilder<unsafe_memory_policy>;
+/// @brief Builder for constructing map Values
+using MapBuilder = BasicMapBuilder<>;
 
-// Thread-safe builder aliases - only available when enabled
-#if LAGER_EXT_ENABLE_THREAD_SAFE
-using SyncMapBuilder = BasicMapBuilder<thread_safe_memory_policy>;
-using SyncVectorBuilder = BasicVectorBuilder<thread_safe_memory_policy>;
-using SyncArrayBuilder = BasicArrayBuilder<thread_safe_memory_policy>;
-using SyncTableBuilder = BasicTableBuilder<thread_safe_memory_policy>;
-#endif
+/// @brief Builder for constructing vector Values
+using VectorBuilder = BasicVectorBuilder<>;
+
+/// @brief Builder for constructing array Values  
+using ArrayBuilder = BasicArrayBuilder<>;
+
+/// @brief Builder for constructing table Values
+using TableBuilder = BasicTableBuilder<>;
 
 } // namespace lager_ext
