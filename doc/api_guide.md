@@ -2035,17 +2035,24 @@ while (auto msg = receiver->tryReceive()) {
 
 ### 8.7 SharedBufferSPSC (High-Performance SPSC Buffer)
 
-`SharedBufferSPSC<T>` is a type-safe, lock-free, zero-copy shared memory buffer optimized for the **Single Producer Single Consumer (SPSC)** pattern. It uses a double-buffer design with atomic state management for maximum performance.
+`SharedBufferSPSC<T>` is a type-safe, lock-free, zero-copy shared memory buffer optimized for the **Single Producer Single Consumer (SPSC)** pattern.
 
 ```cpp
 #include <lager_ext/shared_buffer_spsc.h>
 using namespace lager_ext::ipc;
 ```
 
+**Two Buffer Modes Available:**
+
+| Mode | Template | Use Case | Memory |
+|------|----------|----------|--------|
+| **Double** (default) | `SharedBufferSPSC<T>` | Continuous synchronization | 2× sizeof(T) |
+| **Single** | `SharedBufferOnce<T>` | One-shot large transfers | 1× sizeof(T) |
+
 **Key Features:**
 - **Type-safe template** - Compile-time type checking with `std::is_trivially_copyable` constraint
 - **Lock-free atomic operations** - No mutexes, no blocking
-- **Double-buffer design** - Producer writes to one buffer while consumer reads from the other
+- **Configurable buffer mode** - Double-buffer for continuous sync, single-buffer for one-shot transfers
 - **Zero-copy reads** - Consumer reads directly from shared memory via const reference
 - **Cache-line aligned** (64 bytes) - Prevents false sharing
 - **PIMPL pattern** - Boost.Interprocess is fully hidden from the public API
@@ -2053,6 +2060,8 @@ using namespace lager_ext::ipc;
 - **Ownership control** - Flexible cleanup ownership transfer between producer and consumer
 
 #### 8.7.1 Memory Layout
+
+**Double-buffer mode (default):**
 
 ```
 +------------------+  ← Header (64 bytes, cache-line aligned)
@@ -2070,6 +2079,23 @@ using namespace lager_ext::ipc;
 The `state` field encodes:
 - **Bit 0**: `active_index` (0 or 1) - which buffer the consumer should read
 - **Bits 1-63**: `version` - increments by 1 on each write, so bit 0 flips automatically
+
+**Single-buffer mode (`SharedBufferOnce<T>`):**
+
+```
++------------------+  ← Header (64 bytes, cache-line aligned)
+| atomic<uint64_t> |  ← state (0 = not ready, 1 = ready)
+| uint32_t size    |  ← sizeof(T) for validation
+| uint32_t flags   |  ← reserved
+| padding[48]      |  
++------------------+
+| Buffer 0 [T]     |  ← aligned to 64 bytes (only one buffer)
++------------------+
+```
+
+The `state` field is simpler:
+- **0**: Data not yet written
+- **1**: Data is ready to read
 
 #### 8.7.2 Creating a Shared Buffer
 
@@ -2168,7 +2194,7 @@ if (buffer->try_read(local_state)) {
 }
 ```
 
-**Consumer API:**
+**Consumer API (Double-buffer mode):**
 
 | Method | Description |
 |--------|-------------|
@@ -2178,25 +2204,42 @@ if (buffer->try_read(local_state)) {
 | `version()` | Get current version number |
 | `reset_update_tracking()` | Reset internal version cache |
 
+**Consumer API (Single-buffer mode / `SharedBufferOnce<T>`):**
+
+| Method | Description |
+|--------|-------------|
+| `read()` | Zero-copy read, returns const reference |
+| `try_read(T&)` | Copy if ready, returns bool |
+| `is_ready()` | Check if producer has written data |
+| `version()` | Returns 0 (not ready) or 1 (ready) |
+| `reset_update_tracking()` | Reset internal state cache |
+
 #### 8.7.5 Ownership Control
 
-By default, the **producer** (creator) owns the shared memory and cleans it up on destruction. For one-shot transfers, you can transfer ownership to the consumer:
+By default, the **producer** (creator) owns the shared memory and cleans it up on destruction. For one-shot transfers, you can transfer ownership to the consumer.
+
+**Recommended: Use `SharedBufferOnce<T>` for one-shot transfers:**
 
 ```cpp
-// ========== One-Shot Transfer Pattern ==========
+// ========== One-Shot Transfer Pattern (Recommended) ==========
 
-// Producer side
-auto buffer = SharedBufferSPSC<LargeData>::create("OneShot");
+// Producer side - use SharedBufferOnce for single-buffer mode
+auto buffer = SharedBufferOnce<LargeConfig>::create("InitConfig");
 buffer->release_ownership();  // Producer won't cleanup
-buffer->write(data);
+buffer->write(config);
 // Producer can now exit safely, shared memory persists
 
 // Consumer side
-auto buffer = SharedBufferSPSC<LargeData>::open("OneShot");
+auto buffer = SharedBufferOnce<LargeConfig>::open("InitConfig");
 buffer->take_ownership();     // Consumer will cleanup
-auto data = buffer->read();
+if (buffer->is_ready()) {     // Check if data was written
+    const auto& config = buffer->read();
+    // Use config...
+}
 // Shared memory cleaned up when consumer's buffer is destroyed
 ```
+
+> **Note:** `SharedBufferOnce<T>` is an alias for `SharedBufferSPSC<T, BufferMode::Single>`, which uses only one buffer (50% memory savings) and provides `is_ready()` instead of `has_update()`.
 
 **Ownership API:**
 
@@ -2258,7 +2301,7 @@ int main() {
 
 #### 8.7.7 Value Transfer via SPSC
 
-For transferring complex `Value` objects, use serialization with a fixed-size message buffer:
+For transferring complex `Value` objects, use serialization with a fixed-size message buffer. Since this is typically a one-shot transfer, `SharedBufferOnce` is recommended:
 
 ```cpp
 #include <lager_ext/serialization.h>
@@ -2271,23 +2314,33 @@ struct ValueMessage {
 };
 static_assert(std::is_trivially_copyable_v<ValueMessage>);
 
-// Producer: serialize and send
+// ========== Producer: serialize and send ==========
 Value gameState = MapBuilder()
     .set("level", 5)
     .set("position", Vec3{1.0f, 2.0f, 3.0f})
     .finish();
 
-auto buffer = SharedBufferSPSC<ValueMessage>::create("ValueTransfer");
+// Use SharedBufferOnce for one-shot transfer (saves 50% memory)
+auto buffer = SharedBufferOnce<ValueMessage>::create("ValueTransfer");
+buffer->release_ownership();  // Let consumer handle cleanup
 {
     auto guard = buffer->write_guard();
     guard->size = serialize_to(gameState, guard->data, sizeof(guard->data));
 }
+// Producer can exit immediately
 
-// Consumer: receive and deserialize
-auto buffer = SharedBufferSPSC<ValueMessage>::open("ValueTransfer");
-const ValueMessage& msg = buffer->read();
-Value received = deserialize(msg.data, msg.size);
+// ========== Consumer: receive and deserialize ==========
+auto buffer = SharedBufferOnce<ValueMessage>::open("ValueTransfer");
+buffer->take_ownership();  // Consumer will cleanup
+if (buffer->is_ready()) {
+    const ValueMessage& msg = buffer->read();
+    Value received = deserialize(msg.data, msg.size);
+    // Use received Value...
+}
+// Shared memory cleaned up automatically
 ```
+
+> **Tip:** For continuous Value synchronization (multiple writes), use `SharedBufferSPSC<ValueMessage>` (double-buffer mode) instead.
 
 #### 8.7.8 Performance Characteristics
 
@@ -2314,12 +2367,22 @@ Value received = deserialize(msg.data, msg.size);
 
 | Scenario | Recommended API |
 |----------|-----------------|
-| Game engine state sync (editor ↔ runtime) | **SharedBufferSPSC<T>** |
-| Single large data blob (mesh, texture) | **SharedBufferSPSC<T>** |
-| One-shot Value transfer | **SharedBufferSPSC<ValueMessage>** + serialization |
+| Continuous state sync (editor ↔ runtime) | **SharedBufferSPSC<T>** (Double mode) |
+| Game engine frame data streaming | **SharedBufferSPSC<T>** (Double mode) |
+| One-shot large config transfer | **SharedBufferOnce<T>** (Single mode) |
+| One-shot Value transfer | **SharedBufferOnce<ValueMessage>** + serialization |
 | Multiple small messages | `Channel` |
 | Request/response patterns | `ChannelPair` |
 | Multiple producers or consumers | `SharedValueHandle` with locking |
+
+**Choosing Buffer Mode:**
+
+| Criteria | Double Mode | Single Mode |
+|----------|-------------|-------------|
+| Memory usage | 2× sizeof(T) | 1× sizeof(T) ✅ |
+| Multiple writes | ✅ Yes | ❌ One write only |
+| Version tracking | ✅ has_update() | ❌ is_ready() only |
+| Use case | Streaming | Initialization |
 
 ---
 
