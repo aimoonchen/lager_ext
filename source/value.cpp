@@ -1359,7 +1359,7 @@ Value from_json(const std::string& json_str, std::string* error_out) {
 // ============================================================
 
 // Explicit instantiation for immer::default_memory_policy
-// Note: Since IMMER_NO_THREAD_SAFETY=1 is set in immer_config.h,
+// Note: Since IMMER_NO_THREAD_SAFETY=1 is set in lager_ext_config.h,
 // default_memory_policy is already configured for single-threaded use.
 template struct BasicValue<immer::default_memory_policy>;
 template struct BasicTableEntry<immer::default_memory_policy>;

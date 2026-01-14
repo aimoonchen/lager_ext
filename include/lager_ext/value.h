@@ -21,9 +21,9 @@
 
 #pragma once
 
-// IMPORTANT: Include immer configuration BEFORE any immer headers
+// IMPORTANT: Include lager_ext configuration BEFORE any library headers
 // This ensures consistent macro settings across all compilation units
-#include <lager_ext/immer_config.h>
+#include <lager_ext/lager_ext_config.h>
 
 #include "api.h"
 #include "value_fwd.h" // Include forward declarations to avoid duplication
@@ -591,7 +591,7 @@ struct BasicValue {
 // ============================================================
 // Value Type Aliases
 //
-// Since IMMER_NO_THREAD_SAFETY=1 is set in immer_config.h:
+// Since IMMER_NO_THREAD_SAFETY=1 is set in lager_ext_config.h:
 //   - immer::default_memory_policy is already the optimal single-threaded policy
 //   - No custom memory policy aliases needed
 //   - All templates use immer::default_memory_policy as default parameter

@@ -138,7 +138,7 @@ struct ComposedLens {
     constexpr ComposedLens() = default;
     constexpr explicit ComposedLens(Lenses... ls) : lenses(std::move(ls)...) {}
 
-    /// Get: Apply lenses left-to-right (lens0.get → lens1.get → ...)
+    /// Get: Apply lenses left-to-right (lens0.get -> lens1.get -> ...)
     Value get(const Value& v) const { return get_impl(v, std::index_sequence_for<Lenses...>{}); }
 
     /// Set: Apply lenses right-to-left for the setter

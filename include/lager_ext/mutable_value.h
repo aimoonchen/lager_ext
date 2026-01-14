@@ -138,8 +138,8 @@ struct LAGER_EXT_API MutableValue {
                                      MutableValueMap,    // ~56 bytes -> but boxed implicitly via robin_map internals
                                      MutableValueVector  // 24 bytes
                                      >;
-    // Total variant size ≈ max(32, 56) + 8 (discriminant + padding) ≈ 64 bytes
-    // With boxing: max(32, 24) + 8 ≈ 40 bytes (if we also box map/vector)
+    // Total variant size ~ max(32, 56) + 8 (discriminant + padding) ~ 64 bytes
+    // With boxing: max(32, 24) + 8 ~ 40 bytes (if we also box map/vector)
     // Current: ~64 bytes due to MutableValueMap, but Mat3/Mat4x3 no longer contribute
 
     DataVariant data;

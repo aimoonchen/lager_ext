@@ -13,9 +13,9 @@
 ///
 /// | Scenario | Direct Value | MutableValue -> Value |
 /// |----------|--------------|----------------------|
-/// | Single construction | ⭐ Faster | Slower (2x alloc) |
-/// | Many updates then freeze | Slower (COW overhead) | ⭐ Faster |
-/// | Deep tree building | Slower (immer::box per node) | ⭐ Faster |
+/// | Single construction | [*] Faster | Slower (2x alloc) |
+/// | Many updates then freeze | Slower (COW overhead) | [*] Faster |
+/// | Deep tree building | Slower (immer::box per node) | [*] Faster |
 /// | Read-heavy after build | Same | Same |
 ///
 /// **Recommendation:**
