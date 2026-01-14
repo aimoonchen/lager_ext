@@ -48,6 +48,7 @@ class SharedBufferBase::Impl {
 public:
     std::string name;
     bool is_producer{false};
+    bool is_owner{false};  // Whether this instance should cleanup on destruction
     size_t data_size{0};
     
     bip::shared_memory_object shm;
@@ -64,8 +65,8 @@ public:
 SharedBufferBase::SharedBufferBase() : impl_(std::make_unique<Impl>()) {}
 
 SharedBufferBase::~SharedBufferBase() {
-    if (impl_ && impl_->is_producer && !impl_->name.empty()) {
-        // Producer cleans up shared memory
+    if (impl_ && impl_->is_owner && !impl_->name.empty()) {
+        // This instance is owner, remove shared memory
         bip::shared_memory_object::remove(impl_->name.c_str());
     }
 }
@@ -82,6 +83,7 @@ std::unique_ptr<SharedBufferBase> SharedBufferBase::create(
         auto instance = std::unique_ptr<SharedBufferBase>(new SharedBufferBase());
         instance->impl_->name = std::string(name);
         instance->impl_->is_producer = true;
+        instance->impl_->is_owner = true;  // Producer is owner by default
         instance->impl_->data_size = data_size;
 
         // Remove any existing shared memory with this name
@@ -196,6 +198,18 @@ void* SharedBufferBase::state_ptr() {
 
 const void* SharedBufferBase::state_ptr() const {
     return &impl_->header->state;
+}
+
+bool SharedBufferBase::is_owner() const {
+    return impl_->is_owner;
+}
+
+void SharedBufferBase::take_ownership() {
+    impl_->is_owner = true;
+}
+
+void SharedBufferBase::release_ownership() {
+    impl_->is_owner = false;
 }
 
 } // namespace ipc

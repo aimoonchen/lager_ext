@@ -75,10 +75,11 @@ This document provides a comprehensive overview of the public APIs in the `lager
       - [8.7.2 Creating a Shared Buffer](#872-creating-a-shared-buffer)
       - [8.7.3 Writing Data (Producer)](#873-writing-data-producer)
       - [8.7.4 Reading Data (Consumer)](#874-reading-data-consumer)
-      - [8.7.5 Static Helper](#875-static-helper)
+      - [8.7.5 Ownership Control](#875-ownership-control)
       - [8.7.6 Complete Example](#876-complete-example)
-      - [8.7.7 Performance Characteristics](#877-performance-characteristics)
-      - [8.7.8 When to Use](#878-when-to-use)
+      - [8.7.7 Value Transfer via SPSC](#877-value-transfer-via-spsc)
+      - [8.7.8 Performance Characteristics](#878-performance-characteristics)
+      - [8.7.9 When to Use](#879-when-to-use)
   - [9. MutableValue \& Type Conversion](#9-mutablevalue--type-conversion)
     - [9.1 MutableValue Overview](#91-mutablevalue-overview)
     - [9.2 Construction \& Factory Methods](#92-construction--factory-methods)
@@ -2034,94 +2035,96 @@ while (auto msg = receiver->tryReceive()) {
 
 ### 8.7 SharedBufferSPSC (High-Performance SPSC Buffer)
 
-`SharedBufferSPSC` is a lock-free, zero-copy shared memory buffer optimized for the **Single Producer Single Consumer (SPSC)** pattern. It uses a double-buffer design with atomic state management for maximum performance.
+`SharedBufferSPSC<T>` is a type-safe, lock-free, zero-copy shared memory buffer optimized for the **Single Producer Single Consumer (SPSC)** pattern. It uses a double-buffer design with atomic state management for maximum performance.
 
 ```cpp
 #include <lager_ext/shared_buffer_spsc.h>
-using namespace lager_ext;
+using namespace lager_ext::ipc;
 ```
 
 **Key Features:**
+- **Type-safe template** - Compile-time type checking with `std::is_trivially_copyable` constraint
 - **Lock-free atomic operations** - No mutexes, no blocking
 - **Double-buffer design** - Producer writes to one buffer while consumer reads from the other
-- **Zero-copy reads** - Consumer reads directly from shared memory
+- **Zero-copy reads** - Consumer reads directly from shared memory via const reference
 - **Cache-line aligned** (64 bytes) - Prevents false sharing
 - **PIMPL pattern** - Boost.Interprocess is fully hidden from the public API
 - **RAII WriteGuard** - Automatic publish on destruction, supports move semantics
+- **Ownership control** - Flexible cleanup ownership transfer between producer and consumer
 
 #### 8.7.1 Memory Layout
 
 ```
-+------------------+  ← aligned to 64 bytes
-| atomic<uint64_t> |  ← state (32-bit version + 32-bit active_index)
++------------------+  ← Header (64 bytes, cache-line aligned)
+| atomic<uint64_t> |  ← state (63-bit version + 1-bit active_index)
+| uint32_t size    |  ← sizeof(T) for validation
+| uint32_t flags   |  ← reserved
+| padding[48]      |  
 +------------------+
-| Buffer 0 [N]     |  ← user_data_size bytes
+| Buffer 0 [T]     |  ← aligned to 64 bytes
 +------------------+
-| Buffer 1 [N]     |  ← user_data_size bytes
+| Buffer 1 [T]     |  ← aligned to 64 bytes
 +------------------+
 ```
 
 The `state` field encodes:
-- **Lower 32 bits**: `active_index` (0 or 1) - which buffer the consumer should read
-- **Upper 32 bits**: `version` - monotonically increasing, changes on each publish
+- **Bit 0**: `active_index` (0 or 1) - which buffer the consumer should read
+- **Bits 1-63**: `version` - increments by 1 on each write, so bit 0 flips automatically
 
 #### 8.7.2 Creating a Shared Buffer
 
-**Producer Process (Owner):**
+**Producer Process (Creator):**
 
 ```cpp
-// Create shared memory buffer with 1MB data size
-auto buffer = SharedBufferSPSC::create("MyBuffer", 1024 * 1024);
+struct GameState {
+    float position[3];
+    float rotation[4];
+    uint64_t timestamp;
+};
+static_assert(std::is_trivially_copyable_v<GameState>);
+
+// Create typed shared memory buffer
+auto buffer = SharedBufferSPSC<GameState>::create("GameState");
 if (!buffer) {
-    std::cerr << "Failed to create buffer\n";
+    std::cerr << "Failed: " << SharedBufferSPSC<GameState>::last_error() << "\n";
     return;
 }
 ```
 
-**Consumer Process (Reader):**
+**Consumer Process (Opener):**
 
 ```cpp
 // Open existing shared memory buffer
-auto buffer = SharedBufferSPSC::open("MyBuffer");
+auto buffer = SharedBufferSPSC<GameState>::open("GameState");
 if (!buffer) {
-    std::cerr << "Failed to open buffer\n";
+    std::cerr << "Failed: " << SharedBufferSPSC<GameState>::last_error() << "\n";
     return;
 }
 ```
 
 #### 8.7.3 Writing Data (Producer)
 
-Use `begin_write()` to get a `WriteGuard` that provides safe, RAII-managed write access:
+**Method 1: Direct write (copies data)**
 
 ```cpp
-// Method 1: Inline write with automatic publish
-{
-    auto guard = buffer->begin_write();
-    void* ptr = guard.data();
-    std::size_t size = guard.size();
-    
-    // Write your data
-    std::memcpy(ptr, my_data, my_data_size);
-    
-    // Automatic publish when guard goes out of scope
-}
+GameState state{};
+state.timestamp = get_current_time();
+state.position[0] = player_x;
+// ...
 
-// Method 2: Factory function returning WriteGuard
-SharedBufferSPSC::WriteGuard create_frame(SharedBufferSPSC& buf, const Frame& frame) {
-    auto guard = buf.begin_write();
-    std::memcpy(guard.data(), &frame, sizeof(frame));
-    return guard;  // Move semantics - publish transfers to caller
-}
+buffer->write(state);  // memcpy + atomic publish
+```
 
-// Method 3: Explicit cancel (no publish)
+**Method 2: Zero-copy write with WriteGuard**
+
+```cpp
 {
-    auto guard = buffer->begin_write();
-    // ... prepare data ...
-    if (error_detected) {
-        guard.cancel();  // Data will NOT be published
-        return;
-    }
-    // Normal exit: data is published
+    auto guard = buffer->write_guard();
+    guard->timestamp = get_current_time();
+    guard->position[0] = player_x;
+    guard->position[1] = player_y;
+    guard->position[2] = player_z;
+    // Automatic atomic publish when guard goes out of scope
 }
 ```
 
@@ -2129,31 +2132,39 @@ SharedBufferSPSC::WriteGuard create_frame(SharedBufferSPSC& buf, const Frame& fr
 
 | Method | Description |
 |--------|-------------|
-| `data()` | Get pointer to write buffer |
-| `size()` | Get size of write buffer |
-| `cancel()` | Cancel write (no publish on destruction) |
+| `operator->()` | Access buffer fields directly |
+| `operator*()` | Get reference to buffer |
+| Destructor | Commits write (atomic publish) |
 | Move constructor | Transfers ownership, original won't publish |
 
 #### 8.7.4 Reading Data (Consumer)
 
+**Method 1: Zero-copy read (returns const reference)**
+
 ```cpp
-// Check version and read if changed
-uint32_t last_version = 0;
+const GameState& state = buffer->read();
+render_player(state.position, state.rotation);
+```
+
+**Method 2: Conditional read with version check**
+
+```cpp
 while (running) {
-    uint32_t current = buffer->version();
-    if (current != last_version) {
-        // New data available
-        const void* ptr = buffer->read_data();
-        std::size_t size = buffer->user_data_size();
-        
-        // Process data (zero-copy read)
-        process(ptr, size);
-        
-        last_version = current;
+    if (buffer->has_update()) {
+        const GameState& state = buffer->read();
+        process(state);
     }
-    
-    // Optional: sleep or do other work
-    std::this_thread::sleep_for(std::chrono::microseconds(100));
+    std::this_thread::yield();
+}
+```
+
+**Method 3: Try-read pattern (copies data if updated)**
+
+```cpp
+GameState local_state;
+if (buffer->try_read(local_state)) {
+    // New data was copied to local_state
+    process(local_state);
 }
 ```
 
@@ -2161,47 +2172,67 @@ while (running) {
 
 | Method | Description |
 |--------|-------------|
-| `version()` | Get current data version (atomic read) |
-| `read_data()` | Get pointer to current read buffer (zero-copy) |
-| `user_data_size()` | Get size of user data region |
+| `read()` | Zero-copy read, returns const reference |
+| `try_read(T&)` | Copy if updated since last call, returns bool |
+| `has_update()` | Check if new data available (relaxed atomic) |
+| `version()` | Get current version number |
+| `reset_update_tracking()` | Reset internal version cache |
 
-#### 8.7.5 Static Helper
+#### 8.7.5 Ownership Control
+
+By default, the **producer** (creator) owns the shared memory and cleans it up on destruction. For one-shot transfers, you can transfer ownership to the consumer:
 
 ```cpp
-// Calculate actual shared memory size needed
-std::size_t shm_size = SharedBufferSPSC::shared_memory_size(user_data_size);
-// Returns: sizeof(ControlBlock) + 2 * aligned_user_data_size
-// All sizes are rounded up to 64-byte (cache line) boundaries
+// ========== One-Shot Transfer Pattern ==========
+
+// Producer side
+auto buffer = SharedBufferSPSC<LargeData>::create("OneShot");
+buffer->release_ownership();  // Producer won't cleanup
+buffer->write(data);
+// Producer can now exit safely, shared memory persists
+
+// Consumer side
+auto buffer = SharedBufferSPSC<LargeData>::open("OneShot");
+buffer->take_ownership();     // Consumer will cleanup
+auto data = buffer->read();
+// Shared memory cleaned up when consumer's buffer is destroyed
 ```
+
+**Ownership API:**
+
+| Method | Description |
+|--------|-------------|
+| `is_owner()` | Check if this instance will cleanup on destruction |
+| `take_ownership()` | This instance will cleanup shared memory |
+| `release_ownership()` | This instance will NOT cleanup shared memory |
+| `is_producer()` | Check if this is the creating side |
 
 #### 8.7.6 Complete Example
 
 ```cpp
 // ========== Producer Process ==========
 #include <lager_ext/shared_buffer_spsc.h>
-using namespace lager_ext;
+using namespace lager_ext::ipc;
 
 struct FrameData {
     uint64_t timestamp;
     float position[3];
     float rotation[4];
 };
+static_assert(std::is_trivially_copyable_v<FrameData>);
 
 int main() {
-    auto buffer = SharedBufferSPSC::create("GameState", sizeof(FrameData));
+    auto buffer = SharedBufferSPSC<FrameData>::create("GameState");
     if (!buffer) return 1;
     
-    FrameData frame{};
     while (running) {
-        // Update frame data
-        frame.timestamp = get_current_time();
-        frame.position[0] = player_x;
-        // ...
-        
-        // Publish atomically
+        // Zero-copy write with guard
         {
-            auto guard = buffer->begin_write();
-            std::memcpy(guard.data(), &frame, sizeof(frame));
+            auto guard = buffer->write_guard();
+            guard->timestamp = get_current_time();
+            guard->position[0] = player_x;
+            guard->position[1] = player_y;
+            guard->position[2] = player_z;
         }  // Atomic publish here
         
         std::this_thread::sleep_for(16ms);  // ~60 FPS
@@ -2211,16 +2242,13 @@ int main() {
 
 // ========== Consumer Process ==========
 int main() {
-    auto buffer = SharedBufferSPSC::open("GameState");
+    auto buffer = SharedBufferSPSC<FrameData>::open("GameState");
     if (!buffer) return 1;
     
-    uint32_t last_version = 0;
     while (running) {
-        uint32_t v = buffer->version();
-        if (v != last_version) {
-            const auto* frame = static_cast<const FrameData*>(buffer->read_data());
-            render_player(frame->position, frame->rotation);
-            last_version = v;
+        if (buffer->has_update()) {
+            const FrameData& frame = buffer->read();
+            render_player(frame.position, frame.rotation);
         }
         std::this_thread::yield();
     }
@@ -2228,26 +2256,67 @@ int main() {
 }
 ```
 
-#### 8.7.7 Performance Characteristics
+#### 8.7.7 Value Transfer via SPSC
+
+For transferring complex `Value` objects, use serialization with a fixed-size message buffer:
+
+```cpp
+#include <lager_ext/serialization.h>
+#include <lager_ext/shared_buffer_spsc.h>
+
+// Fixed-size POD message (must be trivially copyable)
+struct ValueMessage {
+    uint32_t size;               // Actual serialized size
+    uint8_t data[64 * 1024 - 4]; // 64KB buffer
+};
+static_assert(std::is_trivially_copyable_v<ValueMessage>);
+
+// Producer: serialize and send
+Value gameState = MapBuilder()
+    .set("level", 5)
+    .set("position", Vec3{1.0f, 2.0f, 3.0f})
+    .finish();
+
+auto buffer = SharedBufferSPSC<ValueMessage>::create("ValueTransfer");
+{
+    auto guard = buffer->write_guard();
+    guard->size = serialize_to(gameState, guard->data, sizeof(guard->data));
+}
+
+// Consumer: receive and deserialize
+auto buffer = SharedBufferSPSC<ValueMessage>::open("ValueTransfer");
+const ValueMessage& msg = buffer->read();
+Value received = deserialize(msg.data, msg.size);
+```
+
+#### 8.7.8 Performance Characteristics
 
 | Operation | Cost | Notes |
 |-----------|------|-------|
-| `begin_write()` | O(1) | Simple index calculation |
-| Write data | O(n) | memcpy to inactive buffer |
-| Publish (guard destructor) | O(1) | Single atomic store (relaxed order) |
-| `version()` | O(1) | Single atomic load (acquire order) |
-| `read_data()` | O(1) | Single atomic load + pointer math |
+| `write(T)` | O(1) + memcpy | Copy + single atomic store |
+| `write_guard()` | O(1) | Index calculation only |
+| WriteGuard destructor | O(1) | Single atomic store (release order) |
+| `read()` | O(1) | Single atomic load + pointer return |
+| `has_update()` | O(1) | Relaxed atomic load, minimal overhead |
+| `try_read(T&)` | O(1) + memcpy | Atomic load + conditional copy |
+
+**Typical Latency:**
+- Write: ~30-50 ns + memcpy(sizeof(T))
+- Read: ~20-30 ns (zero-copy reference)
+- has_update(): ~5-10 ns
 
 **Memory Ordering:**
-- Producer uses `memory_order_relaxed` for publish (no synchronization needed in SPSC)
-- Consumer uses `memory_order_acquire` for version read (ensures data visibility)
+- Producer uses `memory_order_release` for publish (ensures data visibility)
+- Consumer uses `memory_order_acquire` for version read (synchronizes with producer)
+- `has_update()` uses `memory_order_relaxed` for minimal overhead
 
-#### 8.7.8 When to Use
+#### 8.7.9 When to Use
 
 | Scenario | Recommended API |
 |----------|-----------------|
-| Game engine state sync (editor ↔ runtime) | **SharedBufferSPSC** |
-| Single large data blob (mesh, texture) | **SharedBufferSPSC** |
+| Game engine state sync (editor ↔ runtime) | **SharedBufferSPSC<T>** |
+| Single large data blob (mesh, texture) | **SharedBufferSPSC<T>** |
+| One-shot Value transfer | **SharedBufferSPSC<ValueMessage>** + serialization |
 | Multiple small messages | `Channel` |
 | Request/response patterns | `ChannelPair` |
 | Multiple producers or consumers | `SharedValueHandle` with locking |

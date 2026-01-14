@@ -4,9 +4,6 @@
 /// @file ipc.cpp
 /// @brief Implementation of lock-free IPC channel
 
-#ifndef LAGER_EXT_ENABLE_IPC
-#define LAGER_EXT_ENABLE_IPC
-#endif
 #include <lager_ext/ipc.h>
 #include <lager_ext/serialization.h>
 

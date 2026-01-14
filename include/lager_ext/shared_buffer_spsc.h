@@ -34,10 +34,7 @@
 
 #pragma once
 
-#ifndef LAGER_EXT_ENABLE_IPC
-#error "IPC module is not enabled. Please build with -DLAGER_EXT_ENABLE_IPC=ON"
-#endif
-
+#include "lager_ext_config.h"
 #include "api.h"
 
 #include <atomic>
@@ -93,6 +90,16 @@ public:
     
     /// Check if this is the producer side
     bool is_producer() const;
+    
+    /// Check if this instance owns the shared memory (will cleanup on destruction)
+    bool is_owner() const;
+    
+    /// Take ownership (this instance will cleanup shared memory on destruction)
+    /// Useful for one-shot transfers where consumer should cleanup after receiving
+    void take_ownership();
+    
+    /// Release ownership (this instance will not cleanup on destruction)
+    void release_ownership();
     
     /// Get pointer to the raw data region (after header)
     void* data_region();
@@ -307,6 +314,38 @@ public:
 
     /// Get the last error message (if create/open failed)
     static const std::string& last_error() { return SharedBufferBase::last_error(); }
+    
+    //=========================================================================
+    // Ownership Control
+    //=========================================================================
+    
+    /// Check if this instance owns the shared memory (will cleanup on destruction)
+    /// @return true if this instance is the owner
+    bool is_owner() const { return base_->is_owner(); }
+    
+    /// Take ownership of the shared memory
+    /// After this call, this instance will cleanup shared memory on destruction.
+    /// Useful for one-shot transfers where consumer should cleanup after receiving.
+    /// 
+    /// Example (one-shot transfer pattern):
+    /// @code
+    ///     // Producer side
+    ///     auto buffer = SharedBufferSPSC<T>::create("OneShot");
+    ///     buffer->release_ownership();  // Don't cleanup on destruction
+    ///     buffer->write(data);
+    ///     // Producer can now exit safely
+    /// 
+    ///     // Consumer side
+    ///     auto buffer = SharedBufferSPSC<T>::open("OneShot");
+    ///     buffer->take_ownership();  // Consumer will cleanup
+    ///     auto data = buffer->read();
+    ///     // Shared memory cleaned up when consumer's buffer is destroyed
+    /// @endcode
+    void take_ownership() { base_->take_ownership(); }
+    
+    /// Release ownership (this instance will not cleanup on destruction)
+    /// Call this on the producer if you want the consumer to handle cleanup
+    void release_ownership() { base_->release_ownership(); }
 
     //=========================================================================
     // Lifecycle

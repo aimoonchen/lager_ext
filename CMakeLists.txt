@@ -187,9 +187,8 @@ target_include_directories(lager_ext
 # Only build-system level flags are defined here.
 
 target_compile_definitions(lager_ext 
-    PUBLIC
-        # IPC module availability flag (used for conditional compilation)
-        $<$<BOOL:${LAGER_EXT_ENABLE_IPC}>:LAGER_EXT_ENABLE_IPC>
+    # Note: LAGER_EXT_ENABLE_IPC is centrally managed in lager_ext_config.h
+    # CMake's LAGER_EXT_ENABLE_IPC option controls which source files are compiled
     PRIVATE
         # Disable debug checks in release mode
         $<$<CONFIG:Release>:NDEBUG>

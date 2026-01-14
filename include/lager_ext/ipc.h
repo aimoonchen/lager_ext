@@ -29,12 +29,9 @@
 
 #pragma once
 
-#ifndef LAGER_EXT_ENABLE_IPC
-#error "IPC module is not enabled. Please build with -DLAGER_EXT_ENABLE_IPC=ON"
-#endif
-
-#include "api.h"
-#include "value.h"
+#include <lager_ext/lager_ext_config.h>
+#include <lager_ext/api.h>
+#include <lager_ext/value.h>
 
 #include <chrono>
 #include <cstring>

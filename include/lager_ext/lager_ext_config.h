@@ -160,6 +160,27 @@
 #endif
 
 // ============================================================
+// Feature Toggle: IPC (Inter-Process Communication)
+// ============================================================
+
+/// @brief Enable IPC features (SharedBufferSPSC, SharedValue, etc.)
+///
+/// When enabled (default):
+/// - SharedBufferSPSC: Lock-free SPSC buffer for cross-process data transfer
+/// - SharedValue: Zero-copy Value type in shared memory
+/// - SharedValueHandle: Convenient shared memory management
+///
+/// Dependencies when enabled:
+/// - Boost.Interprocess (bundled with lager_ext, not exposed in headers)
+///
+/// To disable IPC features (reduce binary size):
+///   #define LAGER_EXT_ENABLE_IPC 0
+///   #include <lager_ext/lager_ext_config.h>
+#ifndef LAGER_EXT_ENABLE_IPC
+#define LAGER_EXT_ENABLE_IPC 1
+#endif
+
+// ============================================================
 // Configuration Summary (compile-time message)
 // ============================================================
 

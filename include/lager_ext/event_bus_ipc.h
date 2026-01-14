@@ -49,10 +49,6 @@
 
 #pragma once
 
-#ifndef LAGER_EXT_ENABLE_IPC
-#error "IPC module not enabled. Build with -DLAGER_EXT_ENABLE_IPC=ON"
-#endif
-
 #include <lager_ext/event_bus.h>
 #include <lager_ext/ipc.h>
 #include <lager_ext/serialization.h>

@@ -8,6 +8,7 @@
 /// 1. Unidirectional Channel (Producer -> Consumer)
 /// 2. Bidirectional ChannelPair (Request/Reply pattern)
 /// 3. Sending/receiving raw data and Value objects
+/// 4. SharedBufferSPSC - High-performance Value serialization transfer
 ///
 /// Usage:
 ///   ipc_demo                 # Run as client (spawns server automatically)
@@ -15,9 +16,12 @@
 
 #include <lager_ext/builders.h>
 #include <lager_ext/ipc.h>
+#include <lager_ext/serialization.h>
+#include <lager_ext/shared_buffer_spsc.h>
 #include <lager_ext/value.h>
 
 #include <chrono>
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -186,6 +190,77 @@ int runServer() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
+    // =========================================
+    // Demo 4: SharedBufferSPSC - High-performance Value Transfer
+    // =========================================
+    std::cout << "\n[Server] Demo 4: SharedBufferSPSC Value Transfer\n";
+
+    // Fixed-size message structure for SharedBufferSPSC
+    struct ValueMessage {
+        uint32_t size;                    // Actual data size
+        uint8_t data[64 * 1024 - 4];      // 64KB buffer
+    };
+    static_assert(std::is_trivially_copyable_v<ValueMessage>);
+
+    // Open the shared buffer (consumer side)
+    std::cout << "[Server] Opening SharedBufferSPSC...\n";
+    std::unique_ptr<SharedBufferSPSC<ValueMessage>> spscBuffer;
+    startTime = std::chrono::steady_clock::now();
+
+    while (!spscBuffer) {
+        spscBuffer = SharedBufferSPSC<ValueMessage>::open(CHANNEL_NAME + "_spsc_value");
+        if (!spscBuffer) {
+            auto elapsed = std::chrono::steady_clock::now() - startTime;
+            if (std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() > 10) {
+                std::cerr << "[Server] Timeout waiting for SharedBufferSPSC\n";
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+
+    if (spscBuffer) {
+        std::cout << "[Server] SharedBufferSPSC opened, waiting for Value...\n";
+
+        // Wait for data with version check
+        startTime = std::chrono::steady_clock::now();
+        while (!spscBuffer->has_update()) {
+            auto elapsed = std::chrono::steady_clock::now() - startTime;
+            if (std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() > 10) {
+                std::cerr << "[Server] Timeout waiting for SPSC data\n";
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        if (spscBuffer->has_update()) {
+            // Zero-copy read from shared memory
+            const auto& msg = spscBuffer->read();
+            std::cout << "[Server] Received " << msg.size << " bytes via SharedBufferSPSC\n";
+
+            // Deserialize Value from the buffer
+            Value received = deserialize(msg.data, msg.size);
+
+            // Display received Value
+            std::cout << "[Server] Deserialized Value:\n";
+            Value title = received.at("title");
+            if (!title.is_null()) {
+                std::cout << "  title: " << title.as_string() << "\n";
+            }
+            Value count = received.at("count");
+            if (!count.is_null()) {
+                std::cout << "  count: " << count.as_number() << "\n";
+            }
+            Value position = received.at("position");
+            if (!position.is_null()) {
+                if (auto* vec = position.get_if<Vec3>()) {
+                    std::cout << "  position: [" << (*vec)[0] << ", " << (*vec)[1] << ", " << (*vec)[2] << "]\n";
+                }
+            }
+            std::cout << "[Server] SharedBufferSPSC demo complete!\n";
+        }
+    }
+
     std::cout << "\n[Server] Demo complete. Exiting.\n";
     return 0;
 }
@@ -317,6 +392,48 @@ int runClient() {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    // =========================================
+    // Demo 4: SharedBufferSPSC - High-performance Value Transfer
+    // =========================================
+    std::cout << "\n[Client] Demo 4: SharedBufferSPSC Value Transfer\n";
+
+    // Fixed-size message structure for SharedBufferSPSC
+    struct ValueMessage {
+        uint32_t size;                    // Actual data size
+        uint8_t data[64 * 1024 - 4];      // 64KB buffer
+    };
+    static_assert(std::is_trivially_copyable_v<ValueMessage>);
+
+    // Create the shared buffer (producer side)
+    std::cout << "[Client] Creating SharedBufferSPSC...\n";
+    auto spscBuffer = SharedBufferSPSC<ValueMessage>::create(CHANNEL_NAME + "_spsc_value");
+    if (!spscBuffer) {
+        std::cerr << "[Client] Failed to create SharedBufferSPSC: " 
+                  << SharedBufferSPSC<ValueMessage>::last_error() << "\n";
+    } else {
+        std::cout << "[Client] SharedBufferSPSC created.\n";
+
+        // Build a Value with various types including Vec3
+        Value gameState = MapBuilder()
+            .set("title", "Game State via SPSC")
+            .set("count", 42)
+            .set("position", Vec3{1.5f, 2.5f, 3.5f})
+            .set("active", true)
+            .finish();
+
+        // Serialize and write using write_guard (zero-copy)
+        {
+            auto guard = spscBuffer->write_guard();
+            auto bytesWritten = serialize_to(gameState, guard->data, sizeof(guard->data));
+            guard->size = static_cast<uint32_t>(bytesWritten);
+            std::cout << "[Client] Serialized and wrote " << bytesWritten << " bytes via SPSC\n";
+        }  // Guard commits on destruction
+
+        // Give server time to read
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::cout << "[Client] SharedBufferSPSC demo complete!\n";
     }
 
     std::cout << "\n[Client] Demo complete.\n";
