@@ -46,6 +46,7 @@ endif()
 set(LAGER_EXT_SOURCES
     source/delta_undo.cpp
     source/editor_engine.cpp
+    source/event_bus.cpp
     source/lager_adapters.cpp
     source/lager_lens.cpp
     source/multi_store.cpp
@@ -66,6 +67,7 @@ set(LAGER_EXT_HEADERS
     include/lager_ext/concepts.h
     include/lager_ext/delta_undo.h
     include/lager_ext/editor_engine.h
+    include/lager_ext/event_bus.h
     include/lager_ext/fast_shared_value.h
     include/lager_ext/lager_adapters.h
     include/lager_ext/lager_lens.h
@@ -93,11 +95,13 @@ set(LAGER_EXT_HEADERS
 if(LAGER_EXT_ENABLE_IPC)
     list(APPEND LAGER_EXT_SOURCES 
         source/ipc.cpp
+        source/event_bus_ipc.cpp
     )
     list(APPEND LAGER_EXT_HEADERS 
         include/lager_ext/ipc.h
+        include/lager_ext/event_bus_ipc.h
     )
-    message(STATUS "IPC module: ENABLED (SPSC lock-free implementation)")
+    message(STATUS "IPC module: ENABLED (SPSC lock-free + RemoteBus)")
 else()
     message(STATUS "IPC module: DISABLED")
 endif()

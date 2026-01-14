@@ -36,13 +36,21 @@ namespace ipc {
 // Helper wrappers for serialization (using lager_ext::serialize/deserialize)
 //=============================================================================
 
-/// Serialize Value to bytes using binary format
-static std::vector<uint8_t> serialize_value(const Value& value) {
+/// Serialize Value directly to a pre-allocated buffer (zero-copy optimization)
+/// @return Number of bytes written, or 0 if buffer too small or null value
+static size_t serialize_value_to(const Value& value, uint8_t* buffer, size_t buffer_size) {
     if (value.is_null()) {
-        return {};
+        return 0;
     }
-    ByteBuffer buffer = lager_ext::serialize(value);
-    return std::vector<uint8_t>(buffer.begin(), buffer.end());
+    return lager_ext::serialize_to(value, buffer, buffer_size);
+}
+
+/// Get serialized size without allocating
+static size_t get_serialized_size(const Value& value) {
+    if (value.is_null()) {
+        return 0;
+    }
+    return lager_ext::serialized_size(value);
 }
 
 /// Deserialize Value from bytes
@@ -170,18 +178,45 @@ public:
     //-------------------------------------------------------------------------
 
     bool send(uint32_t msgId, const Value& data) {
-        if (!isProducer_ || !header_) {
+        if (!isProducer_ || !header_) [[unlikely]] {
             lastError_ = "Not a producer";
             return false;
         }
 
-        // Serialize data
-        std::vector<uint8_t> serialized;
-        if (!data.is_null()) {
-            serialized = serialize_value(data);
+        // Fast path: null value
+        if (data.is_null()) {
+            return sendRaw(msgId, nullptr, 0);
         }
 
-        return sendRaw(msgId, serialized.data(), serialized.size());
+        // Check serialized size first (no allocation)
+        size_t dataSize = get_serialized_size(data);
+        if (dataSize > Message::INLINE_SIZE) [[unlikely]] {
+            lastError_ = "Data too large for inline storage (max 240 bytes)";
+            return false;
+        }
+
+        // Check if queue is full
+        uint64_t currentWrite = header_->writeIndex.load(std::memory_order_relaxed);
+        uint64_t currentRead = header_->readIndex.load(std::memory_order_relaxed);
+
+        if (currentWrite - currentRead >= capacity_) [[unlikely]] {
+            lastError_ = "Queue full";
+            return false;
+        }
+
+        // Get message slot and serialize directly into it (zero-copy)
+        Message* msg = header_->messageAt(currentWrite);
+        msg->msgId = msgId;
+        msg->timestamp = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+
+        // Serialize directly to shared memory - no intermediate buffer
+        size_t written = serialize_value_to(data, msg->inlineData, Message::INLINE_SIZE);
+        msg->dataSize = static_cast<uint32_t>(written);
+
+        // Publish: increment write index with release semantics
+        header_->writeIndex.store(currentWrite + 1, std::memory_order_release);
+
+        return true;
     }
 
     bool sendRaw(uint32_t msgId, const void* data, size_t size) {
@@ -379,7 +414,7 @@ Channel::~Channel() = default;
 Channel::Channel(Channel&&) noexcept = default;
 Channel& Channel::operator=(Channel&&) noexcept = default;
 
-std::unique_ptr<Channel> Channel::createProducer(const std::string& name, size_t capacity) {
+std::unique_ptr<Channel> Channel::create(const std::string& name, size_t capacity) {
     auto channel = std::unique_ptr<Channel>(new Channel());
     if (!channel->impl_->createAsProducer(name, capacity)) {
         return nullptr;
@@ -387,7 +422,7 @@ std::unique_ptr<Channel> Channel::createProducer(const std::string& name, size_t
     return channel;
 }
 
-std::unique_ptr<Channel> Channel::createConsumer(const std::string& name) {
+std::unique_ptr<Channel> Channel::open(const std::string& name) {
     auto channel = std::unique_ptr<Channel>(new Channel());
     if (!channel->impl_->openAsConsumer(name)) {
         return nullptr;
@@ -445,50 +480,50 @@ const std::string& Channel::lastError() const {
 
 class ChannelPair::Impl {
 public:
-    bool createAsEndpointA(const std::string& name, size_t capacity) {
+    bool createPair(const std::string& name, size_t capacity) {
         name_ = name;
-        isEndpointA_ = true;
+        isCreator_ = true;
 
         // Create A->B channel (we produce, they consume)
-        outChannel_ = Channel::createProducer(name + "_AtoB", capacity);
+        outChannel_ = Channel::create(name + "_AtoB", capacity);
         if (!outChannel_) {
-            lastError_ = "Failed to create A->B channel";
+            lastError_ = "Failed to create outgoing channel";
             return false;
         }
 
         // Create B->A channel (they produce, we consume)
-        inChannel_ = Channel::createProducer(name + "_BtoA", capacity);
+        inChannel_ = Channel::create(name + "_BtoA", capacity);
         if (!inChannel_) {
-            lastError_ = "Failed to create B->A channel";
+            lastError_ = "Failed to create incoming channel";
             return false;
         }
 
         return true;
     }
 
-    bool openAsEndpointB(const std::string& name) {
+    bool connectPair(const std::string& name) {
         name_ = name;
-        isEndpointA_ = false;
+        isCreator_ = false;
 
         // Open A->B channel (they produce, we consume)
-        inChannel_ = Channel::createConsumer(name + "_AtoB");
+        inChannel_ = Channel::open(name + "_AtoB");
         if (!inChannel_) {
-            lastError_ = "Failed to open A->B channel";
+            lastError_ = "Failed to open incoming channel";
             return false;
         }
 
         // Open B->A channel (we produce, they consume)
-        // Note: We need to wait for A to create this
+        // Note: We need to wait for creator to create this
         int retries = 100;
         while (retries-- > 0) {
-            outChannel_ = Channel::createConsumer(name + "_BtoA");
+            outChannel_ = Channel::open(name + "_BtoA");
             if (outChannel_)
                 break;
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
         if (!outChannel_) {
-            lastError_ = "Failed to open B->A channel";
+            lastError_ = "Failed to open outgoing channel";
             return false;
         }
 
@@ -526,12 +561,12 @@ public:
     }
 
     const std::string& name() const { return name_; }
-    bool isEndpointA() const { return isEndpointA_; }
+    bool isCreator() const { return isCreator_; }
     const std::string& lastError() const { return lastError_; }
 
 private:
     std::string name_;
-    bool isEndpointA_ = false;
+    bool isCreator_ = false;
     mutable std::string lastError_;
 
     std::unique_ptr<Channel> outChannel_;
@@ -547,17 +582,17 @@ ChannelPair::~ChannelPair() = default;
 ChannelPair::ChannelPair(ChannelPair&&) noexcept = default;
 ChannelPair& ChannelPair::operator=(ChannelPair&&) noexcept = default;
 
-std::unique_ptr<ChannelPair> ChannelPair::createEndpointA(const std::string& name, size_t capacity) {
+std::unique_ptr<ChannelPair> ChannelPair::create(const std::string& name, size_t capacity) {
     auto pair = std::unique_ptr<ChannelPair>(new ChannelPair());
-    if (!pair->impl_->createAsEndpointA(name, capacity)) {
+    if (!pair->impl_->createPair(name, capacity)) {
         return nullptr;
     }
     return pair;
 }
 
-std::unique_ptr<ChannelPair> ChannelPair::createEndpointB(const std::string& name) {
+std::unique_ptr<ChannelPair> ChannelPair::connect(const std::string& name) {
     auto pair = std::unique_ptr<ChannelPair>(new ChannelPair());
-    if (!pair->impl_->openAsEndpointB(name)) {
+    if (!pair->impl_->connectPair(name)) {
         return nullptr;
     }
     return pair;
@@ -584,8 +619,8 @@ const std::string& ChannelPair::name() const {
     return impl_->name();
 }
 
-bool ChannelPair::isEndpointA() const {
-    return impl_->isEndpointA();
+bool ChannelPair::isCreator() const {
+    return impl_->isCreator();
 }
 
 const std::string& ChannelPair::lastError() const {

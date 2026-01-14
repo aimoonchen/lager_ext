@@ -135,4 +135,14 @@ else()
     message(STATUS "  Skipping ipc_demo: IPC module not enabled")
 endif()
 
+# ============================================================
+# Example 5: Event Demo (EventBus pub/sub system)
+# ============================================================
+
+add_lager_ext_example(event_demo
+    SOURCES
+        event_demo.cpp
+)
+message(STATUS "  Adding example: event_demo (EventBus pub/sub demo)")
+
 message(STATUS "")

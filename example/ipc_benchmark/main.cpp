@@ -236,7 +236,7 @@ int runServer() {
     }
 
     // Server creates its outbound channel first (producer for replies)
-    auto channelOut = Channel::createProducer(CHANNEL_NAME + "_toclient", 8192);
+    auto channelOut = Channel::create(CHANNEL_NAME + "_toclient", 8192);
     std::cerr << "[Server] Created reply channel\n";
 
     // Output HWND for client to parse
@@ -273,7 +273,7 @@ int runServer() {
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastConnectAttempt).count();
             if (elapsed >= 100) { // Try every 100ms
-                channelIn = Channel::createConsumer(CHANNEL_NAME + "_toserver");
+                channelIn = Channel::open(CHANNEL_NAME + "_toserver");
                 if (channelIn) {
                     std::cerr << "[Server] Connected to client IPC channel\n";
                 }
@@ -454,7 +454,7 @@ void benchmarkIpcCrossProcess(int iterations) {
     printHeader("IPC Channel Cross-Process Benchmark");
 
     // Client side: create our outbound channel first
-    auto toServer = Channel::createProducer(CHANNEL_NAME + "_toserver", 8192);
+    auto toServer = Channel::create(CHANNEL_NAME + "_toserver", 8192);
     if (!toServer) {
         std::cerr << "Failed to create IPC producer channel\n";
         return;
@@ -463,7 +463,7 @@ void benchmarkIpcCrossProcess(int iterations) {
     // Wait for server to create its reply channel
     std::unique_ptr<Channel> fromServer;
     for (int retry = 0; retry < 100 && !fromServer; ++retry) {
-        fromServer = Channel::createConsumer(CHANNEL_NAME + "_toclient");
+        fromServer = Channel::open(CHANNEL_NAME + "_toclient");
         if (!fromServer) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }

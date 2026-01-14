@@ -79,11 +79,31 @@ This document provides a comprehensive overview of the public APIs in the `lager
     - [9.6 MutableValue ↔ Value Conversion](#96-mutablevalue--value-conversion)
     - [9.7 FastSharedValue (High-Performance Shared Memory)](#97-fastsharedvalue-high-performance-shared-memory)
     - [9.8 Performance Comparison](#98-performance-comparison)
-  - [10. Header Reference](#10-header-reference)
-  - [11. Usage Examples](#11-usage-examples)
-    - [11.1 Basic Usage](#111-basic-usage)
-    - [11.2 Working with Math Types](#112-working-with-math-types)
-    - [11.3 Thread Safety](#113-thread-safety)
+  - [10. EventBus (Pub/Sub Messaging)](#10-eventbus-pubsub-messaging)
+    - [10.1 Overview](#101-overview)
+    - [10.2 Defining Events](#102-defining-events)
+      - [Static Typed Events](#static-typed-events)
+      - [Dynamic String Events](#dynamic-string-events)
+    - [10.3 Subscribing to Events](#103-subscribing-to-events)
+      - [Static Event Subscription](#static-event-subscription)
+      - [Dynamic Event Subscription](#dynamic-event-subscription)
+    - [10.4 Publishing Events](#104-publishing-events)
+    - [10.5 Connection Lifecycle](#105-connection-lifecycle)
+      - [Connection Types](#connection-types)
+      - [Usage Patterns](#usage-patterns)
+    - [10.6 Guard Mechanism](#106-guard-mechanism)
+    - [10.7 Local vs Global Bus](#107-local-vs-global-bus)
+    - [10.8 RemoteBus (Cross-Process Messaging)](#108-remotebus-cross-process-messaging)
+      - [Defining IPC Events](#defining-ipc-events)
+      - [Creating a RemoteBus](#creating-a-remotebus)
+      - [Sending Events](#sending-events)
+      - [Receiving Events](#receiving-events)
+      - [Request/Response Pattern](#requestresponse-pattern)
+  - [11. Header Reference](#11-header-reference)
+  - [12. Usage Examples](#12-usage-examples)
+    - [12.1 Basic Usage](#121-basic-usage)
+    - [12.2 Working with Math Types](#122-working-with-math-types)
+    - [12.3 Thread Safety](#123-thread-safety)
   - [Notes](#notes)
 
 ---
@@ -1698,35 +1718,35 @@ The IPC module provides two main classes:
 
 ### 8.2 Channel (Unidirectional)
 
-`Channel` represents a one-way communication channel. One process creates the channel as a **producer** (sender), and another process attaches as a **consumer** (receiver).
+`Channel` represents a one-way communication channel. One process creates the channel as a **producer** (owner), and another process opens it as a **consumer** (connector).
 
 #### Factory Methods
 
 ```cpp
-/// Create channel as producer (creates shared memory)
-static std::unique_ptr<Channel> createProducer(
+/// Create channel as producer/owner (creates shared memory)
+static std::unique_ptr<Channel> create(
     const std::string& name,
     size_t capacity = DEFAULT_CAPACITY  // 4096 messages
 );
 
-/// Attach to channel as consumer
-static std::unique_ptr<Channel> createConsumer(const std::string& name);
+/// Open existing channel as consumer
+static std::unique_ptr<Channel> open(const std::string& name);
 ```
 
 **Example:**
 
 ```cpp
-// Process A (Producer)
-auto sender = Channel::createProducer("MyChannel", 8192);
+// Process A (Producer/Owner)
+auto sender = Channel::create("MyChannel", 8192);
 if (!sender) {
     std::cerr << "Failed to create channel\n";
     return;
 }
 
-// Process B (Consumer)
-auto receiver = Channel::createConsumer("MyChannel");
+// Process B (Consumer/Connector)
+auto receiver = Channel::open("MyChannel");
 if (!receiver) {
-    std::cerr << "Failed to attach to channel\n";
+    std::cerr << "Failed to open channel\n";
     return;
 }
 ```
@@ -1826,24 +1846,24 @@ const std::string& lastError() const; // Last error message
 #### Factory Methods
 
 ```cpp
-/// Create as endpoint A (creates both channels)
-static std::unique_ptr<ChannelPair> createEndpointA(
+/// Create as the initiator (creates both underlying channels)
+static std::unique_ptr<ChannelPair> create(
     const std::string& name,
     size_t capacity = DEFAULT_CAPACITY
 );
 
-/// Attach as endpoint B
-static std::unique_ptr<ChannelPair> createEndpointB(const std::string& name);
+/// Connect to an existing ChannelPair
+static std::unique_ptr<ChannelPair> connect(const std::string& name);
 ```
 
 **Example:**
 
 ```cpp
-// Game Engine (Endpoint A)
-auto enginePair = ChannelPair::createEndpointA("EngineEditor", 4096);
+// Game Engine (Creator/Initiator)
+auto enginePair = ChannelPair::create("EngineEditor", 4096);
 
-// Editor (Endpoint B)
-auto editorPair = ChannelPair::createEndpointB("EngineEditor");
+// Editor (Connector)
+auto editorPair = ChannelPair::connect("EngineEditor");
 ```
 
 #### Operations
@@ -1900,7 +1920,7 @@ if (auto reply = editorPair->sendAndWaitReply(MSG_GET_ENTITY, request)) {
 
 ```cpp
 const std::string& name() const;
-bool isEndpointA() const;
+bool isCreator() const;  // true if this side called create()
 const std::string& lastError() const;
 ```
 
@@ -1963,7 +1983,7 @@ channel->tryReceive();
 #### Error Handling
 
 ```cpp
-auto channel = Channel::createProducer("MyChannel");
+auto channel = Channel::create("MyChannel");
 if (!channel) {
     std::cerr << "Create failed: " << Channel::lastError() << "\n";
     return;
@@ -2315,7 +2335,366 @@ Value local = fast_deep_copy_to_local(fast_shared);
 
 ---
 
-## 10. Header Reference
+## 10. EventBus (Pub/Sub Messaging)
+
+### 10.1 Overview
+
+`EventBus` is a high-performance, single-threaded publish/subscribe messaging system designed for:
+
+- **Zero-copy event passing** via thread-local storage (TLS)
+- **Type-safe static events** with compile-time guarantees
+- **Dynamic string events** for runtime flexibility
+- **RAII-based connection management** with automatic cleanup
+- **Guard mechanism** for weak pointer-based auto-unsubscription
+- **RemoteBus** for cross-process messaging (optional, via `LAGER_EXT_ENABLE_IPC`)
+
+**Header**: `<lager_ext/event_bus.h>` (core), `<lager_ext/event_bus_ipc.h>` (IPC extension)
+
+```cpp
+#include <lager_ext/event_bus.h>
+using namespace lager_ext;
+
+// Use the default bus for application-wide messaging
+EventBus& bus = default_bus();
+
+// Or create a local bus for isolated channels
+EventBus local_bus;
+```
+
+### 10.2 Defining Events
+
+#### Static Typed Events
+
+Use the `LAGER_EXT_EVENT` macro to define compile-time typed events:
+
+```cpp
+// Simple event
+LAGER_EXT_EVENT(DocumentOpened,
+    std::string path;
+);
+
+// Event with multiple fields
+LAGER_EXT_EVENT(NodeTransformChanged,
+    int node_id;
+    float x, y, z;
+);
+
+// Event with complex types
+LAGER_EXT_EVENT(SelectionChanged,
+    std::vector<int> selected_ids;
+    std::optional<int> primary_id;
+);
+```
+
+The macro generates:
+- A struct with the specified fields
+- A static `event_name` member for identification
+- Satisfies the `Event<T>` concept
+
+#### Dynamic String Events
+
+Dynamic events use string names and `Value` payloads:
+
+```cpp
+// No definition needed - use at runtime
+bus.publish("debug.log", Value{"Log message"});
+bus.publish("plugin.event", Value::map({{"action", "click"}, {"x", 100}}));
+```
+
+### 10.3 Subscribing to Events
+
+#### Static Event Subscription
+
+```cpp
+// Basic subscription
+Connection conn = bus.subscribe<DocumentOpened>([](const DocumentOpened& evt) {
+    std::cout << "Opened: " << evt.path << "\n";
+});
+
+// With guard (auto-unsubscribe when object destroyed)
+class MyComponent : public std::enable_shared_from_this<MyComponent> {
+public:
+    void subscribe(EventBus& bus) {
+        conn_ = bus.subscribe<NodeTransformChanged>(
+            weak_from_this(),  // Guard
+            [this](const NodeTransformChanged& evt) {
+                // Handler is automatically removed when `this` is destroyed
+                process_transform(evt);
+            }
+        );
+    }
+private:
+    ScopedConnection conn_;
+};
+```
+
+#### Dynamic Event Subscription
+
+```cpp
+// Single name
+bus.subscribe("debug.log", [](const Value& payload) {
+    std::cout << "Debug: " << to_json(payload) << "\n";
+});
+
+// Multiple names
+bus.subscribe({"warning", "error"}, [](std::string_view name, const Value& payload) {
+    std::cout << name << ": " << to_json(payload) << "\n";
+});
+
+// Filter function (match all starting with "custom.")
+bus.subscribe(
+    [](std::string_view name) { return name.starts_with("custom."); },
+    [](std::string_view name, const Value& payload) {
+        std::cout << "Custom event: " << name << "\n";
+    }
+);
+```
+
+### 10.4 Publishing Events
+
+```cpp
+// Publish static event
+bus.publish(DocumentOpened{.path = "/tmp/file.txt"});
+
+bus.publish(NodeTransformChanged{
+    .node_id = 42,
+    .x = 1.0f, .y = 2.0f, .z = 3.0f
+});
+
+// Publish dynamic event
+bus.publish("debug.log", Value{"Debugging info"});
+bus.publish("custom.plugin.event", Value::map({
+    {"action", "save"},
+    {"target", "scene.json"}
+}));
+```
+
+### 10.5 Connection Lifecycle
+
+#### Connection Types
+
+| Type | Description | Ownership |
+|------|-------------|-----------|
+| `Connection` | Raw handle, manual disconnect | Non-owning |
+| `ScopedConnection` | RAII wrapper, auto-disconnect on destruction | Owning |
+| `ScopedConnectionList` | Container for multiple connections | Owning |
+
+#### Usage Patterns
+
+```cpp
+// ScopedConnection - auto-disconnect when goes out of scope
+{
+    ScopedConnection conn = bus.subscribe<DocumentOpened>([](const auto& evt) {
+        std::cout << "Opened: " << evt.path << "\n";
+    });
+    // Connection active here
+} // Automatically disconnected here
+
+// ScopedConnectionList - manage multiple connections
+class MyComponent {
+public:
+    void subscribe(EventBus& bus) {
+        connections_ += bus.subscribe<DocumentOpened>([](const auto& evt) { /*...*/ });
+        connections_ += bus.subscribe<DocumentSaved>([](const auto& evt) { /*...*/ });
+        connections_ += bus.subscribe("debug.log", [](const Value& v) { /*...*/ });
+    }
+    
+private:
+    ScopedConnectionList connections_;  // All disconnected on destruction
+};
+
+// Manual control
+Connection conn = bus.subscribe<DocumentOpened>(handler);
+// ... later
+conn.disconnect();
+bool active = conn.connected();
+```
+
+### 10.6 Guard Mechanism
+
+Guards provide automatic unsubscription when an observed object is destroyed:
+
+```cpp
+class DocumentViewer : public std::enable_shared_from_this<DocumentViewer> {
+public:
+    void subscribe(EventBus& bus) {
+        // Guard with weak_ptr - handler auto-removed when DocumentViewer destroyed
+        conn_ = bus.subscribe<DocumentSaved>(
+            weak_from_this(),
+            [this](const DocumentSaved& evt) {
+                // Safe to use `this` - guaranteed to be alive
+                update_view(evt.doc_id);
+            }
+        );
+    }
+    
+private:
+    ScopedConnection conn_;
+};
+
+// Usage
+{
+    auto viewer = std::make_shared<DocumentViewer>();
+    viewer->subscribe(bus);
+    
+    bus.publish(DocumentSaved{.doc_id = "doc1"});  // Viewer receives this
+    
+} // viewer destroyed here - subscription automatically removed
+
+bus.publish(DocumentSaved{.doc_id = "doc2"});  // No crash, handler already removed
+```
+
+### 10.7 Local vs Global Bus
+
+```cpp
+// Default bus - singleton, application-wide
+EventBus& global = default_bus();
+
+// Local bus - isolated channel, component-specific
+EventBus local_bus;
+
+// Events are NOT shared between different buses
+global.publish(MyEvent{});  // Only global subscribers receive this
+local_bus.publish(MyEvent{});  // Only local subscribers receive this
+```
+
+**Use cases:**
+- **Default bus**: Application-wide events (document open, errors, etc.)
+- **Local bus**: Component-internal communication, testing isolation
+
+### 10.8 RemoteBus (Cross-Process Messaging)
+
+When `LAGER_EXT_ENABLE_IPC` is defined, you can use `RemoteBus` for cross-process messaging.
+
+**Header**: `<lager_ext/event_bus_ipc.h>`
+
+#### Defining IPC Events
+
+IPC events require serialization support via `IpcEventTrait<T>`. There are two ways to define them:
+
+**Method 1: Manual Definition (Recommended for MSVC compatibility)**
+
+```cpp
+#ifdef LAGER_EXT_ENABLE_IPC
+
+// Define the event struct with event_name
+struct RemoteCommand {
+    static constexpr std::string_view event_name{"RemoteCommand"};
+    std::string command;
+    int priority;
+};
+
+// Provide serialization trait
+template <>
+struct IpcEventTrait<RemoteCommand> {
+    static constexpr bool is_ipc_event = true;
+    static Value serialize(const RemoteCommand& evt) {
+        return Value::map({{"command", evt.command}, {"priority", evt.priority}});
+    }
+    static RemoteCommand deserialize(const Value& v) {
+        return RemoteCommand{
+            .command = v.at("command").as<std::string>(),
+            .priority = v.at("priority").as<int>()
+        };
+    }
+};
+
+#endif
+```
+
+**Method 2: Using Macro (May have issues with some MSVC preprocessor versions)**
+
+```cpp
+#ifdef LAGER_EXT_ENABLE_IPC
+
+// clang-format off
+LAGER_EXT_IPC_EVENT(RemoteCommand,
+    std::string command; int priority;
+,
+    return Value::map({{"command", evt.command}, {"priority", evt.priority}});
+,
+    return RemoteCommand{.command = v.at("command").as<std::string>(), .priority = v.at("priority").as<int>()};
+);
+// clang-format on
+
+#endif
+```
+
+> **Note:** The macro approach may fail on MSVC due to preprocessor handling of multi-line arguments.
+> For best cross-compiler compatibility, use Method 1.
+
+#### Creating a RemoteBus
+
+```cpp
+#include <lager_ext/event_bus_ipc.h>
+
+EventBus bus;
+RemoteBus remote("my_channel", bus, RemoteBus::Role::Peer);
+
+if (remote.connected()) {
+    std::cout << "Connected to: " << remote.channel_name() << "\n";
+}
+```
+
+**Roles:**
+- `Role::Server` - Creates the channel
+- `Role::Client` - Connects to existing channel
+- `Role::Peer` - Bidirectional (creates ChannelPair)
+
+#### Sending Events
+
+```cpp
+// Send typed event to remote process
+remote.publish_remote(RemoteCommand{.command = "start", .priority = 1});
+
+// Send to both local bus AND remote
+remote.broadcast(StatusUpdate{.component = "Renderer", .status = "OK"});
+
+// Send dynamic event
+remote.publish_remote("remote.ping", Value{"hello"});
+```
+
+#### Receiving Events
+
+```cpp
+// Subscribe to remote typed events
+remote.subscribe_remote<RemoteCommand>([](const RemoteCommand& cmd) {
+    std::cout << "Remote command: " << cmd.command << "\n";
+});
+
+// Subscribe to dynamic remote events
+remote.subscribe_remote("remote.ping", [](const Value& v) {
+    std::cout << "Ping: " << to_json(v) << "\n";
+});
+
+// Bridge remote events to local bus
+remote.bridge_to_local<StatusUpdate>();
+
+// Poll for incoming events (call in your event loop)
+remote.poll();
+```
+
+#### Request/Response Pattern
+
+```cpp
+// Register request handler
+remote.on_request("query.status", [](const Value& request) -> Value {
+    return Value::map({
+        {"status", "ok"},
+        {"uptime", 12345}
+    });
+});
+
+// Send request and wait for response (in another process)
+auto response = remote.request("query.status", Value{}, std::chrono::seconds(5));
+if (response) {
+    std::cout << "Response: " << to_json(*response) << "\n";
+}
+```
+
+---
+
+## 11. Header Reference
 
 | Header | Description |
 |--------|-------------|
@@ -2342,12 +2721,14 @@ Value local = fast_deep_copy_to_local(fast_shared);
 | `<lager_ext/undo.h>` | Unified abstract undo/redo interface |
 | `<lager_ext/multi_store.h>` | Multi-document state management |
 | `<lager_ext/utils.h>` | Utility functions (`MutableValue` ↔ `Value` conversion) |
+| `<lager_ext/event_bus.h>` | **EventBus** - High-performance local pub/sub messaging |
+| `<lager_ext/event_bus_ipc.h>` | RemoteBus for cross-process messaging (requires `LAGER_EXT_ENABLE_IPC`) |
 
 ---
 
-## 11. Usage Examples
+## 12. Usage Examples
 
-### 11.1 Basic Usage
+### 12.1 Basic Usage
 
 ```cpp
 #include <lager_ext/value.h>
@@ -2398,7 +2779,7 @@ int main() {
 }
 ```
 
-### 11.2 Working with Math Types
+### 12.2 Working with Math Types
 
 ```cpp
 #include <lager_ext/value.h>
@@ -2430,7 +2811,7 @@ int main() {
 }
 ```
 
-### 11.3 Thread Safety
+### 12.3 Thread Safety
 
 ```cpp
 #include <lager_ext/value.h>

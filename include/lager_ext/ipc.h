@@ -16,12 +16,12 @@
 ///
 /// Usage:
 /// @code
-///     // Process A (Producer)
-///     auto channel = Channel::createProducer("MyChannel", 1024);
+///     // Process A (Producer) - creates the channel
+///     auto channel = Channel::create("MyChannel", 1024);
 ///     channel->send(msgId, data);
 ///
-///     // Process B (Consumer)
-///     auto channel = Channel::createConsumer("MyChannel");
+///     // Process B (Consumer) - opens existing channel
+///     auto channel = Channel::open("MyChannel");
 ///     while (auto msg = channel->receive()) {
 ///         process(msg->msgId, msg->data);
 ///     }
@@ -113,12 +113,12 @@ public:
     /// @param name Unique channel name
     /// @param capacity Number of messages the queue can hold
     /// @return Channel instance, nullptr on failure
-    static std::unique_ptr<Channel> createProducer(const std::string& name, size_t capacity = DEFAULT_CAPACITY);
+    static std::unique_ptr<Channel> create(const std::string& name, size_t capacity = DEFAULT_CAPACITY);
 
     /// Open the channel as consumer (attaches to existing shared memory)
     /// @param name Channel name (must match producer)
     /// @return Channel instance, nullptr on failure
-    static std::unique_ptr<Channel> createConsumer(const std::string& name);
+    static std::unique_ptr<Channel> open(const std::string& name);
 
     //-------------------------------------------------------------------------
     // Producer Operations
@@ -215,23 +215,28 @@ private:
 ///
 /// Usage:
 /// @code
-///     // Process A
-///     auto pair = ChannelPair::createEndpointA("MyPair");
+///     // Process A (creates the channel pair)
+///     auto pair = ChannelPair::create("MyPair");
 ///     pair->send(MSG_REQUEST, data);
 ///     auto reply = pair->receive();
 ///
-///     // Process B
-///     auto pair = ChannelPair::createEndpointB("MyPair");
+///     // Process B (connects to existing pair)
+///     auto pair = ChannelPair::connect("MyPair");
 ///     auto request = pair->receive();
 ///     pair->send(MSG_REPLY, response);
 /// @endcode
 class LAGER_EXT_API ChannelPair {
 public:
-    /// Create as endpoint A (creates both channels)
-    static std::unique_ptr<ChannelPair> createEndpointA(const std::string& name, size_t capacity = DEFAULT_CAPACITY);
+    /// Create the channel pair (creates both underlying channels)
+    /// @param name Unique pair name
+    /// @param capacity Number of messages each channel can hold
+    /// @return ChannelPair instance, nullptr on failure
+    static std::unique_ptr<ChannelPair> create(const std::string& name, size_t capacity = DEFAULT_CAPACITY);
 
-    /// Create as endpoint B (attaches to existing channels)
-    static std::unique_ptr<ChannelPair> createEndpointB(const std::string& name);
+    /// Connect to an existing channel pair
+    /// @param name Pair name (must match creator)
+    /// @return ChannelPair instance, nullptr on failure
+    static std::unique_ptr<ChannelPair> connect(const std::string& name);
 
     /// Send a message to the other endpoint
     bool send(uint32_t msgId, const Value& data = {});
@@ -249,7 +254,10 @@ public:
                                           std::chrono::milliseconds timeout = std::chrono::seconds(30));
 
     const std::string& name() const;
-    bool isEndpointA() const;
+
+    /// Check if this is the creator side (called create())
+    bool isCreator() const;
+
     const std::string& lastError() const;
 
     ~ChannelPair();
@@ -263,12 +271,6 @@ private:
     class Impl;
     std::unique_ptr<Impl> impl_;
 };
-
-// Compatibility aliases (deprecated, use new names)
-using SpscMessage = Message;
-using SpscChannel = Channel;
-using SpscPair = ChannelPair;
-constexpr size_t SPSC_DEFAULT_CAPACITY = DEFAULT_CAPACITY;
 
 } // namespace ipc
 } // namespace lager_ext
