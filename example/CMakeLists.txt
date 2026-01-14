@@ -130,9 +130,16 @@ if(LAGER_EXT_ENABLE_IPC)
             ipc_demo/main.cpp
     )
     message(STATUS "  Adding example: ipc_demo (Basic IPC API usage)")
+    
+    add_lager_ext_example(shared_buffer_demo
+        SOURCES
+            shared_buffer_demo.cpp
+    )
+    message(STATUS "  Adding example: shared_buffer_demo (SPSC shared memory buffer)")
 else()
     message(STATUS "  Skipping ipc_benchmark: IPC module not enabled")
     message(STATUS "  Skipping ipc_demo: IPC module not enabled")
+    message(STATUS "  Skipping shared_buffer_demo: IPC module not enabled")
 endif()
 
 # ============================================================

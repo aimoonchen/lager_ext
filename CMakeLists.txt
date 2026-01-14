@@ -27,7 +27,7 @@ option(LAGER_EXT_BUILD_SHARED "Build lager_ext as shared library" OFF)
 option(LAGER_EXT_BUILD_EXAMPLES "Build example programs" ON)
 option(LAGER_EXT_BUILD_TESTS "Build unit tests" OFF)
 option(LAGER_EXT_INSTALL "Generate install target" OFF)
-option(LAGER_EXT_ENABLE_IPC "Enable IPC module (requires boost::interprocess)" ON)
+option(LAGER_EXT_ENABLE_IPC "Enable IPC module (shared memory, RemoteBus)" ON)
 
 # ============================================================
 # Determine if this is a top-level project
@@ -96,12 +96,14 @@ if(LAGER_EXT_ENABLE_IPC)
     list(APPEND LAGER_EXT_SOURCES 
         source/ipc.cpp
         source/event_bus_ipc.cpp
+        source/shared_buffer_spsc.cpp
     )
     list(APPEND LAGER_EXT_HEADERS 
         include/lager_ext/ipc.h
         include/lager_ext/event_bus_ipc.h
+        include/lager_ext/shared_buffer_spsc.h
     )
-    message(STATUS "IPC module: ENABLED (SPSC lock-free + RemoteBus)")
+    message(STATUS "IPC module: ENABLED (SPSC lock-free + RemoteBus + SharedBufferSPSC)")
 else()
     message(STATUS "IPC module: DISABLED")
 endif()
@@ -172,8 +174,7 @@ target_include_directories(lager_ext
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
-        # Private dependency: boost (isolated from public API)
-        # Users won't see this path - prevents conflict with user's own boost
+        # Internal dependencies (not exposed to library users)
         ${CMAKE_CURRENT_SOURCE_DIR}/source/deps
 )
 
@@ -181,15 +182,15 @@ target_include_directories(lager_ext
 # Compile Definitions
 # ============================================================
 
+# Note: Most library configuration macros (IMMER_*, ZUG_VARIANT_STD, BOOST_*_NO_LIB)
+# are centrally managed in include/lager_ext/lager_ext_config.h
+# Only build-system level flags are defined here.
+
 target_compile_definitions(lager_ext 
     PUBLIC
-        # zug uses std::variant instead of Boost.Variant
-        ZUG_VARIANT_STD
-        # IPC module availability flag
+        # IPC module availability flag (used for conditional compilation)
         $<$<BOOL:${LAGER_EXT_ENABLE_IPC}>:LAGER_EXT_ENABLE_IPC>
     PRIVATE
-        # Boost.Interprocess needs this macro to avoid linking date_time library
-        $<$<BOOL:${LAGER_EXT_ENABLE_IPC}>:BOOST_DATE_TIME_NO_LIB>
         # Disable debug checks in release mode
         $<$<CONFIG:Release>:NDEBUG>
         $<$<CONFIG:MinSizeRel>:NDEBUG>
@@ -365,9 +366,9 @@ if(LAGER_EXT_INSTALL)
         FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
     )
     
-    # Install dependency headers (immer, lager, zug, boost)
-    # Note: These are bundled with the project
-    foreach(_dep_dir immer lager zug boost)
+    # Install dependency headers (immer, lager, zug)
+    # Note: These are bundled with the project for user convenience
+    foreach(_dep_dir immer lager zug)
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/include/${_dep_dir}")
             install(DIRECTORY "include/${_dep_dir}"
                 DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
