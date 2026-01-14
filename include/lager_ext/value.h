@@ -42,17 +42,21 @@
 #include <immer/vector.hpp>
 #include <immer/vector_transient.hpp>
 
-#include <algorithm> // for std::copy_n
-#include <array>     // for Vec2, Vec3, Vec4, Mat3, Mat4x3
-#include <compare>   // for std::strong_ordering (C++20)
-#include <concepts>  // for C++20 Concepts (C++20)
+#include <array>           // for Vec2, Vec3, Vec4, Mat3, Mat4x3
+#include <compare>         // for std::strong_ordering (C++20)
+#include <concepts>        // for C++20 Concepts (C++20)
 #include <cstdint>
-#include <functional> // for std::hash
-#include <iostream>
-#include <source_location> // for std::source_location (C++20)
+#include <cstring>         // for std::memcpy
+#include <functional>      // for std::hash
+#include <source_location> // for std::source_location (C++20) - used in function signatures
 #include <string>
 #include <variant>
 #include <vector>
+
+// Conditional include for verbose logging output (debug builds only)
+#if !defined(NDEBUG) || (defined(lager_ext_VERBOSE_LOG) && lager_ext_VERBOSE_LOG)
+#include <iostream>  // for std::cerr (debug logging)
+#endif
 
 // ============================================================
 // Verbose Logging Configuration
@@ -314,19 +318,19 @@ struct BasicValue {
 
     static BasicValue mat3(const float* ptr) {
         Mat3 m;
-        std::copy_n(ptr, 9, m.begin());
+        std::memcpy(m.data(), ptr, sizeof(Mat3));
         return BasicValue{m};
     }
 
     static BasicValue mat4x3(const float* ptr) {
         Mat4x3 m;
-        std::copy_n(ptr, 12, m.begin());
+        std::memcpy(m.data(), ptr, sizeof(Mat4x3));
         return BasicValue{m};
     }
 
     static BasicValue mat4(const float* ptr) {
         Mat4 m;
-        std::copy_n(ptr, 16, m.begin());
+        std::memcpy(m.data(), ptr, sizeof(Mat4));
         return BasicValue{m};
     }
 

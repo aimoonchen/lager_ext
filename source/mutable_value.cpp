@@ -38,7 +38,7 @@ const MutableValue* MutableValue::get(std::string_view key) const {
     return it->second.get();
 }
 
-void MutableValue::set(std::string_view key, MutableValue value) {
+MutableValue& MutableValue::set(std::string_view key, MutableValue value) {
     // Ensure we're a map
     if (!is_map()) {
         data = MutableValueMap{};
@@ -54,9 +54,10 @@ void MutableValue::set(std::string_view key, MutableValue value) {
         // Key doesn't exist, must allocate string for new key
         map.emplace(std::string{key}, std::make_unique<MutableValue>(std::move(value)));
     }
+    return *this;
 }
 
-void MutableValue::set(std::string&& key, MutableValue value) {
+MutableValue& MutableValue::set(std::string&& key, MutableValue value) {
     // Ensure we're a map
     if (!is_map()) {
         data = MutableValueMap{};
@@ -72,6 +73,7 @@ void MutableValue::set(std::string&& key, MutableValue value) {
         // Key doesn't exist, move the caller's string directly (zero-copy)
         map.emplace(std::move(key), std::make_unique<MutableValue>(std::move(value)));
     }
+    return *this;
 }
 
 bool MutableValue::contains(std::string_view key) const {

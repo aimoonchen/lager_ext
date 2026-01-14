@@ -332,73 +332,8 @@ struct LAGER_EXT_API MutableValue {
     }
 
     // ============================================================
-    // Convenient Type-Safe Accessors with Defaults
+    // Special Accessor Functions (matching Value API)
     // ============================================================
-
-    /// Get as int (converts from any integer type), or return default
-    [[nodiscard]] int as_int(int default_val = 0) const {
-        if (auto* p = get_if<int32_t>())
-            return *p;
-        if (auto* p = get_if<int64_t>())
-            return static_cast<int>(*p);
-        if (auto* p = get_if<int16_t>())
-            return *p;
-        if (auto* p = get_if<int8_t>())
-            return *p;
-        if (auto* p = get_if<uint32_t>())
-            return static_cast<int>(*p);
-        if (auto* p = get_if<uint16_t>())
-            return *p;
-        if (auto* p = get_if<uint8_t>())
-            return *p;
-        return default_val;
-    }
-
-    /// Get as int64 (converts from any integer type), or return default
-    [[nodiscard]] int64_t as_int64(int64_t default_val = 0) const {
-        if (auto* p = get_if<int64_t>())
-            return *p;
-        if (auto* p = get_if<int32_t>())
-            return *p;
-        if (auto* p = get_if<int16_t>())
-            return *p;
-        if (auto* p = get_if<int8_t>())
-            return *p;
-        if (auto* p = get_if<uint64_t>())
-            return static_cast<int64_t>(*p);
-        if (auto* p = get_if<uint32_t>())
-            return *p;
-        if (auto* p = get_if<uint16_t>())
-            return *p;
-        if (auto* p = get_if<uint8_t>())
-            return *p;
-        return default_val;
-    }
-
-    /// Get as float, or return default
-    [[nodiscard]] float as_float(float default_val = 0.0f) const {
-        if (auto* p = get_if<float>())
-            return *p;
-        if (auto* p = get_if<double>())
-            return static_cast<float>(*p);
-        return default_val;
-    }
-
-    /// Get as double (converts from float), or return default
-    [[nodiscard]] double as_double(double default_val = 0.0) const {
-        if (auto* p = get_if<double>())
-            return *p;
-        if (auto* p = get_if<float>())
-            return *p;
-        return default_val;
-    }
-
-    /// Get as bool, or return default
-    [[nodiscard]] bool as_bool(bool default_val = false) const {
-        if (auto* p = get_if<bool>())
-            return *p;
-        return default_val;
-    }
 
     /// Get as string (copy), or return default
     [[nodiscard]] std::string as_string(std::string default_val = "") const {
@@ -407,49 +342,17 @@ struct LAGER_EXT_API MutableValue {
         return default_val;
     }
 
-    /// Get as number (double, converts from any numeric type), or return default
+    /// Get any numeric type as double (with automatic type conversion)
+    /// Matches Value::as_number() API for consistency
     [[nodiscard]] double as_number(double default_val = 0.0) const {
         if (auto* p = get_if<double>())
             return *p;
         if (auto* p = get_if<float>())
-            return *p;
+            return static_cast<double>(*p);
         if (auto* p = get_if<int64_t>())
             return static_cast<double>(*p);
         if (auto* p = get_if<int32_t>())
-            return *p;
-        if (auto* p = get_if<int16_t>())
-            return *p;
-        if (auto* p = get_if<int8_t>())
-            return *p;
-        if (auto* p = get_if<uint64_t>())
             return static_cast<double>(*p);
-        if (auto* p = get_if<uint32_t>())
-            return *p;
-        if (auto* p = get_if<uint16_t>())
-            return *p;
-        if (auto* p = get_if<uint8_t>())
-            return *p;
-        return default_val;
-    }
-
-    /// Get as Vec2, or return default
-    [[nodiscard]] Vec2 as_vec2(Vec2 default_val = {}) const {
-        if (auto* p = get_if<Vec2>())
-            return *p;
-        return default_val;
-    }
-
-    /// Get as Vec3, or return default
-    [[nodiscard]] Vec3 as_vec3(Vec3 default_val = {}) const {
-        if (auto* p = get_if<Vec3>())
-            return *p;
-        return default_val;
-    }
-
-    /// Get as Vec4, or return default
-    [[nodiscard]] Vec4 as_vec4(Vec4 default_val = {}) const {
-        if (auto* p = get_if<Vec4>())
-            return *p;
         return default_val;
     }
 
@@ -478,16 +381,16 @@ struct LAGER_EXT_API MutableValue {
     [[nodiscard]] const MutableValue* get(std::string_view key) const;
 
     /// Set map child by key (creates map if needed)
+    /// Returns *this for chaining: v.set("a", 1).set("b", 2).set("c", 3);
     /// Overloads to avoid unnecessary string copies:
-    /// - string_view: allocates string only if key doesn't exist (const char* and const string&
-    /// forward here)
-    /// - string&&: moves string if key doesn't exist (zero-copy for caller's owned strings)
-    void set(std::string_view key, MutableValue value);
-    void set(std::string&& key, MutableValue value);
+    /// - string_view: allocates string only if key doesn't exist
+    /// - string&&: moves string if key doesn't exist (zero-copy)
+    MutableValue& set(std::string_view key, MutableValue value);
+    MutableValue& set(std::string&& key, MutableValue value);
 
     /// Convenience overloads that forward to string_view version
-    void set(const char* key, MutableValue value) { set(std::string_view{key}, std::move(value)); }
-    void set(const std::string& key, MutableValue value) { set(std::string_view{key}, std::move(value)); }
+    MutableValue& set(const char* key, MutableValue value) { return set(std::string_view{key}, std::move(value)); }
+    MutableValue& set(const std::string& key, MutableValue value) { return set(std::string_view{key}, std::move(value)); }
 
     /// Check if map contains key
     [[nodiscard]] bool contains(std::string_view key) const;

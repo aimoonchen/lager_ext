@@ -11,6 +11,7 @@
 
 #include <cstring>   // for std::memcpy
 #include <iomanip>   // for std::setprecision
+#include <iostream>  // for std::cout (print_value)
 #include <sstream>   // for std::ostringstream
 #include <stdexcept> // for std::runtime_error
 
