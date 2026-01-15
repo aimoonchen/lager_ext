@@ -381,13 +381,17 @@ builder.upsert("items", [](const Value& current) {
     return current;
 });
 
-// Set at nested path with auto-vivification
-builder.set_at_path({"users", size_t(0), "name"}, "Alice");
+// Set at nested path with auto-vivification (creates intermediate maps/vectors)
+builder.set_at_path_vivify({"users"sv, size_t(0), "name"sv}, "Alice");
 
-// Update at nested path
-builder.update_at_path({"users", size_t(0), "age"}, [](const Value& v) {
+// Update at nested path with auto-vivification
+builder.update_at_path_vivify({"users"sv, size_t(0), "age"sv}, [](const Value& v) {
     return Value{v.as<int>(0) + 1};
 });
+
+// Strict mode (fails silently if path doesn't exist)
+builder.set_at_path({"existing"sv, "path"sv}, "value");
+builder.update_at_path({"existing"sv, "path"sv}, [](const Value& v) { return v; });
 
 Value result = builder.finish();
 ```
@@ -2708,21 +2712,20 @@ MutableValue float_val(3.14f);            // float
 MutableValue double_val(3.14159);         // double
 MutableValue str_val("hello");            // string
 
-// ========== Factory Methods ==========
-auto null_v = MutableValue::make_null();
-auto map_v = MutableValue::make_map();
-auto vec_v = MutableValue::make_vector();
+// ========== Factory Methods (consistent with Value class) ==========
+auto map_v = MutableValue::map();
+auto vec_v = MutableValue::vector();
 
 // Math types
-auto v2 = MutableValue::make_vec2(1.0f, 2.0f);
-auto v3 = MutableValue::make_vec3(1.0f, 2.0f, 3.0f);
-auto v4 = MutableValue::make_vec4(1.0f, 2.0f, 3.0f, 4.0f);
+auto v2 = MutableValue::vec2(1.0f, 2.0f);
+auto v3 = MutableValue::vec3(1.0f, 2.0f, 3.0f);
+auto v4 = MutableValue::vec4(1.0f, 2.0f, 3.0f, 4.0f);
 
 // From raw float arrays
 float arr3[9] = {1,0,0, 0,1,0, 0,0,1};
 float arr4x3[12] = {1,0,0, 0,1,0, 0,0,1, 0,0,0};
-auto m3 = MutableValue::make_mat3(arr3);
-auto m4x3 = MutableValue::make_mat4x3(arr4x3);
+auto m3 = MutableValue::mat3(arr3);
+auto m4x3 = MutableValue::mat4x3(arr4x3);
 ```
 
 ### 9.3 Type Checking & Access
@@ -2759,13 +2762,17 @@ if (auto* p = val.get_if<std::string>()) {
 }
 
 // ========== Convenient Accessors with Defaults ==========
-int n = val.as_int(0);              // returns 0 if not int
-int64_t n64 = val.as_int64(0);      // converts from any int type
-float f = val.as_float(0.0f);       // returns 0.0f if not float
-double d = val.as_double(0.0);      // converts from float
 double num = val.as_number(0.0);    // converts from any numeric
-bool b = val.as_bool(false);        // returns false if not bool
 std::string str = val.as_string(""); // returns "" if not string
+
+// ========== Zero-copy String Access ==========
+std::string_view sv = val.as_string_view();  // no allocation
+
+// ========== Move Semantics (rvalue optimization) ==========
+std::string moved_str = std::move(val).as_string();  // moves string out
+
+// ========== Count (returns 0 or 1) ==========
+std::size_t n = val.count("key");  // like Value::count()
 
 // Math accessors
 Vec2 v2 = val.as_vec2({0,0});
@@ -2778,7 +2785,7 @@ Mat4x3 m4x3 = val.as_mat4x3({});    // unboxes automatically
 ### 9.4 Map & Vector Operations
 
 ```cpp
-MutableValue root = MutableValue::make_map();
+MutableValue root = MutableValue::map();
 
 // ========== Map Operations ==========
 // Set values (creates map if needed)
@@ -2793,12 +2800,13 @@ if (MutableValue* name = root.get("name")) {
 
 // Check key existence
 if (root.contains("name")) { /* ... */ }
+if (root.count("name") > 0) { /* ... */ }  // also available
 
 // Erase key
 root.erase("active");
 
 // ========== Vector Operations ==========
-MutableValue arr = MutableValue::make_vector();
+MutableValue arr = MutableValue::vector();
 
 // Push values
 arr.push_back("first");
@@ -2817,12 +2825,12 @@ arr.set(5, "sixth");  // indices 3,4 become null
 std::size_t count = arr.size();
 
 // ========== Nested Structures ==========
-MutableValue data = MutableValue::make_map();
-data.set("users", MutableValue::make_vector());
+MutableValue data = MutableValue::map();
+data.set("users", MutableValue::vector());
 
 // Access nested
 if (auto* users = data.get("users")) {
-    users->push_back(MutableValue::make_map());
+    users->push_back(MutableValue::map());
     if (auto* user = users->get(0)) {
         user->set("name", "Bob");
         user->set("score", 100);
@@ -2839,7 +2847,7 @@ if (auto* users = data.get("users")) {
 #include <lager_ext/path.h>
 using namespace lager_ext;
 
-MutableValue root = MutableValue::make_map();
+MutableValue root = MutableValue::map();
 
 // ========== set_at_path (creates intermediate containers) ==========
 root.set_at_path({"users", size_t(0), "name"}, "Alice");
@@ -2873,7 +2881,7 @@ if (auto* user = root.get_at_path(user_path)) {
 using namespace lager_ext;
 
 // ========== MutableValue -> Value ==========
-MutableValue mv = MutableValue::make_map();
+MutableValue mv = MutableValue::map();
 mv.set("name", "Player");
 mv.set("health", 100);
 mv.set("position", Vec3{1.0f, 2.0f, 3.0f});

@@ -169,13 +169,43 @@ public:
         return *this;
     }
 
+    /// Set value at a nested path (strict mode)
+    /// @param path The path (e.g., {"users", 0, "name"})
+    /// @param val The value to set
+    /// @return Reference to this builder for chaining
+    /// @note If path doesn't exist, operation silently fails. Use set_at_path_vivify() to auto-create.
+    template <typename T>
+    BasicMapBuilder& set_at_path(PathView path, T&& val) {
+        if (path.empty())
+            return *this;
+
+        auto* first_key = std::get_if<std::string_view>(&path[0]);
+        if (!first_key)
+            return *this;
+
+        if (path.size() == 1) {
+            return set(*first_key, std::forward<T>(val));
+        }
+
+        value_type root_val = get(*first_key);
+        if (root_val.is_null())
+            return *this; // Strict mode: path must exist
+
+        // Use subpath(1) - zero-copy view slice
+        value_type new_root = set_at_path_strict_impl(root_val, path.subpath(1), value_type{std::forward<T>(val)});
+        if (!new_root.is_null()) {
+            transient_.set(std::string{*first_key}, value_box{std::move(new_root)});
+        }
+        return *this;
+    }
+
     /// Set value at a nested path with auto-vivification
     /// Creates intermediate maps/vectors as needed
     /// @param path The path (e.g., {"users", 0, "name"})
     /// @param val The value to set
     /// @return Reference to this builder for chaining
     template <typename T>
-    BasicMapBuilder& set_at_path(const Path& path, T&& val) {
+    BasicMapBuilder& set_at_path_vivify(PathView path, T&& val) {
         if (path.empty())
             return *this;
 
@@ -192,21 +222,19 @@ public:
         // Get or create the root value for this key
         value_type root_val = get(*first_key);
 
-        // Build sub-path (skip first element)
-        Path sub_path(path.begin() + 1, path.end());
-
-        // Use recursive vivify to set the nested value
-        value_type new_root = set_at_path_vivify_impl(root_val, sub_path, 0, value_type{std::forward<T>(val)});
+        // Use subpath(1) - zero-copy view slice (no memory allocation)
+        value_type new_root = set_at_path_vivify_impl(root_val, path.subpath(1), value_type{std::forward<T>(val)});
         transient_.set(std::string{*first_key}, value_box{std::move(new_root)});
         return *this;
     }
 
-    /// Update value at a nested path using a function
+    /// Update value at a nested path using a function (strict mode)
     /// @param path The path to the value
     /// @param fn Function taking value_type and returning value_type
     /// @return Reference to this builder for chaining
+    /// @note If path doesn't exist, operation silently fails. Use update_at_path_vivify() to auto-create.
     template <typename Fn>
-    BasicMapBuilder& update_at_path(const Path& path, Fn&& fn) {
+    BasicMapBuilder& update_at_path(PathView path, Fn&& fn) {
         if (path.empty())
             return *this;
 
@@ -219,14 +247,52 @@ public:
         }
 
         value_type root_val = get(*first_key);
-        Path sub_path(path.begin() + 1, path.end());
+        if (root_val.is_null())
+            return *this; // Strict mode: path must exist
+
+        PathView sub_path = path.subpath(1);
 
         // Get current value at path
-        value_type current = get_at_path_impl(root_val, sub_path, 0);
+        value_type current = get_at_path_impl(root_val, sub_path);
+        if (current.is_null())
+            return *this; // Strict mode: path must exist
+
         // Apply function
         value_type new_val = std::forward<Fn>(fn)(std::move(current));
-        // Set back
-        value_type new_root = set_at_path_vivify_impl(root_val, sub_path, 0, std::move(new_val));
+        // Set back using strict impl
+        value_type new_root = set_at_path_strict_impl(root_val, sub_path, std::move(new_val));
+        if (!new_root.is_null()) {
+            transient_.set(std::string{*first_key}, value_box{std::move(new_root)});
+        }
+        return *this;
+    }
+
+    /// Update value at a nested path using a function with auto-vivification
+    /// @param path The path to the value
+    /// @param fn Function taking value_type and returning value_type
+    /// @return Reference to this builder for chaining
+    template <typename Fn>
+    BasicMapBuilder& update_at_path_vivify(PathView path, Fn&& fn) {
+        if (path.empty())
+            return *this;
+
+        auto* first_key = std::get_if<std::string_view>(&path[0]);
+        if (!first_key)
+            return *this;
+
+        if (path.size() == 1) {
+            return update_at(*first_key, std::forward<Fn>(fn));
+        }
+
+        value_type root_val = get(*first_key);
+        PathView sub_path = path.subpath(1);
+
+        // Get current value at path (may be null)
+        value_type current = get_at_path_impl(root_val, sub_path);
+        // Apply function
+        value_type new_val = std::forward<Fn>(fn)(std::move(current));
+        // Set back with vivification
+        value_type new_root = set_at_path_vivify_impl(root_val, sub_path, std::move(new_val));
         transient_.set(std::string{*first_key}, value_box{std::move(new_root)});
         return *this;
     }
@@ -241,30 +307,70 @@ public:
 private:
     transient_type transient_;
 
-    // Helper: get value at path
-    static value_type get_at_path_impl(const value_type& root, const Path& path, std::size_t idx) {
-        if (idx >= path.size())
+    // Helper: get value at path using PathView (zero-copy)
+    static value_type get_at_path_impl(const value_type& root, PathView path) {
+        if (path.empty())
             return root;
 
-        value_type child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, path[idx]);
+        value_type child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, path[0]);
 
         if (child.is_null())
             return child;
-        return get_at_path_impl(child, path, idx + 1);
+        return get_at_path_impl(child, path.subpath(1));
+    }
+
+    // Helper: set value at path (strict mode - returns null on failure)
+    // Uses PathView for zero-copy path traversal
+    static value_type set_at_path_strict_impl(const value_type& root, PathView path, value_type new_val) {
+        if (path.empty())
+            return new_val;
+
+        const auto& elem = path[0];
+        value_type current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
+
+        // Strict mode: if path doesn't exist, return null to signal failure
+        if (current_child.is_null() && path.size() > 1) {
+            return value_type{}; // Signal failure
+        }
+
+        value_type new_child = set_at_path_strict_impl(current_child, path.subpath(1), std::move(new_val));
+        if (new_child.is_null() && path.size() > 1) {
+            return value_type{}; // Propagate failure
+        }
+
+        // Set child back to parent (use set, not set_vivify)
+        return std::visit(
+            [&root, &new_child](auto key_or_idx) -> value_type {
+                // For strict mode, we need to check if the container supports this key/index
+                if constexpr (std::is_same_v<std::decay_t<decltype(key_or_idx)>, std::string_view>) {
+                    if (auto* m = root.template get_if<value_map>()) {
+                        return m->set(std::string{key_or_idx}, value_box{std::move(new_child)});
+                    }
+                    return value_type{}; // Not a map
+                } else {
+                    if (auto* v = root.template get_if<value_vector>()) {
+                        if (key_or_idx < v->size()) {
+                            return v->set(key_or_idx, value_box{std::move(new_child)});
+                        }
+                    }
+                    return value_type{}; // Not a vector or index out of bounds
+                }
+            },
+            elem);
     }
 
     // Helper: set value at path with vivification
-    static value_type set_at_path_vivify_impl(const value_type& root, const Path& path, std::size_t idx,
-                                              value_type new_val) {
-        if (idx >= path.size())
+    // Uses PathView for zero-copy path traversal
+    static value_type set_at_path_vivify_impl(const value_type& root, PathView path, value_type new_val) {
+        if (path.empty())
             return new_val;
 
-        const auto& elem = path[idx];
+        const auto& elem = path[0];
         value_type current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
 
         // Prepare child for next level if needed
-        if (current_child.is_null() && idx + 1 < path.size()) {
-            const auto& next = path[idx + 1];
+        if (current_child.is_null() && path.size() > 1) {
+            const auto& next = path[1];
             if (std::holds_alternative<std::string_view>(next)) {
                 current_child = value_type{value_map{}};
             } else {
@@ -272,7 +378,7 @@ private:
             }
         }
 
-        value_type new_child = set_at_path_vivify_impl(current_child, path, idx + 1, std::move(new_val));
+        value_type new_child = set_at_path_vivify_impl(current_child, path.subpath(1), std::move(new_val));
 
         // Set child back to parent
         return std::visit(
@@ -356,9 +462,10 @@ public:
         return *this;
     }
 
-    /// Set value at a nested path with auto-vivification
+    /// Set value at a nested path (strict mode)
+    /// @note If path doesn't exist, operation silently fails. Use set_at_path_vivify() to auto-create.
     template <typename T>
-    BasicVectorBuilder& set_at_path(const Path& path, T&& val) {
+    BasicVectorBuilder& set_at_path(PathView path, T&& val) {
         if (path.empty())
             return *this;
 
@@ -371,16 +478,42 @@ public:
         }
 
         value_type root_val = transient_[*first_idx].get();
-        Path sub_path(path.begin() + 1, path.end());
-        value_type new_root = set_at_path_vivify_impl(root_val, sub_path, 0, value_type{std::forward<T>(val)});
+        if (root_val.is_null())
+            return *this; // Strict mode: path must exist
+
+        value_type new_root = set_at_path_strict_impl(root_val, path.subpath(1), value_type{std::forward<T>(val)});
+        if (!new_root.is_null()) {
+            transient_.set(*first_idx, value_box{std::move(new_root)});
+        }
+        return *this;
+    }
+
+    /// Set value at a nested path with auto-vivification
+    /// Creates intermediate maps/vectors as needed
+    template <typename T>
+    BasicVectorBuilder& set_at_path_vivify(PathView path, T&& val) {
+        if (path.empty())
+            return *this;
+
+        auto* first_idx = std::get_if<std::size_t>(&path[0]);
+        if (!first_idx || *first_idx >= transient_.size())
+            return *this;
+
+        if (path.size() == 1) {
+            return set(*first_idx, std::forward<T>(val));
+        }
+
+        value_type root_val = transient_[*first_idx].get();
+        value_type new_root = set_at_path_vivify_impl(root_val, path.subpath(1), value_type{std::forward<T>(val)});
         transient_.set(*first_idx, value_box{std::move(new_root)});
         return *this;
     }
 
-    /// Update value at a nested path using a function
+    /// Update value at a nested path using a function (strict mode)
+    /// @note If path doesn't exist, operation silently fails. Use update_at_path_vivify() to auto-create.
     template <typename Fn>
         requires ValueTransformer<Fn, value_type>
-    BasicVectorBuilder& update_at_path(const Path& path, Fn&& fn) {
+    BasicVectorBuilder& update_at_path(PathView path, Fn&& fn) {
         if (path.empty())
             return *this;
 
@@ -393,10 +526,42 @@ public:
         }
 
         value_type root_val = transient_[*first_idx].get();
-        Path sub_path(path.begin() + 1, path.end());
-        value_type current = get_at_path_impl(root_val, sub_path, 0);
+        if (root_val.is_null())
+            return *this; // Strict mode: path must exist
+
+        PathView sub_path = path.subpath(1);
+        value_type current = get_at_path_impl(root_val, sub_path);
+        if (current.is_null())
+            return *this; // Strict mode: path must exist
+
         value_type new_val = std::forward<Fn>(fn)(std::move(current));
-        value_type new_root = set_at_path_vivify_impl(root_val, sub_path, 0, std::move(new_val));
+        value_type new_root = set_at_path_strict_impl(root_val, sub_path, std::move(new_val));
+        if (!new_root.is_null()) {
+            transient_.set(*first_idx, value_box{std::move(new_root)});
+        }
+        return *this;
+    }
+
+    /// Update value at a nested path using a function with auto-vivification
+    template <typename Fn>
+        requires ValueTransformer<Fn, value_type>
+    BasicVectorBuilder& update_at_path_vivify(PathView path, Fn&& fn) {
+        if (path.empty())
+            return *this;
+
+        auto* first_idx = std::get_if<std::size_t>(&path[0]);
+        if (!first_idx || *first_idx >= transient_.size())
+            return *this;
+
+        if (path.size() == 1) {
+            return update_at(*first_idx, std::forward<Fn>(fn));
+        }
+
+        value_type root_val = transient_[*first_idx].get();
+        PathView sub_path = path.subpath(1);
+        value_type current = get_at_path_impl(root_val, sub_path);
+        value_type new_val = std::forward<Fn>(fn)(std::move(current));
+        value_type new_root = set_at_path_vivify_impl(root_val, sub_path, std::move(new_val));
         transient_.set(*first_idx, value_box{std::move(new_root)});
         return *this;
     }
@@ -410,30 +575,71 @@ public:
 private:
     transient_type transient_;
 
-    static value_type get_at_path_impl(const value_type& root, const Path& path, std::size_t idx) {
-        if (idx >= path.size())
+    // Helper: get value at path using PathView (zero-copy)
+    static value_type get_at_path_impl(const value_type& root, PathView path) {
+        if (path.empty())
             return root;
-        value_type child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, path[idx]);
+        value_type child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, path[0]);
         if (child.is_null())
             return child;
-        return get_at_path_impl(child, path, idx + 1);
+        return get_at_path_impl(child, path.subpath(1));
     }
 
-    static value_type set_at_path_vivify_impl(const value_type& root, const Path& path, std::size_t idx,
-                                              value_type new_val) {
-        if (idx >= path.size())
+    // Helper: set value at path (strict mode - returns null on failure)
+    // Uses PathView for zero-copy path traversal
+    static value_type set_at_path_strict_impl(const value_type& root, PathView path, value_type new_val) {
+        if (path.empty())
             return new_val;
-        const auto& elem = path[idx];
+
+        const auto& elem = path[0];
         value_type current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
-        if (current_child.is_null() && idx + 1 < path.size()) {
-            const auto& next = path[idx + 1];
+
+        // Strict mode: if path doesn't exist, return null to signal failure
+        if (current_child.is_null() && path.size() > 1) {
+            return value_type{}; // Signal failure
+        }
+
+        value_type new_child = set_at_path_strict_impl(current_child, path.subpath(1), std::move(new_val));
+        if (new_child.is_null() && path.size() > 1) {
+            return value_type{}; // Propagate failure
+        }
+
+        // Set child back to parent (use set, not set_vivify)
+        return std::visit(
+            [&root, &new_child](auto key_or_idx) -> value_type {
+                if constexpr (std::is_same_v<std::decay_t<decltype(key_or_idx)>, std::string_view>) {
+                    if (auto* m = root.template get_if<value_map>()) {
+                        return m->set(std::string{key_or_idx}, value_box{std::move(new_child)});
+                    }
+                    return value_type{}; // Not a map
+                } else {
+                    if (auto* v = root.template get_if<value_vector>()) {
+                        if (key_or_idx < v->size()) {
+                            return v->set(key_or_idx, value_box{std::move(new_child)});
+                        }
+                    }
+                    return value_type{}; // Not a vector or index out of bounds
+                }
+            },
+            elem);
+    }
+
+    // Helper: set value at path with vivification
+    // Uses PathView for zero-copy path traversal
+    static value_type set_at_path_vivify_impl(const value_type& root, PathView path, value_type new_val) {
+        if (path.empty())
+            return new_val;
+        const auto& elem = path[0];
+        value_type current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
+        if (current_child.is_null() && path.size() > 1) {
+            const auto& next = path[1];
             if (std::holds_alternative<std::string_view>(next)) {
                 current_child = value_type{value_map{}};
             } else {
                 current_child = value_type{value_vector{}};
             }
         }
-        value_type new_child = set_at_path_vivify_impl(current_child, path, idx + 1, std::move(new_val));
+        value_type new_child = set_at_path_vivify_impl(current_child, path.subpath(1), std::move(new_val));
         return std::visit(
             [&root, &new_child](auto key_or_idx) -> value_type {
                 return root.set_vivify(key_or_idx, std::move(new_child));

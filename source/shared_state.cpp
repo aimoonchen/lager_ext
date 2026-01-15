@@ -8,7 +8,12 @@
 
 #include <boost/interprocess/creation_tags.hpp>
 #include <boost/interprocess/mapped_region.hpp>
+// Use Windows native shared memory to avoid Boost intermodule singleton issues
+#ifdef _WIN32
+#include <boost/interprocess/windows_shared_memory.hpp>
+#else
 #include <boost/interprocess/shared_memory_object.hpp>
+#endif
 #include <boost/interprocess/sync/named_semaphore.hpp>
 #include <chrono>
 #include <condition_variable>
@@ -58,7 +63,15 @@ public:
         : size_(size), is_creator_(create), name_(name) {
         try {
             if (create) {
-                // Remove any existing shared memory with the same name
+#ifdef _WIN32
+                // Windows: use native shared memory
+                shm_ = std::make_unique<bip::windows_shared_memory>(
+                    bip::create_only, name.c_str(), bip::read_write, size);
+
+                // Map the entire region with read/write access
+                region_ = std::make_unique<bip::mapped_region>(*shm_, bip::read_write);
+#else
+                // POSIX: Remove any existing shared memory with the same name
                 bip::shared_memory_object::remove(name.c_str());
 
                 // Create new shared memory object
@@ -69,6 +82,7 @@ public:
 
                 // Map the entire region with read/write access
                 region_ = std::make_unique<bip::mapped_region>(*shm_, bip::read_write);
+#endif
 
                 // Initialize header
                 auto* header = reinterpret_cast<SharedMemoryHeader*>(region_->get_address());
@@ -78,11 +92,20 @@ public:
                 header->update_type = 0;
                 header->data_size = 0;
             } else {
-                // Open existing shared memory object (read-only for subscriber)
+#ifdef _WIN32
+                // Windows: open existing native shared memory (read-only for subscriber)
+                shm_ = std::make_unique<bip::windows_shared_memory>(
+                    bip::open_only, name.c_str(), bip::read_only);
+
+                // Map the region with read-only access
+                region_ = std::make_unique<bip::mapped_region>(*shm_, bip::read_only);
+#else
+                // POSIX: Open existing shared memory object (read-only for subscriber)
                 shm_ = std::make_unique<bip::shared_memory_object>(bip::open_only, name.c_str(), bip::read_only);
 
                 // Map the region with read-only access
                 region_ = std::make_unique<bip::mapped_region>(*shm_, bip::read_only);
+#endif
             }
         } catch (const bip::interprocess_exception& e) {
             std::cerr << "[SharedMemory] Failed to " << (create ? "create" : "open") << " shared memory '" << name
@@ -97,10 +120,13 @@ public:
         region_.reset();
         shm_.reset();
 
-        // If we created the shared memory, remove it on destruction
+#ifndef _WIN32
+        // POSIX: If we created the shared memory, remove it on destruction
+        // Windows: kernel handles cleanup automatically via reference counting
         if (is_creator_ && !name_.empty()) {
             bip::shared_memory_object::remove(name_.c_str());
         }
+#endif
     }
 
     // Non-copyable
@@ -119,9 +145,11 @@ public:
         if (this != &other) {
             // Clean up current resources
             region_.reset();
+#ifndef _WIN32
             if (is_creator_ && !name_.empty()) {
                 bip::shared_memory_object::remove(name_.c_str());
             }
+#endif
             shm_.reset();
 
             // Move from other
@@ -143,7 +171,11 @@ public:
     std::size_t size() const noexcept { return region_ ? region_->get_size() : 0; }
 
 private:
+#ifdef _WIN32
+    std::unique_ptr<bip::windows_shared_memory> shm_;
+#else
     std::unique_ptr<bip::shared_memory_object> shm_;
+#endif
     std::unique_ptr<bip::mapped_region> region_;
     std::size_t size_;
     bool is_creator_;

@@ -16,7 +16,12 @@
 
 #include <atomic>
 #include <boost/interprocess/mapped_region.hpp>
+// Use Windows native shared memory to avoid Boost intermodule singleton issues
+#ifdef _WIN32
+#include <boost/interprocess/windows_shared_memory.hpp>
+#else
 #include <boost/interprocess/shared_memory_object.hpp>
+#endif
 #include <cstring>
 #include <thread>
 
@@ -119,11 +124,19 @@ public:
         capacity_ = capacity;
 
         try {
-            // Remove any existing shared memory
-            bip::shared_memory_object::remove(name.c_str());
-
             // Calculate total size
             size_t totalSize = sizeof(QueueHeader) + capacity * sizeof(Message);
+
+#ifdef _WIN32
+            // Windows: use native shared memory
+            shm_ = std::make_unique<bip::windows_shared_memory>(
+                bip::create_only, name.c_str(), bip::read_write, totalSize);
+
+            // Map entire region
+            region_ = bip::mapped_region(*shm_, bip::read_write);
+#else
+            // POSIX: Remove any existing shared memory
+            bip::shared_memory_object::remove(name.c_str());
 
             // Create shared memory
             shm_ = bip::shared_memory_object(bip::create_only, name.c_str(), bip::read_write);
@@ -131,6 +144,7 @@ public:
 
             // Map entire region
             region_ = bip::mapped_region(shm_, bip::read_write);
+#endif
 
             // Initialize header using placement new
             header_ = new (region_.get_address()) QueueHeader(static_cast<uint32_t>(capacity));
@@ -147,11 +161,20 @@ public:
         isProducer_ = false;
 
         try {
-            // Open existing shared memory
+#ifdef _WIN32
+            // Windows: open existing native shared memory
+            shm_ = std::make_unique<bip::windows_shared_memory>(
+                bip::open_only, name.c_str(), bip::read_write);
+
+            // Map region
+            region_ = bip::mapped_region(*shm_, bip::read_write);
+#else
+            // POSIX: Open existing shared memory
             shm_ = bip::shared_memory_object(bip::open_only, name.c_str(), bip::read_write);
 
             // Map region
             region_ = bip::mapped_region(shm_, bip::read_write);
+#endif
 
             // Get header
             header_ = static_cast<QueueHeader*>(region_.get_address());
@@ -398,11 +421,15 @@ public:
     const std::string& lastError() const { return lastError_; }
 
     ~Impl() {
+#ifndef _WIN32
+        // POSIX: cleanup shared memory if we are producer
+        // Windows: kernel handles cleanup automatically via reference counting
         if (isProducer_ && !name_.empty()) {
             try {
                 bip::shared_memory_object::remove(name_.c_str());
             } catch (...) {}
         }
+#endif
     }
 
 private:
@@ -411,7 +438,11 @@ private:
     size_t capacity_ = 0;
     mutable std::string lastError_;
 
+#ifdef _WIN32
+    std::unique_ptr<bip::windows_shared_memory> shm_;
+#else
     bip::shared_memory_object shm_;
+#endif
     bip::mapped_region region_;
     QueueHeader* header_ = nullptr;
 };

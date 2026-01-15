@@ -137,6 +137,8 @@ void demo_shared_state();
 void demo_editor_engine();
 void demo_property_editing();
 void demo_undo_redo();
+void demo_action_categories();
+void demo_builder_path_ops();
 } // namespace lager_ext
 
 int main() {
@@ -169,6 +171,9 @@ int main() {
         std::cout << "G. Demo Editor-Engine (Full Flow)\n";
         std::cout << "H. Demo Property Editing\n";
         std::cout << "I. Demo Undo/Redo\n";
+        std::cout << "K. Demo Action Categories (User vs System)\n";
+        std::cout << "\n=== Builder Demo ===\n";
+        std::cout << "B. Demo Builder Path Operations\n";
         std::cout << "\nQ. Quit\n";
         std::cout << "\nChoice: ";
 
@@ -246,6 +251,14 @@ int main() {
         case 'I':
         case 'i':
             lager_ext::demo_undo_redo();
+            break;
+        case 'K':
+        case 'k':
+            lager_ext::demo_action_categories();
+            break;
+        case 'B':
+        case 'b':
+            lager_ext::demo_builder_path_ops();
             break;
         case 'Q':
         case 'q':

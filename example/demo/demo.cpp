@@ -1276,4 +1276,160 @@ void demo_static_path() {
 #endif
     std::cout << "\n";
 }
+
+// ============================================================
+// Demo: Builder Path Operations (set_at_path / update_at_path)
+// ============================================================
+
+void demo_builder_path_ops() {
+    using namespace std::string_view_literals;
+
+    std::cout << "\n";
+    std::cout << "============================================================\n";
+    std::cout << " Builder Path Operations Demo\n";
+    std::cout << "============================================================\n\n";
+
+    // Helper lambda to create Path from segments
+    // Note: Use string_view literals ("key"sv) for strings to avoid ambiguity
+    auto make_path = [](auto... segments) {
+        Path p;
+        (p.push_back(segments), ...);
+        return p;
+    };
+
+    // --------------------------------------------------------
+    // Demo 1: MapBuilder with set_at_path_vivify (auto-creation)
+    // --------------------------------------------------------
+    std::cout << "--- Demo 1: MapBuilder set_at_path_vivify (auto-creation) ---\n\n";
+
+    MapBuilder builder1;
+    builder1.set("title", "My App");
+
+    // Use set_at_path_vivify to create nested structure automatically
+    // This creates: {"users": [{"name": "Alice", "age": 30}]}
+    builder1.set_at_path_vivify(make_path("users"sv, size_t(0), "name"sv), "Alice");
+    builder1.set_at_path_vivify(make_path("users"sv, size_t(0), "age"sv), 30);
+    builder1.set_at_path_vivify(make_path("users"sv, size_t(0), "email"sv), "alice@example.com");
+
+    // Create nested config
+    builder1.set_at_path_vivify(make_path("config"sv, "window"sv, "width"sv), 1920);
+    builder1.set_at_path_vivify(make_path("config"sv, "window"sv, "height"sv), 1080);
+    builder1.set_at_path_vivify(make_path("config"sv, "theme"sv), "dark");
+
+    Value result1 = builder1.finish();
+    std::cout << "Result of set_at_path_vivify (creates intermediate nodes):\n";
+    print_value(result1);
+    std::cout << "\n";
+
+    // --------------------------------------------------------
+    // Demo 2: MapBuilder with update_at_path_vivify
+    // --------------------------------------------------------
+    std::cout << "--- Demo 2: MapBuilder update_at_path_vivify ---\n\n";
+
+    MapBuilder builder2(result1);
+
+    // Update existing path with a function
+    builder2.update_at_path_vivify(make_path("users"sv, size_t(0), "age"sv), [](const Value& v) {
+        int current_age = v.as<int>(0);
+        return Value{current_age + 1}; // Birthday!
+    });
+
+    // Update at path that doesn't fully exist - vivify creates it
+    builder2.update_at_path_vivify(make_path("stats"sv, "login_count"sv), [](const Value& v) {
+        // v will be null since path doesn't exist, start from 0
+        int count = v.as<int>(0);
+        return Value{count + 1};
+    });
+
+    Value result2 = builder2.finish();
+    std::cout << "Result of update_at_path_vivify:\n";
+    print_value(result2);
+    std::cout << "\n";
+
+    // --------------------------------------------------------
+    // Demo 3: Strict mode - set_at_path (no auto-creation)
+    // --------------------------------------------------------
+    std::cout << "--- Demo 3: set_at_path Strict Mode (no auto-creation) ---\n\n";
+
+    MapBuilder builder3(result2);
+
+    // This will succeed - path exists
+    builder3.set_at_path(make_path("users"sv, size_t(0), "name"sv), "Alice Smith");
+    std::cout << "set_at_path({\"users\", 0, \"name\"}, \"Alice Smith\") - SUCCESS (path exists)\n";
+
+    // This will silently fail - path doesn't exist (no user at index 1)
+    builder3.set_at_path(make_path("users"sv, size_t(1), "name"sv), "Bob");
+    std::cout << "set_at_path({\"users\", 1, \"name\"}, \"Bob\") - FAILED (path doesn't exist)\n";
+
+    // This will silently fail - "nonexistent" key doesn't exist
+    builder3.set_at_path(make_path("nonexistent"sv, "key"sv), "value");
+    std::cout << "set_at_path({\"nonexistent\", \"key\"}, \"value\") - FAILED (path doesn't exist)\n";
+
+    Value result3 = builder3.finish();
+    std::cout << "\nResult of strict mode operations:\n";
+    print_value(result3);
+    std::cout << "\n";
+
+    // --------------------------------------------------------
+    // Demo 4: VectorBuilder with path operations
+    // --------------------------------------------------------
+    std::cout << "--- Demo 4: VectorBuilder Path Operations ---\n\n";
+
+    // First, create a vector with some map elements
+    Value users_vec = VectorBuilder()
+                          .push_back(MapBuilder().set("name", "User A").set("score", 100).finish())
+                          .push_back(MapBuilder().set("name", "User B").set("score", 200).finish())
+                          .push_back(MapBuilder().set("name", "User C").set("score", 300).finish())
+                          .finish();
+
+    std::cout << "Initial vector:\n";
+    print_value(users_vec);
+
+    // Use VectorBuilder to modify nested paths
+    VectorBuilder vec_builder(users_vec);
+
+    // Strict mode - modify existing path
+    vec_builder.set_at_path(make_path(size_t(0), "score"sv), 150);
+    std::cout << "\nAfter set_at_path({0, \"score\"}, 150):\n";
+
+    // Vivify mode - add new field to existing element
+    vec_builder.set_at_path_vivify(make_path(size_t(1), "rank"sv), "Gold");
+    std::cout << "After set_at_path_vivify({1, \"rank\"}, \"Gold\"):\n";
+
+    // Update with function
+    vec_builder.update_at_path(make_path(size_t(2), "score"sv), [](const Value& v) {
+        return Value{v.as<int>(0) * 2}; // Double the score
+    });
+    std::cout << "After update_at_path({2, \"score\"}, *2):\n";
+
+    Value result4 = vec_builder.finish();
+    print_value(result4);
+    std::cout << "\n";
+
+    // --------------------------------------------------------
+    // Summary
+    // --------------------------------------------------------
+    std::cout << "============================================================\n";
+    std::cout << " Builder Path Operations Summary\n";
+    std::cout << "============================================================\n\n";
+
+    std::cout << "Methods:\n";
+    std::cout << "  MapBuilder / VectorBuilder:\n";
+    std::cout << "    - set_at_path(path, val)         : Strict mode, fails if path doesn't exist\n";
+    std::cout << "    - set_at_path_vivify(path, val)  : Creates intermediate maps/vectors\n";
+    std::cout << "    - update_at_path(path, fn)       : Strict mode update with function\n";
+    std::cout << "    - update_at_path_vivify(path, fn): Creates path, then applies function\n\n";
+
+    std::cout << "Use Cases:\n";
+    std::cout << "  - set_at_path_vivify: Building complex nested structures from scratch\n";
+    std::cout << "  - set_at_path:        Safe updates to known-existing paths\n";
+    std::cout << "  - update_at_path:     Transforming existing values (e.g., increment)\n";
+    std::cout << "  - update_at_path_vivify: Initialize-or-update pattern\n\n";
+
+    std::cout << "Path Format:\n";
+    std::cout << "  - String keys: use string_view literals (\"key\"sv)\n";
+    std::cout << "  - Array indices: use size_t (size_t(0))\n";
+    std::cout << "  - Example: {\"users\"sv, size_t(0), \"name\"sv}\n\n";
+}
+
 } // namespace lager_ext

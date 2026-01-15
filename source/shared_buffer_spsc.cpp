@@ -3,7 +3,13 @@
 
 #include <lager_ext/shared_buffer_spsc.h>
 
+// Use Windows native shared memory to avoid Boost intermodule singleton issues
+// when used across different DLLs
+#ifdef _WIN32
+#include <boost/interprocess/windows_shared_memory.hpp>
+#else
 #include <boost/interprocess/shared_memory_object.hpp>
+#endif
 #include <boost/interprocess/mapped_region.hpp>
 
 #include <atomic>
@@ -51,7 +57,13 @@ public:
     bool is_owner{false};  // Whether this instance should cleanup on destruction
     size_t data_size{0};
     
+#ifdef _WIN32
+    // Windows: use native shared memory (no intermodule singleton issues)
+    std::unique_ptr<bip::windows_shared_memory> shm;
+#else
+    // POSIX: use shared_memory_object
     bip::shared_memory_object shm;
+#endif
     bip::mapped_region region;
     
     SharedMemoryHeader* header{nullptr};
@@ -65,10 +77,17 @@ public:
 SharedBufferBase::SharedBufferBase() : impl_(std::make_unique<Impl>()) {}
 
 SharedBufferBase::~SharedBufferBase() {
+    // Note: windows_shared_memory is automatically cleaned up by the kernel
+    // when all handles are closed. The is_owner flag is only used for 
+    // shared_memory_object (POSIX) where explicit removal is needed.
+#ifndef _WIN32
     if (impl_ && impl_->is_owner && !impl_->name.empty()) {
-        // This instance is owner, remove shared memory
+        // POSIX: This instance is owner, remove shared memory
         bip::shared_memory_object::remove(impl_->name.c_str());
     }
+#endif
+    // Windows: shared memory is reference-counted by kernel, no explicit removal needed
+    (void)impl_;  // Suppress unused warning on Windows
 }
 
 SharedBufferBase::SharedBufferBase(SharedBufferBase&&) noexcept = default;
@@ -86,6 +105,24 @@ std::unique_ptr<SharedBufferBase> SharedBufferBase::create(
         instance->impl_->is_owner = true;  // Producer is owner by default
         instance->impl_->data_size = data_size;
 
+#ifdef _WIN32
+        // Windows: use native shared memory
+        // Note: windows_shared_memory uses kernel object naming, 
+        // automatically cleaned up when all handles close
+        instance->impl_->shm = std::make_unique<bip::windows_shared_memory>(
+            bip::create_only,
+            instance->impl_->name.c_str(),
+            bip::read_write,
+            total_size
+        );
+
+        // Map the region
+        instance->impl_->region = bip::mapped_region(
+            *instance->impl_->shm,
+            bip::read_write
+        );
+#else
+        // POSIX: use shared_memory_object
         // Remove any existing shared memory with this name
         bip::shared_memory_object::remove(instance->impl_->name.c_str());
 
@@ -104,6 +141,7 @@ std::unique_ptr<SharedBufferBase> SharedBufferBase::create(
             instance->impl_->shm,
             bip::read_write
         );
+#endif
 
         // Initialize header
         void* addr = instance->impl_->region.get_address();
@@ -135,7 +173,21 @@ std::unique_ptr<SharedBufferBase> SharedBufferBase::open(
         instance->impl_->is_producer = false;
         instance->impl_->data_size = data_size;
 
-        // Open existing shared memory
+#ifdef _WIN32
+        // Windows: open existing native shared memory
+        instance->impl_->shm = std::make_unique<bip::windows_shared_memory>(
+            bip::open_only,
+            instance->impl_->name.c_str(),
+            bip::read_write  // Need write for atomic operations
+        );
+
+        // Map the region
+        instance->impl_->region = bip::mapped_region(
+            *instance->impl_->shm,
+            bip::read_write
+        );
+#else
+        // POSIX: open existing shared memory
         instance->impl_->shm = bip::shared_memory_object(
             bip::open_only,
             instance->impl_->name.c_str(),
@@ -147,6 +199,7 @@ std::unique_ptr<SharedBufferBase> SharedBufferBase::open(
             instance->impl_->shm,
             bip::read_write
         );
+#endif
 
         // Initialize pointers
         void* addr = instance->impl_->region.get_address();

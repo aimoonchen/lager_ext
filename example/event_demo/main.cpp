@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2025 chenmou. All rights reserved.
 // Licensed under the MIT License. See LICENSE file in the project root.
 
-/// @file event_demo.cpp
+/// @file main.cpp
 /// @brief Demonstrates the usage of lager_ext::EventBus and RemoteBus
 ///
 /// This example shows:

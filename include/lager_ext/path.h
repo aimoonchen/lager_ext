@@ -214,6 +214,18 @@ public:
     /// @param path_str Path string (e.g., "/users/0/name")
     explicit Path(std::string&& path_str);
 
+    /// Construction from iterator range (copies elements)
+    /// @note This copies each PathElement, with strings being copied into internal storage
+    /// @param first Start iterator
+    /// @param last End iterator
+    template <typename InputIt>
+    Path(InputIt first, InputIt last) {
+        reserve(static_cast<std::size_t>(std::distance(first, last)));
+        for (; first != last; ++first) {
+            push_back(*first);
+        }
+    }
+
     /// Construction from string_view (copies the string)
     /// @note Use this when the source string may be temporary
     /// @param path_str Path string (e.g., "/users/0/name")

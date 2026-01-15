@@ -85,6 +85,15 @@ bool MutableValue::contains(std::string_view key) const {
     return map->find(key) != map->end();
 }
 
+std::size_t MutableValue::count(std::string_view key) const {
+    const auto* map = get_if<MutableValueMap>();
+    if (!map)
+        return 0;
+
+    // Heterogeneous lookup - no allocation
+    return map->find(key) != map->end() ? 1 : 0;
+}
+
 bool MutableValue::erase(std::string_view key) {
     auto* map = get_if<MutableValueMap>();
     if (!map)

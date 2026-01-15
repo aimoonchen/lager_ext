@@ -20,7 +20,7 @@
 ///
 /// ## Usage Example
 /// ```cpp
-/// MutableValue root = MutableValue::make_map();
+/// MutableValue root = MutableValue::map();
 /// root.set_at_path({"user", "name"}, MutableValue{"John"});
 /// root.set_at_path({"user", "age"}, MutableValue{30});
 ///
@@ -192,49 +192,46 @@ struct LAGER_EXT_API MutableValue {
     MutableValue(const Mat4x3& v) : data(std::make_unique<Mat4x3>(v)) {}
 
     // ============================================================
-    // Factory Methods
+    // Factory Methods (consistent with Value class naming)
     // ============================================================
 
-    /// Create a null value
-    [[nodiscard]] static MutableValue make_null() { return MutableValue{}; }
-
     /// Create an empty map
-    [[nodiscard]] static MutableValue make_map() { return MutableValue{MutableValueMap{}}; }
+    [[nodiscard]] static MutableValue map() { return MutableValue{MutableValueMap{}}; }
 
     /// Create an empty vector
-    [[nodiscard]] static MutableValue make_vector() { return MutableValue{MutableValueVector{}}; }
+    [[nodiscard]] static MutableValue vector() { return MutableValue{MutableValueVector{}}; }
 
     /// Create a Vec2 from individual components
-    [[nodiscard]] static MutableValue make_vec2(float x, float y) { return MutableValue{Vec2{x, y}}; }
+    [[nodiscard]] static MutableValue vec2(float x, float y) { return MutableValue{Vec2{x, y}}; }
 
     /// Create a Vec3 from individual components
-    [[nodiscard]] static MutableValue make_vec3(float x, float y, float z) { return MutableValue{Vec3{x, y, z}}; }
+    [[nodiscard]] static MutableValue vec3(float x, float y, float z) { return MutableValue{Vec3{x, y, z}}; }
 
     /// Create a Vec4 from individual components
-    [[nodiscard]] static MutableValue make_vec4(float x, float y, float z, float w) {
+    [[nodiscard]] static MutableValue vec4(float x, float y, float z, float w) {
         return MutableValue{Vec4{x, y, z, w}};
     }
 
     /// Create a Vec2 from a float pointer (reads 2 floats)
-    [[nodiscard]] static MutableValue make_vec2(const float* ptr) { return MutableValue{Vec2{ptr[0], ptr[1]}}; }
+    [[nodiscard]] static MutableValue vec2(const float* ptr) { return MutableValue{Vec2{ptr[0], ptr[1]}}; }
 
     /// Create a Vec3 from a float pointer (reads 3 floats)
-    [[nodiscard]] static MutableValue make_vec3(const float* ptr) { return MutableValue{Vec3{ptr[0], ptr[1], ptr[2]}}; }
+    [[nodiscard]] static MutableValue vec3(const float* ptr) { return MutableValue{Vec3{ptr[0], ptr[1], ptr[2]}}; }
 
     /// Create a Vec4 from a float pointer (reads 4 floats)
-    [[nodiscard]] static MutableValue make_vec4(const float* ptr) {
+    [[nodiscard]] static MutableValue vec4(const float* ptr) {
         return MutableValue{Vec4{ptr[0], ptr[1], ptr[2], ptr[3]}};
     }
 
     /// Create a Mat3 from a float pointer (reads 9 floats, row-major)
-    [[nodiscard]] static MutableValue make_mat3(const float* ptr) {
+    [[nodiscard]] static MutableValue mat3(const float* ptr) {
         Mat3 m;
         std::copy(ptr, ptr + 9, m.begin());
         return MutableValue{m};
     }
 
     /// Create a Mat4x3 from a float pointer (reads 12 floats, row-major)
-    [[nodiscard]] static MutableValue make_mat4x3(const float* ptr) {
+    [[nodiscard]] static MutableValue mat4x3(const float* ptr) {
         Mat4x3 m;
         std::copy(ptr, ptr + 12, m.begin());
         return MutableValue{m};
@@ -335,11 +332,27 @@ struct LAGER_EXT_API MutableValue {
     // Special Accessor Functions (matching Value API)
     // ============================================================
 
-    /// Get as string (copy), or return default
-    [[nodiscard]] std::string as_string(std::string default_val = "") const {
+    /// Get as string (copy), or return default - lvalue version
+    [[nodiscard]] std::string as_string(std::string default_val = "") const& {
         if (auto* p = get_if<std::string>())
             return *p;
         return default_val;
+    }
+
+    /// Get as string (move), or return default - rvalue version
+    /// Zero-copy when MutableValue is about to be destroyed
+    [[nodiscard]] std::string as_string(std::string default_val = "") && {
+        if (auto* p = std::get_if<std::string>(&data))
+            return std::move(*p);
+        return default_val;
+    }
+
+    /// Get string as string_view (zero-copy, no allocation)
+    /// Returns empty string_view if not a string type
+    [[nodiscard]] std::string_view as_string_view() const noexcept {
+        if (auto* p = get_if<std::string>())
+            return *p;
+        return {};
     }
 
     /// Get any numeric type as double (with automatic type conversion)
@@ -394,6 +407,10 @@ struct LAGER_EXT_API MutableValue {
 
     /// Check if map contains key
     [[nodiscard]] bool contains(std::string_view key) const;
+
+    /// Count occurrences of key (returns 0 or 1)
+    /// Matches Value::count() API for consistency
+    [[nodiscard]] std::size_t count(std::string_view key) const;
 
     /// Erase map key (returns true if key existed)
     bool erase(std::string_view key);

@@ -12,7 +12,12 @@
 
 // Boost.Interprocess (hidden from headers)
 #include <boost/interprocess/mapped_region.hpp>
+// Use Windows native shared memory to avoid Boost intermodule singleton issues
+#ifdef _WIN32
+#include <boost/interprocess/windows_shared_memory.hpp>
+#else
 #include <boost/interprocess/shared_memory_object.hpp>
+#endif
 
 namespace bip = boost::interprocess;
 
@@ -217,11 +222,15 @@ public:
     Impl() = default;
 
     ~Impl() {
+#ifndef _WIN32
+        // POSIX: cleanup shared memory if we created it
+        // Windows: kernel handles cleanup automatically via reference counting
         if (isCreator_ && !name_.empty()) {
             try {
                 bip::shared_memory_object::remove(name_.c_str());
             } catch (...) {}
         }
+#endif
     }
 
     bool create(std::string_view name, size_t poolSize) {
@@ -230,11 +239,19 @@ public:
         poolSize_ = poolSize;
 
         try {
-            // Remove any existing
-            bip::shared_memory_object::remove(name_.c_str());
-
             // Total size = header + pool
             size_t totalSize = sizeof(PoolHeader) + poolSize;
+
+#ifdef _WIN32
+            // Windows: use native shared memory
+            shm_ = std::make_unique<bip::windows_shared_memory>(
+                bip::create_only, name_.c_str(), bip::read_write, totalSize);
+
+            // Map region
+            region_ = bip::mapped_region(*shm_, bip::read_write);
+#else
+            // POSIX: Remove any existing
+            bip::shared_memory_object::remove(name_.c_str());
 
             // Create shared memory
             shm_ = bip::shared_memory_object(bip::create_only, name_.c_str(), bip::read_write);
@@ -242,6 +259,7 @@ public:
 
             // Map region
             region_ = bip::mapped_region(shm_, bip::read_write);
+#endif
 
             // Initialize header
             header_ = new (region_.get_address()) PoolHeader{};
@@ -278,11 +296,20 @@ public:
         isCreator_ = false;
 
         try {
-            // Open existing
+#ifdef _WIN32
+            // Windows: open existing native shared memory
+            shm_ = std::make_unique<bip::windows_shared_memory>(
+                bip::open_only, name_.c_str(), bip::read_write);
+
+            // Map region
+            region_ = bip::mapped_region(*shm_, bip::read_write);
+#else
+            // POSIX: Open existing
             shm_ = bip::shared_memory_object(bip::open_only, name_.c_str(), bip::read_write);
 
             // Map region
             region_ = bip::mapped_region(shm_, bip::read_write);
+#endif
 
             // Get header
             header_ = static_cast<PoolHeader*>(region_.get_address());
@@ -521,7 +548,11 @@ private:
     bool isCreator_ = false;
     size_t poolSize_ = 0;
 
+#ifdef _WIN32
+    std::unique_ptr<bip::windows_shared_memory> shm_;
+#else
     bip::shared_memory_object shm_;
+#endif
     bip::mapped_region region_;
     PoolHeader* header_ = nullptr;
     
