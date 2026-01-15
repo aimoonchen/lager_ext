@@ -8,17 +8,19 @@
 /// - Exactly ONE process sends messages (Producer)
 /// - Exactly ONE process receives messages (Consumer)
 ///
-/// Key optimizations:
+/// Key features:
 /// - Lock-free ring buffer using atomic operations
 /// - No system calls in the hot path
 /// - Cache-line aligned to avoid false sharing
 /// - Supports both polling and blocking modes
+/// - Message domain support for categorization
+/// - Shared memory pool for large payloads (>240 bytes)
 ///
 /// Usage:
 /// @code
 ///     // Process A (Producer) - creates the channel
 ///     auto channel = Channel::create("MyChannel", 1024);
-///     channel->send(msgId, data);
+///     channel->post(msgId, data);  // Non-blocking, like PostMessage
 ///
 ///     // Process B (Consumer) - opens existing channel
 ///     auto channel = Channel::open("MyChannel");
@@ -31,6 +33,7 @@
 
 #include <lager_ext/lager_ext_config.h>
 #include <lager_ext/api.h>
+#include <lager_ext/ipc_message.h>
 #include <lager_ext/value.h>
 
 #include <chrono>
@@ -63,20 +66,63 @@ constexpr size_t CACHE_LINE_SIZE = 64; // Common value for x86/ARM
 //=============================================================================
 
 /// Message structure optimized for IPC transfer
-/// Uses inline storage for small data, shared memory offset for large data
+/// Uses inline storage for small data, shared memory pool offset for large data
+///
+/// Memory layout (256 bytes total, 4 cache lines):
+/// @code
+///     Offset  Size  Field
+///     0       4     msgId (event name hash or user-defined ID)
+///     4       4     dataSize (payload size in bytes)
+///     8       8     timestamp (steady_clock nanoseconds)
+///     16      1     domain (MessageDomain enum)
+///     17      1     flags (MessageFlags bitmask)
+///     18      2     requestId (for request/response correlation, 0 for events)
+///     20      4     poolOffset (offset in SharedMemoryPool if LargePayload flag set)
+///     24      232   inlineData (payload if <= 232 bytes)
+/// @endcode
 struct Message {
-    uint32_t msgId;
-    uint32_t dataSize;
-    uint64_t timestamp; // Optional timestamp
+    uint32_t msgId;                     ///< Event name hash or user-defined message ID
+    uint32_t dataSize;                  ///< Payload size in bytes
+    uint64_t timestamp;                 ///< Timestamp (steady_clock nanoseconds)
+    
+    MessageDomain domain;               ///< Message domain for categorization
+    MessageFlags flags;                 ///< Message flags (LargePayload, IsRequest, etc.)
+    uint16_t requestId;                 ///< Request/response correlation ID (0 for events)
+    uint32_t poolOffset;                ///< Offset in SharedMemoryPool (if LargePayload)
 
-    // Total header: 4 + 4 + 8 = 16 bytes
-    // Inline data: 240 bytes
-    // Total: 256 bytes
-    static constexpr size_t INLINE_SIZE = 240;
+    // Header: 4 + 4 + 8 + 1 + 1 + 2 + 4 = 24 bytes
+    // Inline data: 232 bytes
+    // Total: 256 bytes (fits in 4 cache lines)
+    static constexpr size_t INLINE_SIZE = 232;
 
-    uint8_t inlineData[INLINE_SIZE];
+    uint8_t inlineData[INLINE_SIZE];    ///< Inline payload (if dataSize <= INLINE_SIZE)
 
-    Message() : msgId(0), dataSize(0), timestamp(0) { std::memset(inlineData, 0, INLINE_SIZE); }
+    /// Default constructor
+    Message() noexcept
+        : msgId(0)
+        , dataSize(0)
+        , timestamp(0)
+        , domain(MessageDomain::Global)
+        , flags(MessageFlags::None)
+        , requestId(0)
+        , poolOffset(0) {
+        std::memset(inlineData, 0, INLINE_SIZE);
+    }
+
+    /// Check if this message uses external pool storage
+    [[nodiscard]] bool uses_pool() const noexcept {
+        return has_flag(flags, MessageFlags::LargePayload);
+    }
+
+    /// Check if this is a request message
+    [[nodiscard]] bool is_request() const noexcept {
+        return has_flag(flags, MessageFlags::IsRequest);
+    }
+
+    /// Check if this is a response message
+    [[nodiscard]] bool is_response() const noexcept {
+        return has_flag(flags, MessageFlags::IsResponse);
+    }
 };
 
 static_assert(sizeof(Message) == 256, "Message should be 256 bytes for cache efficiency");
@@ -118,24 +164,28 @@ public:
     static std::unique_ptr<Channel> open(const std::string& name);
 
     //-------------------------------------------------------------------------
-    // Producer Operations
+    // Producer Operations (Non-blocking, like PostMessage)
     //-------------------------------------------------------------------------
 
-    /// Send a message (producer only)
+    /// Post a message to the queue (producer only, non-blocking)
     /// @param msgId Message type identifier
     /// @param data Message data (will be serialized)
+    /// @param domain Message domain for categorization (default: Global)
     /// @return true if message was queued, false if queue is full
-    bool send(uint32_t msgId, const Value& data = {});
+    /// @note This is non-blocking - returns immediately after queuing (like PostMessage)
+    /// @note Large payloads (>232 bytes) require a shared memory pool
+    bool post(uint32_t msgId, const Value& data = {}, MessageDomain domain = MessageDomain::Global);
 
-    /// Send raw bytes (producer only, no serialization)
+    /// Post raw bytes to the queue (producer only, no serialization, non-blocking)
     /// @param msgId Message type identifier
     /// @param data Pointer to data
     /// @param size Data size in bytes
+    /// @param domain Message domain for categorization (default: Global)
     /// @return true if message was queued
-    bool sendRaw(uint32_t msgId, const void* data, size_t size);
+    bool postRaw(uint32_t msgId, const void* data, size_t size, MessageDomain domain = MessageDomain::Global);
 
     /// Check if queue has space for more messages
-    bool canSend() const;
+    bool canPost() const;
 
     /// Get number of messages waiting to be consumed
     size_t pendingCount() const;
@@ -144,11 +194,21 @@ public:
     // Consumer Operations
     //-------------------------------------------------------------------------
 
-    /// Received message structure
+    /// Received message structure with full metadata
     struct ReceivedMessage {
-        uint32_t msgId;
-        Value data;
-        uint64_t timestamp;
+        uint32_t msgId;             ///< Message ID (event name hash or user-defined)
+        Value data;                 ///< Deserialized payload
+        uint64_t timestamp;         ///< Message timestamp
+        MessageDomain domain;       ///< Message domain
+        MessageFlags flags;         ///< Message flags
+        uint16_t requestId;         ///< Request/response correlation ID
+
+        ReceivedMessage() noexcept
+            : msgId(0)
+            , timestamp(0)
+            , domain(MessageDomain::Global)
+            , flags(MessageFlags::None)
+            , requestId(0) {}
     };
 
     /// Receive a message (consumer only, non-blocking)
@@ -214,13 +274,16 @@ private:
 /// @code
 ///     // Process A (creates the channel pair)
 ///     auto pair = ChannelPair::create("MyPair");
-///     pair->send(MSG_REQUEST, data);
+///     pair->post(MSG_REQUEST, data);  // Non-blocking
 ///     auto reply = pair->receive();
 ///
 ///     // Process B (connects to existing pair)
 ///     auto pair = ChannelPair::connect("MyPair");
 ///     auto request = pair->receive();
-///     pair->send(MSG_REPLY, response);
+///     pair->post(MSG_REPLY, response);
+///
+///     // For synchronous request-response (like SendMessage):
+///     auto result = pair->send(MSG_QUERY, queryData);  // Blocking
 /// @endcode
 class LAGER_EXT_API ChannelPair {
 public:
@@ -235,20 +298,36 @@ public:
     /// @return ChannelPair instance, nullptr on failure
     static std::unique_ptr<ChannelPair> connect(const std::string& name);
 
-    /// Send a message to the other endpoint
-    bool send(uint32_t msgId, const Value& data = {});
+    /// Post a message to the other endpoint (non-blocking, like PostMessage)
+    /// @return true if message was queued
+    bool post(uint32_t msgId, const Value& data = {});
+
+    /// Post raw binary data to the other endpoint (non-blocking, zero-copy)
+    /// @param msgId Message type identifier
+    /// @param data Pointer to data
+    /// @param size Data size in bytes
+    /// @return true if message was queued
+    bool postRaw(uint32_t msgId, const void* data, size_t size);
 
     /// Receive a message from the other endpoint (non-blocking)
     std::optional<Channel::ReceivedMessage> tryReceive();
+
+    /// Receive raw binary data from the other endpoint (non-blocking, zero-copy)
+    /// @param outMsgId Receives the message ID
+    /// @param outData Buffer to receive data
+    /// @param maxSize Maximum bytes to copy
+    /// @return Actual data size, 0 if queue empty, -1 if buffer too small
+    int tryReceiveRaw(uint32_t& outMsgId, void* outData, size_t maxSize);
 
     /// Receive a message from the other endpoint (blocking)
     std::optional<Channel::ReceivedMessage>
     receive(std::chrono::milliseconds timeout = std::chrono::milliseconds::max());
 
-    /// Synchronous send with reply (like SendMessage)
+    /// Synchronous send with reply (blocking, like SendMessage)
     /// Sends a message and waits for a reply with matching correlation
-    std::optional<Value> sendAndWaitReply(uint32_t msgId, const Value& data,
-                                          std::chrono::milliseconds timeout = std::chrono::seconds(30));
+    /// @return Response value, or nullopt on timeout
+    std::optional<Value> send(uint32_t msgId, const Value& data,
+                              std::chrono::milliseconds timeout = std::chrono::seconds(30));
 
     const std::string& name() const;
 

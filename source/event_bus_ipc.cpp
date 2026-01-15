@@ -26,6 +26,12 @@ public:
         std::function<void(const Value&)> handler;
     };
 
+    /// Domain handler with ID for lifecycle management
+    struct DomainHandler {
+        uint64_t id;
+        std::function<void(const RemoteBus::DomainEnvelope&, const Value&)> handler;
+    };
+
     Impl(std::string_view channel_name, EventBus& bus, Role role, std::size_t capacity)
         : channel_name_(channel_name), bus_(bus), role_(role) {
         try {
@@ -57,7 +63,7 @@ public:
 
     ~Impl() = default;
 
-    bool publish_remote(std::string_view event_name, const Value& payload) {
+    bool post_remote(std::string_view event_name, const Value& payload) {
         if (!connected_) {
             return false;
         }
@@ -66,17 +72,17 @@ public:
         Value envelope = Value::map({{"n", std::string(event_name)}, {"d", payload}});
 
         if (channel_pair_) {
-            return channel_pair_->send(detail::IPC_EVT_EVENT, envelope);
+            return channel_pair_->post(detail::IPC_EVT_EVENT, envelope);
         }
         if (channel_) {
-            return channel_->send(detail::IPC_EVT_EVENT, envelope);
+            return channel_->post(detail::IPC_EVT_EVENT, envelope);
         }
         return false;
     }
 
     bool broadcast(std::string_view event_name, const Value& payload) {
         bus_.publish(event_name, payload);
-        return publish_remote(event_name, payload);
+        return post_remote(event_name, payload);
     }
 
     Connection subscribe_remote_impl(std::string_view event_name, std::function<void(const Value&)> handler) {
@@ -113,7 +119,7 @@ public:
         std::size_t count = 0;
 
         auto process_received = [&](const ipc::Channel::ReceivedMessage& msg) {
-            process_message(msg.msgId, msg.data);
+            process_message_full(msg);
             ++count;
         };
 
@@ -149,8 +155,8 @@ public:
         return total;
     }
 
-    std::optional<Value> request(std::string_view event_name, const Value& payload,
-                                 std::chrono::milliseconds timeout) {
+    std::optional<Value> send(std::string_view event_name, const Value& payload,
+                              std::chrono::milliseconds timeout) {
         if (!connected_ || !channel_pair_) {
             return std::nullopt;
         }
@@ -161,7 +167,7 @@ public:
         Value envelope =
             Value::map({{"n", std::string(event_name)}, {"d", payload}, {"r", static_cast<int64_t>(req_id)}});
 
-        if (!channel_pair_->send(detail::IPC_EVT_REQUEST, envelope)) {
+        if (!channel_pair_->post(detail::IPC_EVT_REQUEST, envelope)) {
             return std::nullopt;
         }
 
@@ -191,6 +197,20 @@ public:
     EventBus& bus() { return bus_; }
 
 private:
+    // Full message processing with domain support
+    void process_message_full(const ipc::Channel::ReceivedMessage& msg) {
+        try {
+            // First, dispatch to domain handlers (regardless of msgId type)
+            // Domain handlers receive the raw payload
+            dispatch_to_domain_handlers(msg, msg.data);
+
+            // Then process as before for named event handlers
+            process_message(msg.msgId, msg.data);
+        } catch (...) {
+            // Ignore malformed messages
+        }
+    }
+
     void process_message(uint32_t msgId, const Value& envelope) {
         try {
             auto name = try_get_string(envelope, "n");
@@ -225,9 +245,9 @@ private:
         Value resp_envelope = Value::map({{"n", name}, {"d", response}, {"r", *req_id}});
 
         if (channel_pair_) {
-            channel_pair_->send(detail::IPC_EVT_RESPONSE, resp_envelope);
+            channel_pair_->post(detail::IPC_EVT_RESPONSE, resp_envelope);
         } else if (channel_) {
-            channel_->send(detail::IPC_EVT_RESPONSE, resp_envelope);
+            channel_->post(detail::IPC_EVT_RESPONSE, resp_envelope);
         }
     }
 
@@ -296,6 +316,61 @@ private:
     // Request-response handlers
     std::unordered_map<std::string, std::function<Value(const Value&)>> request_handlers_;
     uint64_t next_request_id_ = 1;
+
+    // Domain handlers - keyed by domain enum
+    std::unordered_map<uint8_t, std::vector<DomainHandler>> domain_handlers_;
+
+public:
+    // Domain subscription implementation
+    Connection subscribe_domain_impl(ipc::MessageDomain domain,
+                                     std::function<void(const RemoteBus::DomainEnvelope&, const Value&)> handler) {
+        uint64_t slot_id = next_slot_id_++;
+        uint8_t domain_key = static_cast<uint8_t>(domain);
+        
+        domain_handlers_[domain_key].push_back({slot_id, std::move(handler)});
+        
+        return Connection([this, domain_key, slot_id]() {
+            remove_domain_handler(domain_key, slot_id);
+        });
+    }
+
+    void unsubscribe_domain(ipc::MessageDomain domain) {
+        uint8_t domain_key = static_cast<uint8_t>(domain);
+        domain_handlers_.erase(domain_key);
+    }
+
+private:
+    void remove_domain_handler(uint8_t domain_key, uint64_t slot_id) {
+        auto it = domain_handlers_.find(domain_key);
+        if (it != domain_handlers_.end()) {
+            auto& handlers = it->second;
+            std::erase_if(handlers, [slot_id](const DomainHandler& dh) {
+                return dh.id == slot_id;
+            });
+            if (handlers.empty()) {
+                domain_handlers_.erase(it);
+            }
+        }
+    }
+
+    void dispatch_to_domain_handlers(const ipc::Channel::ReceivedMessage& msg, const Value& payload) {
+        uint8_t domain_key = static_cast<uint8_t>(msg.domain);
+        auto it = domain_handlers_.find(domain_key);
+        if (it != domain_handlers_.end()) {
+            RemoteBus::DomainEnvelope envelope{
+                .msgId = msg.msgId,
+                .timestamp = msg.timestamp,
+                .domain = msg.domain,
+                .flags = msg.flags,
+                .requestId = msg.requestId
+            };
+            for (const auto& dh : it->second) {
+                if (dh.handler) {
+                    dh.handler(envelope, payload);
+                }
+            }
+        }
+    }
 };
 
 // ============================================================================
@@ -309,8 +384,8 @@ RemoteBus::~RemoteBus() = default;
 RemoteBus::RemoteBus(RemoteBus&&) noexcept = default;
 RemoteBus& RemoteBus::operator=(RemoteBus&&) noexcept = default;
 
-bool RemoteBus::publish_remote(std::string_view event_name, const Value& payload) {
-    return impl_->publish_remote(event_name, payload);
+bool RemoteBus::post_remote(std::string_view event_name, const Value& payload) {
+    return impl_->post_remote(event_name, payload);
 }
 
 bool RemoteBus::broadcast(std::string_view event_name, const Value& payload) {
@@ -337,9 +412,9 @@ std::size_t RemoteBus::poll(std::chrono::milliseconds timeout) {
     return impl_->poll(timeout);
 }
 
-std::optional<Value> RemoteBus::request(std::string_view event_name, const Value& payload,
-                                        std::chrono::milliseconds timeout) {
-    return impl_->request(event_name, payload, timeout);
+std::optional<Value> RemoteBus::send(std::string_view event_name, const Value& payload,
+                                     std::chrono::milliseconds timeout) {
+    return impl_->send(event_name, payload, timeout);
 }
 
 bool RemoteBus::connected() const {
@@ -356,6 +431,15 @@ const std::string& RemoteBus::last_error() const {
 
 EventBus& RemoteBus::bus_ref() {
     return impl_->bus();
+}
+
+Connection RemoteBus::subscribe_domain_impl(MessageDomain domain,
+                                            std::function<void(const DomainEnvelope&, const Value&)> handler) {
+    return impl_->subscribe_domain_impl(domain, std::move(handler));
+}
+
+void RemoteBus::unsubscribe_domain(MessageDomain domain) {
+    impl_->unsubscribe_domain(domain);
 }
 
 } // namespace lager_ext

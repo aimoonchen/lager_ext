@@ -14,13 +14,13 @@ namespace ipc {
 namespace bip = boost::interprocess;
 
 //=============================================================================
-// Thread-local error storage
+// Error storage (SPSC mode: single thread per side)
 //=============================================================================
 
 namespace {
 
 std::string& get_last_error() {
-    static thread_local std::string error;
+    static std::string error;
     return error;
 }
 

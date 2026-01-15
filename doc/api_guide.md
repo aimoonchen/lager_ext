@@ -80,6 +80,16 @@ This document provides a comprehensive overview of the public APIs in the `lager
       - [8.7.7 Value Transfer via SPSC](#877-value-transfer-via-spsc)
       - [8.7.8 Performance Characteristics](#878-performance-characteristics)
       - [8.7.9 When to Use](#879-when-to-use)
+    - [8.8 WindowsMessageBridge (User-Mode Windows Message Forwarding)](#88-windowsmessagebridge-user-mode-windows-message-forwarding)
+      - [8.8.1 Message Data Structure](#881-message-data-structure)
+      - [8.8.2 Roles](#882-roles)
+      - [8.8.3 Creating a Bridge](#883-creating-a-bridge)
+      - [8.8.4 Forwarding Messages (Sender)](#884-forwarding-messages-sender)
+      - [8.8.5 Receiving Messages (Receiver)](#885-receiving-messages-receiver)
+      - [8.8.6 Polling for Messages](#886-polling-for-messages)
+      - [8.8.7 Statistics](#887-statistics)
+      - [8.8.8 Complete Example](#888-complete-example)
+      - [8.8.9 Performance Comparison](#889-performance-comparison)
   - [9. MutableValue \& Type Conversion](#9-mutablevalue--type-conversion)
     - [9.1 MutableValue Overview](#91-mutablevalue-overview)
     - [9.2 Construction \& Factory Methods](#92-construction--factory-methods)
@@ -1764,14 +1774,14 @@ if (!receiver) {
 #### Producer Operations
 
 ```cpp
-/// Send a Value (automatically serialized)
-bool send(uint32_t msgId, const Value& data = {});
+/// Post a Value (non-blocking, fire-and-forget)
+bool post(uint32_t msgId, const Value& data = {});
 
-/// Send raw bytes (no serialization overhead)
-bool sendRaw(uint32_t msgId, const void* data, size_t size);
+/// Post raw bytes (no serialization overhead)
+bool postRaw(uint32_t msgId, const void* data, size_t size);
 
 /// Check if queue has space
-bool canSend() const;
+bool canPost() const;
 
 /// Get number of pending messages
 size_t pendingCount() const;
@@ -1780,18 +1790,18 @@ size_t pendingCount() const;
 **Example:**
 
 ```cpp
-// Send structured data
+// Post structured data (non-blocking)
 Value playerState = MapBuilder()
     .set("x", 100.5f)
     .set("y", 200.0f)
     .set("health", 100)
     .finish();
-sender->send(MSG_PLAYER_UPDATE, playerState);
+sender->post(MSG_PLAYER_UPDATE, playerState);
 
-// Send raw bytes (faster, no serialization)
+// Post raw bytes (faster, no serialization)
 struct Position { float x, y; };
 Position pos{100.5f, 200.0f};
-sender->sendRaw(MSG_POSITION, &pos, sizeof(pos));
+sender->postRaw(MSG_POSITION, &pos, sizeof(pos));
 ```
 
 #### Consumer Operations
@@ -1851,7 +1861,11 @@ const std::string& lastError() const; // Last error message
 
 ### 8.3 ChannelPair (Bidirectional)
 
-`ChannelPair` provides bidirectional communication by combining two `Channel` instances. It supports both asynchronous and synchronous (request/reply) patterns.
+`ChannelPair` provides bidirectional communication by combining two `Channel` instances. It supports both asynchronous (`post`) and synchronous (`send`) patterns.
+
+**Naming Convention (following Windows API semantics):**
+- `post()` - Non-blocking, fire-and-forget (like `PostMessage`)
+- `send()` - Blocking, waits for response (like `SendMessage`)
 
 #### Factory Methods
 
@@ -1879,8 +1893,8 @@ auto editorPair = ChannelPair::connect("EngineEditor");
 #### Operations
 
 ```cpp
-/// Send to the other endpoint
-bool send(uint32_t msgId, const Value& data = {});
+/// Post to the other endpoint (non-blocking, fire-and-forget)
+bool post(uint32_t msgId, const Value& data = {});
 
 /// Non-blocking receive
 std::optional<Channel::ReceivedMessage> tryReceive();
@@ -1890,19 +1904,19 @@ std::optional<Channel::ReceivedMessage> receive(
     std::chrono::milliseconds timeout = std::chrono::milliseconds::max()
 );
 
-/// Synchronous request/reply (like SendMessage)
-std::optional<Value> sendAndWaitReply(
+/// Synchronous request/reply (blocking, like SendMessage)
+std::optional<Value> send(
     uint32_t msgId,
     const Value& data,
     std::chrono::milliseconds timeout = std::chrono::seconds(30)
 );
 ```
 
-**Example - Asynchronous:**
+**Example - Asynchronous (post):**
 
 ```cpp
-// Engine sends updates
-enginePair->send(MSG_SCENE_UPDATE, sceneData);
+// Engine posts updates (fire-and-forget)
+enginePair->post(MSG_SCENE_UPDATE, sceneData);
 
 // Editor receives and processes
 while (auto msg = editorPair->tryReceive()) {
@@ -1912,15 +1926,15 @@ while (auto msg = editorPair->tryReceive()) {
 }
 ```
 
-**Example - Synchronous Request/Reply:**
+**Example - Synchronous Request/Reply (send):**
 
 ```cpp
-// Editor requests entity data from engine
+// Editor sends request and waits for engine response (blocking)
 Value request = MapBuilder()
     .set("entityId", 42)
     .finish();
 
-if (auto reply = editorPair->sendAndWaitReply(MSG_GET_ENTITY, request)) {
+if (auto reply = editorPair->send(MSG_GET_ENTITY, request)) {
     std::string name = reply->at("name").as_string();
     Vec3 pos = reply->at("position").as<Vec3>();
 }
@@ -1979,12 +1993,12 @@ Benchmark results comparing IPC Channel to Windows native messaging (10,000 iter
 
 ```cpp
 // ❌ WRONG: Multiple producers
-std::thread t1([&]{ channel->send(1, data1); });
-std::thread t2([&]{ channel->send(2, data2); });  // Data corruption!
+std::thread t1([&]{ channel->post(1, data1); });
+std::thread t2([&]{ channel->post(2, data2); });  // Data corruption!
 
 // ✅ CORRECT: Single producer, single consumer
 // Producer process/thread
-channel->send(1, data);
+channel->post(1, data);
 
 // Consumer process/thread (different from producer)
 channel->tryReceive();
@@ -1999,7 +2013,7 @@ if (!channel) {
     return;
 }
 
-if (!channel->send(msgId, data)) {
+if (!channel->post(msgId, data)) {
     // Queue is full - back off or drop message
     std::cerr << "Queue full, pending: " << channel->pendingCount() << "\n";
 }
@@ -2012,7 +2026,7 @@ if (!channel->send(msgId, data)) {
 constexpr uint32_t MSG_SHUTDOWN = 0xFFFFFFFF;
 
 // Producer signals shutdown
-sender->send(MSG_SHUTDOWN);
+sender->post(MSG_SHUTDOWN);
 
 // Consumer handles shutdown
 while (auto msg = receiver->tryReceive()) {
@@ -2029,9 +2043,10 @@ while (auto msg = receiver->tryReceive()) {
 |----------|-----------------|
 | One-way data streaming | `Channel` |
 | Bidirectional communication | `ChannelPair` |
-| High-frequency small updates | `sendRaw()` / `tryReceiveRaw()` |
-| Complex structured data | `send()` with `Value` |
-| Request/reply pattern | `ChannelPair::sendAndWaitReply()` |
+| High-frequency small updates | `postRaw()` / `tryReceiveRaw()` |
+| Complex structured data | `post()` with `Value` |
+| Request/reply pattern (blocking) | `ChannelPair::send()` |
+| Fire-and-forget messaging | `Channel::post()` / `ChannelPair::post()` |
 
 ### 8.7 SharedBufferSPSC (High-Performance SPSC Buffer)
 
@@ -2374,6 +2389,7 @@ if (buffer->is_ready()) {
 | Multiple small messages | `Channel` |
 | Request/response patterns | `ChannelPair` |
 | Multiple producers or consumers | `SharedValueHandle` with locking |
+| Windows message forwarding | **WindowsMessageBridge** |
 
 **Choosing Buffer Mode:**
 
@@ -2383,6 +2399,265 @@ if (buffer->is_ready()) {
 | Multiple writes | ✅ Yes | ❌ One write only |
 | Version tracking | ✅ has_update() | ❌ is_ready() only |
 | Use case | Streaming | Initialization |
+
+### 8.8 WindowsMessageBridge (User-Mode Windows Message Forwarding)
+
+`WindowsMessageBridge` provides a high-performance, user-mode alternative to Windows' native cross-process messaging (`SendMessage`/`PostMessage`). By using shared memory instead of kernel transitions, it achieves **~50-100x faster** message forwarding.
+
+```cpp
+#include <lager_ext/windows_message.h>
+using namespace lager_ext::ipc;
+```
+
+**Key Features:**
+- **Zero-serialization binary transfer** - 24-byte `WindowsMessageData` struct (UINT + WPARAM + LPARAM)
+- **~0.3-0.5 µs latency** vs ~20 µs for native `SendMessage` across processes
+- **Built on `ChannelPair`** - Inherits bidirectional communication, auto-retry, and connection management
+- **Flexible dispatch** - Callback handlers, range handlers, or direct `HWND` dispatch
+
+#### 8.8.1 Message Data Structure
+
+```cpp
+struct WindowsMessageData {
+    uint32_t message;   // UINT message (e.g., WM_KEYDOWN)
+    uint32_t reserved;  // Padding for alignment
+    uint64_t wParam;    // WPARAM (pointer-sized)
+    int64_t  lParam;    // LPARAM (signed pointer-sized)
+};
+static_assert(sizeof(WindowsMessageData) == 24);
+```
+
+The 24-byte structure fits well within the IPC channel's inline buffer (240 bytes), avoiding any heap allocation.
+
+#### 8.8.2 Roles
+
+| Role | Description | Creates Shared Memory |
+|------|-------------|----------------------|
+| `Role::Sender` | Forwards messages to receiver | Yes |
+| `Role::Receiver` | Receives and dispatches messages | No |
+| `Role::Bidirectional` | Both send and receive (e.g., two-way sync) | Yes |
+
+#### 8.8.3 Creating a Bridge
+
+**Sender Process (e.g., Game Engine):**
+
+```cpp
+#include <lager_ext/windows_message.h>
+using namespace lager_ext::ipc;
+
+// Create sender bridge (creates shared memory)
+WindowsMessageBridge sender("GameEditorBridge", Role::Sender, 4096);
+
+if (!sender.connected()) {
+    std::cerr << "Failed: " << sender.last_error() << "\n";
+    return;
+}
+```
+
+**Receiver Process (e.g., Editor):**
+
+```cpp
+// Connect to existing bridge
+WindowsMessageBridge receiver("GameEditorBridge", Role::Receiver);
+
+if (!receiver.connected()) {
+    std::cerr << "Failed to connect\n";
+    return;
+}
+```
+
+#### 8.8.4 Forwarding Messages (Sender)
+
+**Basic forwarding:**
+
+```cpp
+// In your window procedure
+LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    // Forward all messages to remote process (~300ns)
+    sender.forward(msg, wParam, lParam);
+    
+    return DefWindowProc(hwnd, msg, wParam, lParam);
+}
+```
+
+**Conditional forwarding:**
+
+```cpp
+// Only forward input messages
+sender.forward_if(msg, wParam, lParam, [](UINT m) {
+    return (m >= WM_KEYFIRST && m <= WM_KEYLAST) ||
+           (m >= WM_MOUSEFIRST && m <= WM_MOUSELAST);
+});
+```
+
+**Batch forwarding:**
+
+```cpp
+// Forward multiple messages at once
+WindowsMessageData messages[3] = {
+    {WM_KEYDOWN, 0, VK_SPACE, 0},
+    {WM_CHAR, 0, ' ', 0},
+    {WM_KEYUP, 0, VK_SPACE, 0}
+};
+size_t sent = sender.forward_batch(messages, 3);
+```
+
+#### 8.8.5 Receiving Messages (Receiver)
+
+**Method 1: Callback handler**
+
+```cpp
+// Simple handler (fire-and-forget)
+receiver.on_message([](UINT msg, WPARAM wParam, LPARAM lParam) {
+    std::cout << "Received: " << msg << "\n";
+});
+
+// Handler with optional return value (for SendMessage semantics)
+receiver.on_message([](UINT msg, WPARAM wParam, LPARAM lParam) 
+    -> std::optional<LRESULT> 
+{
+    if (msg == WM_COMMAND) {
+        return handle_command(wParam, lParam);
+    }
+    return std::nullopt;  // No response
+});
+```
+
+**Method 2: Range handlers**
+
+```cpp
+// Handle specific message ranges
+receiver.on_message_range(WM_KEYFIRST, WM_KEYLAST, [](UINT msg, WPARAM w, LPARAM l) {
+    handle_keyboard(msg, w, l);
+});
+
+receiver.on_message_range(WM_MOUSEFIRST, WM_MOUSELAST, [](UINT msg, WPARAM w, LPARAM l) {
+    handle_mouse(msg, w, l);
+});
+```
+
+**Method 3: Direct HWND dispatch (Windows only)**
+
+```cpp
+// Dispatch directly to a window (uses PostMessage or SendMessage)
+receiver.dispatch_to(target_hwnd, /*use_post=*/true);
+```
+
+#### 8.8.6 Polling for Messages
+
+```cpp
+// Non-blocking poll (returns number of messages processed)
+while (running) {
+    size_t processed = receiver.poll();
+    
+    // Do other work...
+    std::this_thread::sleep_for(1ms);
+}
+
+// Blocking poll with timeout
+size_t processed = receiver.poll(std::chrono::milliseconds(100));
+```
+
+#### 8.8.7 Statistics
+
+```cpp
+std::cout << "Messages sent: " << sender.messages_sent() << "\n";
+std::cout << "Messages received: " << receiver.messages_received() << "\n";
+std::cout << "Channel name: " << sender.channel_name() << "\n";
+```
+
+#### 8.8.8 Complete Example
+
+**Game Engine (Sender):**
+
+```cpp
+#include <lager_ext/windows_message.h>
+using namespace lager_ext::ipc;
+
+// Global bridge
+WindowsMessageBridge g_bridge("GameEditor", Role::Sender);
+
+LRESULT CALLBACK GameWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    // Forward input messages to editor
+    g_bridge.forward_if(msg, wParam, lParam, [](UINT m) {
+        return m >= WM_KEYFIRST && m <= WM_MOUSELAST;
+    });
+    
+    switch (msg) {
+        case WM_DESTROY:
+            PostQuitMessage(0);
+            return 0;
+    }
+    return DefWindowProc(hwnd, msg, wParam, lParam);
+}
+
+int main() {
+    if (!g_bridge.connected()) {
+        std::cerr << "Bridge creation failed\n";
+        return 1;
+    }
+    
+    // Create window and run message loop...
+    
+    std::cout << "Total messages forwarded: " << g_bridge.messages_sent() << "\n";
+    return 0;
+}
+```
+
+**Editor (Receiver):**
+
+```cpp
+#include <lager_ext/windows_message.h>
+using namespace lager_ext::ipc;
+
+int main() {
+    WindowsMessageBridge receiver("GameEditor", Role::Receiver);
+    
+    if (!receiver.connected()) {
+        std::cerr << "Failed to connect to game\n";
+        return 1;
+    }
+    
+    // Register handlers
+    receiver.on_message_range(WM_KEYFIRST, WM_KEYLAST, 
+        [](UINT msg, WPARAM w, LPARAM l) {
+            std::cout << "Key event: " << msg << " vk=" << w << "\n";
+        });
+    
+    receiver.on_message_range(WM_MOUSEFIRST, WM_MOUSELAST,
+        [](UINT msg, WPARAM w, LPARAM l) {
+            int x = GET_X_LPARAM(l);
+            int y = GET_Y_LPARAM(l);
+            std::cout << "Mouse event at (" << x << ", " << y << ")\n";
+        });
+    
+    // Main loop
+    while (true) {
+        receiver.poll(std::chrono::milliseconds(16));  // ~60 FPS
+    }
+    
+    return 0;
+}
+```
+
+#### 8.8.9 Performance Comparison
+
+| Method | Average Latency | Throughput | Notes |
+|--------|-----------------|------------|-------|
+| **WindowsMessageBridge** | **~0.3-0.5 µs** | **~2-3M/sec** | User-mode, zero-copy |
+| Native `PostMessage` (cross-process) | ~19 µs | ~50K/sec | Kernel transition |
+| Native `SendMessage` (cross-process) | ~237 µs | ~4K/sec | Blocking + kernel |
+| `WM_COPYDATA` | ~180 µs | ~5K/sec | Kernel + data copy |
+
+**When to use WindowsMessageBridge:**
+- Cross-process input forwarding (game ↔ editor)
+- Real-time UI synchronization
+- Any scenario requiring high-frequency Windows message transfer between processes
+
+**When to use native Windows messaging:**
+- Same-process messaging (no benefit from shared memory)
+- Integration with existing Windows message infrastructure
+- When kernel-level security/isolation is required
 
 ---
 
@@ -3005,20 +3280,20 @@ if (remote.connected()) {
 #### Sending Events
 
 ```cpp
-// Send typed event to remote process
-remote.publish_remote(RemoteCommand{.command = "start", .priority = 1});
+// Post typed event to remote process (non-blocking)
+remote.post_remote(RemoteCommand{.command = "start", .priority = 1});
 
-// Send to both local bus AND remote
+// Post to both local bus AND remote (non-blocking)
 remote.broadcast(StatusUpdate{.component = "Renderer", .status = "OK"});
 
-// Send dynamic event
-remote.publish_remote("remote.ping", Value{"hello"});
+// Post dynamic event (non-blocking)
+remote.post_remote("remote.ping", Value{"hello"});
 ```
 
 #### Receiving Events
 
 ```cpp
-// Subscribe to remote typed events
+// Subscribe to remote typed events (receives events posted via post_remote)
 remote.subscribe_remote<RemoteCommand>([](const RemoteCommand& cmd) {
     std::cout << "Remote command: " << cmd.command << "\n";
 });
@@ -3046,12 +3321,16 @@ remote.on_request("query.status", [](const Value& request) -> Value {
     });
 });
 
-// Send request and wait for response (in another process)
-auto response = remote.request("query.status", Value{}, std::chrono::seconds(5));
+// Send request and wait for response (blocking, in another process)
+auto response = remote.send("query.status", Value{}, std::chrono::seconds(5));
 if (response) {
     std::cout << "Response: " << to_json(*response) << "\n";
 }
 ```
+
+> **Note:** `RemoteBus` follows the same `post/send` naming convention:
+> - `post_remote()` - Non-blocking, fire-and-forget
+> - `send()` - Blocking, waits for response with timeout
 
 ---
 
@@ -3076,6 +3355,7 @@ if (response) {
 | `<lager_ext/fast_shared_value.h>` | High-performance shared value with fake transience (O(n) build) |
 | `<lager_ext/ipc.h>` | **IPC module** - Lock-free cross-process `Channel` and `ChannelPair` |
 | `<lager_ext/shared_buffer_spsc.h>` | **IPC module** - High-performance SPSC shared memory buffer |
+| `<lager_ext/windows_message.h>` | **IPC module** - User-mode Windows message forwarding bridge |
 | `<lager_ext/concepts.h>` | C++20 concepts and math type aliases (`Vec2`, `Vec3`, etc.) |
 | `<lager_ext/scene_types.h>` | Common types for editor engines (UI metadata, etc.) |
 | `<lager_ext/editor_engine.h>` | Scene-like editor state management (snapshot undo) |

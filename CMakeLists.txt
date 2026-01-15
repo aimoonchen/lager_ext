@@ -97,13 +97,18 @@ if(LAGER_EXT_ENABLE_IPC)
         source/ipc.cpp
         source/event_bus_ipc.cpp
         source/shared_buffer_spsc.cpp
+        source/shared_memory_pool.cpp
+        source/windows_message.cpp
     )
     list(APPEND LAGER_EXT_HEADERS 
         include/lager_ext/ipc.h
+        include/lager_ext/ipc_message.h
         include/lager_ext/event_bus_ipc.h
         include/lager_ext/shared_buffer_spsc.h
+        include/lager_ext/shared_memory_pool.h
+        include/lager_ext/windows_message.h
     )
-    message(STATUS "IPC module: ENABLED (SPSC lock-free + RemoteBus + SharedBufferSPSC)")
+    message(STATUS "IPC module: ENABLED (SPSC + RemoteBus + SharedMemoryPool + WindowsMessageBridge)")
 else()
     message(STATUS "IPC module: DISABLED")
 endif()

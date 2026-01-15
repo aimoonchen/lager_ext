@@ -255,16 +255,16 @@ void demo_remote_bus() {
     std::cout << "\n--- Publishing events to remote (if connected) ---\n";
 
     // Publish typed event to remote
-    bool sent = remote.publish_remote(RemoteCommand{.command = "start_render", .priority = 1});
-    std::cout << "[Remote] publish_remote<RemoteCommand>: " << (sent ? "queued" : "failed") << "\n";
+    bool sent = remote.post_remote(RemoteCommand{.command = "start_render", .priority = 1});
+    std::cout << "[Remote] post_remote<RemoteCommand>: " << (sent ? "queued" : "failed") << "\n";
 
     // Broadcast to both local and remote
     sent = remote.broadcast(StatusUpdate{.component = "Renderer", .status = "Initializing", .progress = 0.0});
     std::cout << "[Remote] broadcast<StatusUpdate>: " << (sent ? "sent" : "local only") << "\n";
 
     // Publish dynamic event
-    sent = remote.publish_remote("remote.command", Value::map({{"action", "save"}, {"target", "scene.json"}}));
-    std::cout << "[Remote] publish_remote(dynamic): " << (sent ? "queued" : "failed") << "\n";
+    sent = remote.post_remote("remote.command", Value::map({{"action", "save"}, {"target", "scene.json"}}));
+    std::cout << "[Remote] post_remote(dynamic): " << (sent ? "queued" : "failed") << "\n";
 
     std::cout << "\n--- Polling for incoming events ---\n";
 

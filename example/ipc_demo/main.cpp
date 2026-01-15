@@ -127,7 +127,7 @@ int runServer() {
                               .set("message", "Reply from server")
                               .finish();
 
-            pair->send(msg->msgId + 1000, reply);
+            pair->post(msg->msgId + 1000, reply);
             std::cout << "[Server] Sent reply #" << (msg->msgId + 1000) << "\n";
 
             echoCount++;
@@ -177,7 +177,7 @@ int runServer() {
             std::string originalName = name.is_null() ? "unknown" : name.as_string();
 
             Value ack = MapBuilder().set("status", "received").set("original_name", originalName).finish();
-            pair->send(msg->msgId + 2000, ack);
+            pair->post(msg->msgId + 2000, ack);
             std::cout << "[Server] Sent acknowledgment Value\n";
             break;
         }
@@ -294,7 +294,7 @@ int runClient() {
                               "Last message"};
 
     for (int i = 0; i < 5; ++i) {
-        bool sent = producer->sendRaw(i + 1, // message ID
+        bool sent = producer->postRaw(i + 1, // message ID
                                       messages[i], strlen(messages[i]));
         std::cout << "[Client] Sent message #" << (i + 1) << ": \"" << messages[i] << "\" - "
                   << (sent ? "OK" : "FAILED") << "\n";
@@ -326,7 +326,7 @@ int runClient() {
         Value request = MapBuilder().set("type", "request").set("content", requestMsgs[i]).finish();
 
         std::cout << "[Client] Sending request #" << (i + 1) << ": \"" << requestMsgs[i] << "\"\n";
-        pair->send(i + 1, request);
+        pair->post(i + 1, request);
 
         // Wait for reply
         bool gotReply = false;
@@ -367,7 +367,7 @@ int runClient() {
             .finish();
 
     std::cout << "[Client] Sending complex Value object...\n";
-    pair->send(100, userData);
+    pair->post(100, userData);
 
     // Wait for acknowledgment
     auto startTime = std::chrono::steady_clock::now();

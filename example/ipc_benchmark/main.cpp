@@ -288,7 +288,7 @@ int runServer() {
                 uint8_t buf[256];
                 int len = channelIn->tryReceiveRaw(msgId, buf, sizeof(buf));
                 if (len > 0) {
-                    channelOut->sendRaw(msgId + 1, buf, len);
+                    channelOut->postRaw(msgId + 1, buf, len);
                     didWork = true;
                 } else {
                     break;
@@ -486,7 +486,7 @@ void benchmarkIpcCrossProcess(int iterations) {
     std::cout << "Testing channel connectivity...\n";
     std::cout.flush();
 
-    bool sendOk = toServer->sendRaw(99, smallData.data(), smallData.size());
+    bool sendOk = toServer->postRaw(99, smallData.data(), smallData.size());
     std::cout << "  Send to server: " << (sendOk ? "OK" : "FAILED") << "\n";
     std::cout.flush();
 
@@ -508,7 +508,7 @@ void benchmarkIpcCrossProcess(int iterations) {
     std::cout << "\nWarming up (" << WARMUP_ITERATIONS << " iterations)...\n";
     std::cout.flush();
     for (int i = 0; i < WARMUP_ITERATIONS; ++i) {
-        toServer->sendRaw(1, smallData.data(), smallData.size());
+        toServer->postRaw(1, smallData.data(), smallData.size());
         uint32_t id;
         uint8_t buf[256];
         int spins = 0;
@@ -523,7 +523,7 @@ void benchmarkIpcCrossProcess(int iterations) {
     std::cout << "Running small data test (" << SMALL_DATA_SIZE << " bytes)...\n" << std::flush;
     for (int i = 0; i < iterations; ++i) {
         Timer t;
-        toServer->sendRaw(1, smallData.data(), smallData.size());
+        toServer->postRaw(1, smallData.data(), smallData.size());
 
         uint32_t id;
         uint8_t buf[256];
@@ -545,7 +545,7 @@ void benchmarkIpcCrossProcess(int iterations) {
     times.clear();
     for (int i = 0; i < iterations; ++i) {
         Timer t;
-        toServer->sendRaw(2, mediumData.data(), mediumData.size());
+        toServer->postRaw(2, mediumData.data(), mediumData.size());
 
         uint32_t id;
         uint8_t buf[256];

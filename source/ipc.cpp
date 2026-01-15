@@ -174,7 +174,7 @@ public:
     // Producer Operations
     //-------------------------------------------------------------------------
 
-    bool send(uint32_t msgId, const Value& data) {
+    bool post(uint32_t msgId, const Value& data, MessageDomain domain) {
         if (!isProducer_ || !header_) [[unlikely]] {
             lastError_ = "Not a producer";
             return false;
@@ -182,13 +182,14 @@ public:
 
         // Fast path: null value
         if (data.is_null()) {
-            return sendRaw(msgId, nullptr, 0);
+            return postRaw(msgId, nullptr, 0, domain);
         }
 
         // Check serialized size first (no allocation)
         size_t dataSize = get_serialized_size(data);
         if (dataSize > Message::INLINE_SIZE) [[unlikely]] {
-            lastError_ = "Data too large for inline storage (max 240 bytes)";
+            // TODO: Support large data via SharedMemoryPool
+            lastError_ = "Data too large for inline storage (max 232 bytes)";
             return false;
         }
 
@@ -205,6 +206,10 @@ public:
         Message* msg = header_->messageAt(currentWrite);
         msg->msgId = msgId;
         msg->timestamp = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+        msg->domain = domain;
+        msg->flags = MessageFlags::None;
+        msg->requestId = 0;
+        msg->poolOffset = 0;
 
         // Serialize directly to shared memory - no intermediate buffer
         size_t written = serialize_value_to(data, msg->inlineData, Message::INLINE_SIZE);
@@ -216,7 +221,7 @@ public:
         return true;
     }
 
-    bool sendRaw(uint32_t msgId, const void* data, size_t size) {
+    bool postRaw(uint32_t msgId, const void* data, size_t size, MessageDomain domain) {
         if (!isProducer_ || !header_) [[unlikely]] {
             lastError_ = "Not a producer";
             return false;
@@ -224,7 +229,8 @@ public:
 
         // Check if data fits inline
         if (size > Message::INLINE_SIZE) [[unlikely]] {
-            lastError_ = "Data too large for inline storage (max 240 bytes)";
+            // TODO: Support large data via SharedMemoryPool
+            lastError_ = "Data too large for inline storage (max 232 bytes)";
             return false;
         }
 
@@ -242,10 +248,14 @@ public:
         // Get message slot
         Message* msg = header_->messageAt(currentWrite);
 
-        // Fill message (avoid branches in hot path)
+        // Fill message (initialize all fields)
         msg->msgId = msgId;
         msg->dataSize = static_cast<uint32_t>(size);
         msg->timestamp = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+        msg->domain = domain;
+        msg->flags = MessageFlags::None;
+        msg->requestId = 0;
+        msg->poolOffset = 0;
 
         if (size > 0) [[likely]] {
             std::memcpy(msg->inlineData, data, size);
@@ -258,7 +268,7 @@ public:
         return true;
     }
 
-    bool canSend() const {
+    bool canPost() const {
         if (!header_) [[unlikely]]
             return false;
         // Both can use relaxed - this is just a capacity check, not synchronizing data
@@ -300,8 +310,12 @@ public:
         ReceivedMessage result;
         result.msgId = msg->msgId;
         result.timestamp = msg->timestamp;
+        result.domain = msg->domain;
+        result.flags = msg->flags;
+        result.requestId = msg->requestId;
 
         // Deserialize data from inline storage
+        // TODO: If LargePayload flag is set, read from SharedMemoryPool using poolOffset
         if (msg->dataSize > 0) {
             result.data = deserialize_value(msg->inlineData, msg->dataSize);
         } else {
@@ -427,16 +441,16 @@ std::unique_ptr<Channel> Channel::open(const std::string& name) {
     return channel;
 }
 
-bool Channel::send(uint32_t msgId, const Value& data) {
-    return impl_->send(msgId, data);
+bool Channel::post(uint32_t msgId, const Value& data, MessageDomain domain) {
+    return impl_->post(msgId, data, domain);
 }
 
-bool Channel::sendRaw(uint32_t msgId, const void* data, size_t size) {
-    return impl_->sendRaw(msgId, data, size);
+bool Channel::postRaw(uint32_t msgId, const void* data, size_t size, MessageDomain domain) {
+    return impl_->postRaw(msgId, data, size, domain);
 }
 
-bool Channel::canSend() const {
-    return impl_->canSend();
+bool Channel::canPost() const {
+    return impl_->canPost();
 }
 
 size_t Channel::pendingCount() const {
@@ -527,10 +541,16 @@ public:
         return true;
     }
 
-    bool send(uint32_t msgId, const Value& data) {
+    bool post(uint32_t msgId, const Value& data) {
         if (!outChannel_)
             return false;
-        return outChannel_->send(msgId, data);
+        return outChannel_->post(msgId, data);
+    }
+
+    bool postRaw(uint32_t msgId, const void* data, size_t size) {
+        if (!outChannel_)
+            return false;
+        return outChannel_->postRaw(msgId, data, size);
     }
 
     std::optional<Channel::ReceivedMessage> tryReceive() {
@@ -539,14 +559,20 @@ public:
         return inChannel_->tryReceive();
     }
 
+    int tryReceiveRaw(uint32_t& outMsgId, void* outData, size_t maxSize) {
+        if (!inChannel_)
+            return 0;
+        return inChannel_->tryReceiveRaw(outMsgId, outData, maxSize);
+    }
+
     std::optional<Channel::ReceivedMessage> receive(std::chrono::milliseconds timeout) {
         if (!inChannel_)
             return std::nullopt;
         return inChannel_->receive(timeout);
     }
 
-    std::optional<Value> sendAndWaitReply(uint32_t msgId, const Value& data, std::chrono::milliseconds timeout) {
-        if (!send(msgId, data)) {
+    std::optional<Value> send(uint32_t msgId, const Value& data, std::chrono::milliseconds timeout) {
+        if (!post(msgId, data)) {
             return std::nullopt;
         }
 
@@ -595,21 +621,29 @@ std::unique_ptr<ChannelPair> ChannelPair::connect(const std::string& name) {
     return pair;
 }
 
-bool ChannelPair::send(uint32_t msgId, const Value& data) {
-    return impl_->send(msgId, data);
+bool ChannelPair::post(uint32_t msgId, const Value& data) {
+    return impl_->post(msgId, data);
+}
+
+bool ChannelPair::postRaw(uint32_t msgId, const void* data, size_t size) {
+    return impl_->postRaw(msgId, data, size);
 }
 
 std::optional<Channel::ReceivedMessage> ChannelPair::tryReceive() {
     return impl_->tryReceive();
 }
 
+int ChannelPair::tryReceiveRaw(uint32_t& outMsgId, void* outData, size_t maxSize) {
+    return impl_->tryReceiveRaw(outMsgId, outData, maxSize);
+}
+
 std::optional<Channel::ReceivedMessage> ChannelPair::receive(std::chrono::milliseconds timeout) {
     return impl_->receive(timeout);
 }
 
-std::optional<Value> ChannelPair::sendAndWaitReply(uint32_t msgId, const Value& data,
-                                                   std::chrono::milliseconds timeout) {
-    return impl_->sendAndWaitReply(msgId, data, timeout);
+std::optional<Value> ChannelPair::send(uint32_t msgId, const Value& data,
+                                       std::chrono::milliseconds timeout) {
+    return impl_->send(msgId, data, timeout);
 }
 
 const std::string& ChannelPair::name() const {
