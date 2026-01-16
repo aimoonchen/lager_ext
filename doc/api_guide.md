@@ -6,12 +6,12 @@ This document provides a comprehensive overview of the public APIs in the `lager
 
 - [lager\_ext API Guide](#lager_ext-api-guide)
   - [Table of Contents](#table-of-contents)
-  - [1. Value Types](#1-value-types)
+  - [1. ImmerValue Types](#1-value-types)
     - [1.1 Type Definition](#11-type-definition)
     - [1.2 Supported Data Types](#12-supported-data-types)
     - [1.3 Construction](#13-construction)
     - [1.4 Type Checking](#14-type-checking)
-    - [1.5 Value Access](#15-value-access)
+    - [1.5 ImmerValue Access](#15-value-access)
     - [1.6 Modification (Immutable Operations)](#16-modification-immutable-operations)
     - [1.7 Comparison Operators (C++20)](#17-comparison-operators-c20)
   - [2. Builder API](#2-builder-api)
@@ -77,7 +77,7 @@ This document provides a comprehensive overview of the public APIs in the `lager
       - [8.7.4 Reading Data (Consumer)](#874-reading-data-consumer)
       - [8.7.5 Ownership Control](#875-ownership-control)
       - [8.7.6 Complete Example](#876-complete-example)
-      - [8.7.7 Value Transfer via SPSC](#877-value-transfer-via-spsc)
+      - [8.7.7 ImmerValue Transfer via SPSC](#877-value-transfer-via-spsc)
       - [8.7.8 Performance Characteristics](#878-performance-characteristics)
       - [8.7.9 When to Use](#879-when-to-use)
     - [8.8 WindowsMessageBridge (User-Mode Windows Message Forwarding)](#88-windowsmessagebridge-user-mode-windows-message-forwarding)
@@ -96,7 +96,7 @@ This document provides a comprehensive overview of the public APIs in the `lager
     - [9.3 Type Checking \& Access](#93-type-checking--access)
     - [9.4 Map \& Vector Operations](#94-map--vector-operations)
     - [9.5 Path-based Access](#95-path-based-access)
-    - [9.6 MutableValue ↔ Value Conversion](#96-mutablevalue--value-conversion)
+    - [9.6 MutableValue �?ImmerValue Conversion](#96-mutablevalue--value-conversion)
     - [9.7 FastSharedValue (High-Performance Shared Memory)](#97-fastsharedvalue-high-performance-shared-memory)
     - [9.8 Performance Comparison](#98-performance-comparison)
   - [10. EventBus (Pub/Sub Messaging)](#10-eventbus-pubsub-messaging)
@@ -128,27 +128,27 @@ This document provides a comprehensive overview of the public APIs in the `lager
 
 ---
 
-## 1. Value Types
+## 1. ImmerValue Types
 
 ### 1.1 Type Definition
 
 ```cpp
 #include <lager_ext/value.h>
 
-// Value is a concrete type (not a template)
+// ImmerValue is a concrete type (not a template)
 // Uses immer::default_memory_policy, which is optimized for single-threaded use
 // via IMMER_NO_THREAD_SAFETY=1 in lager_ext_config.h
 using namespace lager_ext;
-Value val = Value::map({{"name", "Alice"}});
+ImmerValue val = ImmerValue::map({{"name", "Alice"}});
 ```
 
 **Memory Policy:**
 
 | Type | Memory Policy | Thread Safety | Notes |
 |------|---------------|---------------|-------|
-| `Value` | `immer::default_memory_policy` | Single-threaded only | Optimized via `IMMER_NO_THREAD_SAFETY=1` |
+| `ImmerValue` | `immer::default_memory_policy` | Single-threaded only | Optimized via `IMMER_NO_THREAD_SAFETY=1` |
 
-> **Note:** The library uses a single concrete `Value` type (not a template). Thread safety is disabled at compile time for maximum performance. If you need thread-safe values, you must manage synchronization externally.
+> **Note:** The library uses a single concrete `ImmerValue` type (not a template). Thread safety is disabled at compile time for maximum performance. If you need thread-safe values, you must manage synchronization externally.
 
 ### 1.2 Supported Data Types
 
@@ -156,18 +156,18 @@ Value val = Value::map({{"name", "Alice"}});
 
 | C++ Type | Description | Example |
 |----------|-------------|---------|
-| `int8_t` | 8-bit signed integer | `Value(int8_t{42})` |
-| `int16_t` | 16-bit signed integer | `Value(int16_t{1000})` |
-| `int32_t` / `int` | 32-bit signed integer | `Value(42)` |
-| `int64_t` | 64-bit signed integer | `Value(int64_t{9999999999})` |
-| `uint8_t` | 8-bit unsigned integer | `Value(uint8_t{255})` |
-| `uint16_t` | 16-bit unsigned integer | `Value(uint16_t{65535})` |
-| `uint32_t` | 32-bit unsigned integer | `Value(100u)` |
-| `uint64_t` | 64-bit unsigned integer | `Value(uint64_t{0})` |
-| `float` | 32-bit floating point | `Value(3.14f)` |
-| `double` | 64-bit floating point | `Value(3.14159265)` |
-| `bool` | Boolean | `Value(true)` |
-| `std::string` | String | `Value("hello")` |
+| `int8_t` | 8-bit signed integer | `ImmerValue(int8_t{42})` |
+| `int16_t` | 16-bit signed integer | `ImmerValue(int16_t{1000})` |
+| `int32_t` / `int` | 32-bit signed integer | `ImmerValue(42)` |
+| `int64_t` | 64-bit signed integer | `ImmerValue(int64_t{9999999999})` |
+| `uint8_t` | 8-bit unsigned integer | `ImmerValue(uint8_t{255})` |
+| `uint16_t` | 16-bit unsigned integer | `ImmerValue(uint16_t{65535})` |
+| `uint32_t` | 32-bit unsigned integer | `ImmerValue(100u)` |
+| `uint64_t` | 64-bit unsigned integer | `ImmerValue(uint64_t{0})` |
+| `float` | 32-bit floating point | `ImmerValue(3.14f)` |
+| `double` | 64-bit floating point | `ImmerValue(3.14159265)` |
+| `bool` | Boolean | `ImmerValue(true)` |
+| `std::string` | String | `ImmerValue("hello")` |
 
 **Math Types (for graphics/game development):**
 
@@ -180,7 +180,7 @@ Value val = Value::map({{"name", "Alice"}});
 | `Mat4x3` | 12 floats (4x3) | 48 bytes | boxed |
 | `Mat4` | 16 floats (4x4) | 64 bytes | boxed |
 
-> **Note:** Larger matrices are boxed (heap-allocated) to keep the `Value` variant size compact (~48 bytes).
+> **Note:** Larger matrices are boxed (heap-allocated) to keep the `ImmerValue` variant size compact (~48 bytes).
 
 **Container Types (Immutable):**
 
@@ -198,36 +198,36 @@ Value val = Value::map({{"name", "Alice"}});
 using namespace lager_ext;
 
 // Null
-Value null_val;                         // Default is null
-Value null_val2 = Value{std::monostate{}};
+ImmerValue null_val;                         // Default is null
+ImmerValue null_val2 = ImmerValue{std::monostate{}};
 
 // Primitives
-Value int_val(42);
-Value double_val(3.14);
-Value bool_val(true);
-Value str_val("hello");
+ImmerValue int_val(42);
+ImmerValue double_val(3.14);
+ImmerValue bool_val(true);
+ImmerValue str_val("hello");
 
 // Math types
-Value vec2_val = Value::vec2(1.0f, 2.0f);
-Value vec3_val = Value::vec3(1.0f, 2.0f, 3.0f);
-Value vec4_val = Value::vec4(1.0f, 2.0f, 3.0f, 4.0f);
-Value mat3_val = Value::identity_mat3();
+ImmerValue vec2_val = ImmerValue::vec2(1.0f, 2.0f);
+ImmerValue vec3_val = ImmerValue::vec3(1.0f, 2.0f, 3.0f);
+ImmerValue vec4_val = ImmerValue::vec4(1.0f, 2.0f, 3.0f, 4.0f);
+ImmerValue mat3_val = ImmerValue::identity_mat3();
 
 // Using raw arrays
 float data[3] = {1.0f, 2.0f, 3.0f};
-Value vec3_from_ptr = Value::vec3(data);
+ImmerValue vec3_from_ptr = ImmerValue::vec3(data);
 
 // Factory functions for containers
-Value my_map = Value::map({
+ImmerValue my_map = ImmerValue::map({
     {"name", "Alice"},
     {"age", 30}
 });
 
-Value my_vector = Value::vector({1, 2, 3, "four", 5.0});
+ImmerValue my_vector = ImmerValue::vector({1, 2, 3, "four", 5.0});
 
-Value my_table = Value::table({
-    {"id1", Value::map({{"name", "Item1"}})},
-    {"id2", Value::map({{"name", "Item2"}})}
+ImmerValue my_table = ImmerValue::table({
+    {"id1", ImmerValue::map({{"name", "Item1"}})},
+    {"id2", ImmerValue::map({{"name", "Item2"}})}
 });
 ```
 
@@ -253,7 +253,7 @@ val.is_math_type();  // any math type
 std::size_t idx = val.type_index();
 ```
 
-### 1.5 Value Access
+### 1.5 ImmerValue Access
 
 ```cpp
 // Generic template access (recommended for most types)
@@ -278,8 +278,8 @@ Mat4x3 m4x3 = val.as_mat4x3();          // Unboxing from immer::box
 auto ptr = val.get_if<std::string>();   // Returns const T* or nullptr
 
 // Element access
-Value name = obj.at("name");           // Map key access, returns null if not found
-Value first = vec.at(0);               // Vector index access
+ImmerValue name = obj.at("name");           // Map key access, returns null if not found
+ImmerValue first = vec.at(0);               // Vector index access
 
 // Existence checks
 bool has_key = obj.contains("name");
@@ -292,25 +292,25 @@ std::size_t sz = val.size();           // Container size, 0 for non-containers
 
 ### 1.6 Modification (Immutable Operations)
 
-All modifications return a **new** `Value` (immutable semantics):
+All modifications return a **new** `ImmerValue` (immutable semantics):
 
 ```cpp
 // Set key in map (returns new map)
-Value updated_obj = obj.set("email", "alice@example.com");
+ImmerValue updated_obj = obj.set("email", "alice@example.com");
 
 // Set index in vector (returns new vector)
-Value updated_vec = vec.set(0, "new first");
+ImmerValue updated_vec = vec.set(0, "new first");
 
 // Vivify: auto-creates intermediate structures
-Value new_obj = null_val.set_vivify("key", 42);      // {"key": 42}
-Value new_vec = null_val.set_vivify(0, "first");     // ["first"]
+ImmerValue new_obj = null_val.set_vivify("key", 42);      // {"key": 42}
+ImmerValue new_vec = null_val.set_vivify(0, "first");     // ["first"]
 ```
 
 ### 1.7 Comparison Operators (C++20)
 
 ```cpp
-Value a(42);
-Value b(42);
+ImmerValue a(42);
+ImmerValue b(42);
 
 a == b;   // true
 a != b;   // false
@@ -335,10 +335,10 @@ using namespace lager_ext;
 
 | Builder | Output Type |
 |---------|-------------|
-| `MapBuilder` | `Value` containing `ValueMap` |
-| `VectorBuilder` | `Value` containing `ValueVector` |
-| `ArrayBuilder` | `Value` containing `ValueArray` |
-| `TableBuilder` | `Value` containing `ValueTable` |
+| `MapBuilder` | `ImmerValue` containing `ValueMap` |
+| `VectorBuilder` | `ImmerValue` containing `ValueVector` |
+| `ArrayBuilder` | `ImmerValue` containing `ValueArray` |
+| `TableBuilder` | `ImmerValue` containing `ValueTable` |
 
 > **Note:** All builders are concrete classes (not templates). They use immer's transient API internally for efficient O(n) construction.
 
@@ -346,14 +346,14 @@ using namespace lager_ext;
 
 ```cpp
 // Basic usage
-Value config = MapBuilder()
+ImmerValue config = MapBuilder()
     .set("width", 1920)
     .set("height", 1080)
     .set("fullscreen", true)
     .finish();
 
 // From existing map (incremental modification)
-Value updated = MapBuilder(existing_map)
+ImmerValue updated = MapBuilder(existing_map)
     .set("new_key", "new_value")
     .finish();
 
@@ -367,17 +367,17 @@ if (!builder.contains("name")) {
 }
 
 // Get a value
-Value current = builder.get("counter");
+ImmerValue current = builder.get("counter");
 
 // Update a value using function
-builder.update_at("counter", [](const Value& v) {
-    return Value{v.as<int>(0) + 1};
+builder.update_at("counter", [](const ImmerValue& v) {
+    return ImmerValue{v.as<int>(0) + 1};
 });
 
 // Upsert (update or insert)
-builder.upsert("items", [](const Value& current) {
+builder.upsert("items", [](const ImmerValue& current) {
     if (current.is_null()) {
-        return Value::vector({});
+        return ImmerValue::vector({});
     }
     return current;
 });
@@ -386,29 +386,29 @@ builder.upsert("items", [](const Value& current) {
 builder.set_at_path_vivify({"users"sv, size_t(0), "name"sv}, "Alice");
 
 // Update at nested path with auto-vivification
-builder.update_at_path_vivify({"users"sv, size_t(0), "age"sv}, [](const Value& v) {
-    return Value{v.as<int>(0) + 1};
+builder.update_at_path_vivify({"users"sv, size_t(0), "age"sv}, [](const ImmerValue& v) {
+    return ImmerValue{v.as<int>(0) + 1};
 });
 
 // Strict mode (fails silently if path doesn't exist)
 builder.set_at_path({"existing"sv, "path"sv}, "value");
-builder.update_at_path({"existing"sv, "path"sv}, [](const Value& v) { return v; });
+builder.update_at_path({"existing"sv, "path"sv}, [](const ImmerValue& v) { return v; });
 
-Value result = builder.finish();
+ImmerValue result = builder.finish();
 ```
 
 ### 2.3 VectorBuilder
 
 ```cpp
 // Build a vector
-Value items = VectorBuilder()
+ImmerValue items = VectorBuilder()
     .push_back("item1")
     .push_back("item2")
     .push_back(42)
     .finish();
 
 // Modify existing vector
-Value updated = VectorBuilder(existing_vector)
+ImmerValue updated = VectorBuilder(existing_vector)
     .push_back("new_item")
     .set(0, "modified_first")
     .finish();
@@ -419,11 +419,11 @@ builder.push_back(1).push_back(2).push_back(3);
 std::size_t sz = builder.size();  // 3
 
 // Get value at index
-Value second = builder.get(1);
+ImmerValue second = builder.get(1);
 
 // Update at index
-builder.update_at(0, [](const Value& v) {
-    return Value{v.as<int>(0) * 2};
+builder.update_at(0, [](const ImmerValue& v) {
+    return ImmerValue{v.as<int>(0) * 2};
 });
 ```
 
@@ -431,20 +431,20 @@ builder.update_at(0, [](const Value& v) {
 
 ```cpp
 // ArrayBuilder (similar to VectorBuilder)
-Value arr = ArrayBuilder()
+ImmerValue arr = ArrayBuilder()
     .push_back(1)
     .push_back(2)
     .finish();
 
 // TableBuilder (for ID-indexed collections)
-Value entities = TableBuilder()
-    .insert("player1", Value::map({{"hp", 100}, {"x", 0.0f}}))
-    .insert("enemy1", Value::map({{"hp", 50}, {"x", 10.0f}}))
+ImmerValue entities = TableBuilder()
+    .insert("player1", ImmerValue::map({{"hp", 100}, {"x", 0.0f}}))
+    .insert("enemy1", ImmerValue::map({{"hp", 50}, {"x", 10.0f}}))
     .finish();
 
 // Update existing entity
 TableBuilder builder(entities);
-builder.update("player1", [](const Value& player) {
+builder.update("player1", [](const ImmerValue& player) {
     return player.set("hp", player.at("hp").as<int>(0) - 10);
 });
 ```
@@ -459,16 +459,16 @@ builder.update("player1", [](const Value& player) {
 #include <lager_ext/serialization.h>
 using namespace lager_ext;
 
-Value data = MapBuilder()
+ImmerValue data = MapBuilder()
     .set("name", "test")
-    .set("values", Value::vector({1, 2, 3}))
+    .set("values", ImmerValue::vector({1, 2, 3}))
     .finish();
 
 // Serialize to buffer
 ByteBuffer buffer = serialize(data);
 
 // Deserialize from buffer
-Value restored = deserialize(buffer);
+ImmerValue restored = deserialize(buffer);
 
 // Get serialized size without serializing
 std::size_t size = serialized_size(data);
@@ -478,7 +478,7 @@ std::vector<uint8_t> my_buffer(size);
 std::size_t written = serialize_to(data, my_buffer.data(), my_buffer.size());
 
 // Deserialize from raw pointer (useful for memory-mapped files)
-Value from_raw = deserialize(my_buffer.data(), my_buffer.size());
+ImmerValue from_raw = deserialize(my_buffer.data(), my_buffer.size());
 ```
 
 **Binary Format Type Tags:**
@@ -509,7 +509,7 @@ Value from_raw = deserialize(my_buffer.data(), my_buffer.size());
 ```cpp
 #include <lager_ext/serialization.h>
 
-Value data = /* ... */;
+ImmerValue data = /* ... */;
 
 // Convert to JSON (pretty-printed)
 std::string json = to_json(data, false);
@@ -519,41 +519,31 @@ std::string compact_json = to_json(data, true);
 
 // Parse JSON
 std::string error;
-Value parsed = from_json(json, &error);
+ImmerValue parsed = from_json(json, &error);
 if (!error.empty()) {
     std::cerr << "Parse error: " << error << std::endl;
 }
 
 // Parse without error handling
-Value parsed2 = from_json(json);
+ImmerValue parsed2 = from_json(json);
 ```
 
 ---
 
 ## 4. Lens-Based Path System
 
-The path system provides **lens-based access** to deeply nested values in `Value` trees. Built on top of `lager::lenses::getset`, it bridges compile-time type safety with runtime flexibility.
+The path system provides **lens-based access** to deeply nested values in `ImmerValue` trees. Built on top of `lager::lenses::getset`, it bridges compile-time type safety with runtime flexibility.
 
 ### 4.1 Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                       User API Layer                            │
-│  path::get/set/over    PathLens    StaticPath<"/a/b">          │
-├─────────────────────────────────────────────────────────────────┤
-│                      Lens Layer                                 │
-│  key_lens(key)    index_lens(idx)    static_path_lens(...)     │
-├─────────────────────────────────────────────────────────────────┤
-│                    lager Foundation                             │
-│  lager::lenses::getset    lager::view/set/over    zug::comp    │
-└─────────────────────────────────────────────────────────────────┘
-```
+┌─────────────────────────────────────────────────────────────────�?�?                      User API Layer                            �?�? path::get/set/over    PathLens    StaticPath<"/a/b">          �?├─────────────────────────────────────────────────────────────────�?�?                     Lens Layer                                 �?�? key_lens(key)    index_lens(idx)    static_path_lens(...)     �?├─────────────────────────────────────────────────────────────────�?�?                   lager Foundation                             �?�? lager::lenses::getset    lager::view/set/over    zug::comp    �?└─────────────────────────────────────────────────────────────────�?```
 
 **Key Design Decisions:**
 
 | Aspect | Our Lens | `lager::lenses::at` |
 |--------|----------|---------------------|
-| Return type | `Value` (null if missing) | `optional<Value>` |
+| Return type | `ImmerValue` (null if missing) | `optional<ImmerValue>` |
 | Multi-level path | Native support | Manual nesting |
 | String paths | `Path{"/a/b"}` constructor | Not supported |
 | Compile-time paths | `StaticPath<"/a/b">` | Not supported |
@@ -610,12 +600,12 @@ using namespace lager_ext;
 
 // key_lens: access map key
 auto name_lens = key_lens("name");
-Value name = lager::view(name_lens, user);           // Get
-Value updated = lager::set(name_lens, user, "Bob");  // Set
+ImmerValue name = lager::view(name_lens, user);           // Get
+ImmerValue updated = lager::set(name_lens, user, "Bob");  // Set
 
 // index_lens: access vector index
 auto first_lens = index_lens(0);
-Value first = lager::view(first_lens, items);
+ImmerValue first = lager::view(first_lens, items);
 
 // Composition with zug::comp
 auto deep_lens = zug::comp(
@@ -623,7 +613,7 @@ auto deep_lens = zug::comp(
     index_lens(0),
     key_lens("name")
 );
-Value name = lager::view(deep_lens, root);
+ImmerValue name = lager::view(deep_lens, root);
 ```
 
 ### 4.4 PathLens (Runtime Paths)
@@ -651,17 +641,17 @@ PathLens from_root = root / "config" / "theme";
 // ========== Operations ==========
 
 // Direct methods (recommended)
-Value name = lens1.get(state);
-Value updated = lens1.set(state, Value{"Alice"});
-Value incremented = lens1.over(state, [](Value v) {
-    return Value{v.as<int>(0) + 1};
+ImmerValue name = lens1.get(state);
+ImmerValue updated = lens1.set(state, ImmerValue{"Alice"});
+ImmerValue incremented = lens1.over(state, [](ImmerValue v) {
+    return ImmerValue{v.as<int>(0) + 1};
 });
 
 // Lager integration (also works!)
-Value name2 = lager::view(lens1, state);
-Value updated2 = lager::set(lens1, state, Value{"Alice"});
-Value inc2 = lager::over(lens1, state, [](Value v) {
-    return Value{v.as<int>(0) + 1};
+ImmerValue name2 = lager::view(lens1, state);
+ImmerValue updated2 = lager::set(lens1, state, ImmerValue{"Alice"});
+ImmerValue inc2 = lager::over(lens1, state, [](ImmerValue v) {
+    return ImmerValue{v.as<int>(0) + 1};
 });
 
 // ========== Inspection ==========
@@ -693,8 +683,8 @@ using UserNamePath2 = SegmentPath<K<"users">, I<0>, K<"name">>;
 
 // ========== Use Directly ==========
 
-Value name = UserNamePath::get(state);
-Value updated = UserNamePath::set(state, Value{"Alice"});
+ImmerValue name = UserNamePath::get(state);
+ImmerValue updated = UserNamePath::set(state, ImmerValue{"Alice"});
 
 // Compile-time depth
 constexpr auto depth = UserNamePath::depth;  // 3
@@ -718,9 +708,9 @@ namespace schema {
 }
 
 // Type-safe access
-Value title = schema::Title::get(state);
-Value user0_name = schema::UserName<0>::get(state);
-Value user5_age = schema::UserAge<5>::get(state);
+ImmerValue title = schema::Title::get(state);
+ImmerValue user0_name = schema::UserName<0>::get(state);
+ImmerValue user5_age = schema::UserAge<5>::get(state);
 ```
 
 **Path Composition:**
@@ -760,22 +750,22 @@ auto lens3 = path::lens("users", 0, "name");
 // ========== Direct Access ==========
 
 // Get
-Value name = path::get(state, "/users/0/name");
-Value name = path::get(state, "users", 0, "name");
+ImmerValue name = path::get(state, "/users/0/name");
+ImmerValue name = path::get(state, "users", 0, "name");
 
 // Set
-Value updated = path::set(state, "/users/0/name", Value{"Alice"});
+ImmerValue updated = path::set(state, "/users/0/name", ImmerValue{"Alice"});
 
 // Over (transform)
-Value inc = path::over(state, "/counter", [](const Value& v) {
-    return Value{v.as<int>(0) + 1};
+ImmerValue inc = path::over(state, "/counter", [](const ImmerValue& v) {
+    return ImmerValue{v.as<int>(0) + 1};
 });
 
 // ========== Builder Style ==========
 
 auto p = path::builder() / "users" / 0 / "name";
-Value name = p.get(state);
-Value updated = p.set(state, Value{"Alice"});
+ImmerValue name = p.get(state);
+ImmerValue updated = p.set(state, ImmerValue{"Alice"});
 
 // ========== Safe Access ==========
 
@@ -800,28 +790,28 @@ auto stats = path::cache_stats();  // hits, misses, hit_rate
 
 ### 4.7 ZoomedValue (Focused View)
 
-A lightweight wrapper for navigating within a `Value` tree:
+A lightweight wrapper for navigating within a `ImmerValue` tree:
 
 ```cpp
 #include <lager_ext/lager_lens.h>
 using namespace lager_ext;
 
-Value state = /* ... */;
+ImmerValue state = /* ... */;
 
 // Create zoomed view
 ZoomedValue users = zoom(state) / "users";
 ZoomedValue first_user = users / 0;
 
 // Read values
-Value name = (first_user / "name").get();
-Value age = (first_user / "age").get();
+ImmerValue name = (first_user / "name").get();
+ImmerValue age = (first_user / "age").get();
 
 // Write values (returns new root)
-Value new_state = (first_user / "name").set(Value{"Alice"});
+ImmerValue new_state = (first_user / "name").set(ImmerValue{"Alice"});
 
 // Continue working with updated state
 ZoomedValue updated_user = first_user.with_root(new_state);
-Value new_name = (updated_user / "name").get();  // "Alice"
+ImmerValue new_name = (updated_user / "name").get();  // "Alice"
 
 // Inspection
 first_user.depth();    // 2
@@ -837,7 +827,7 @@ Monitor specific paths for changes between state snapshots. Optimized with **tri
 > **Note:** `PathWatcher` is a standalone module in `<lager_ext/path_watcher.h>`. It is **independent of lager's cursor.watch()** system and does not require a lager store. This makes it suitable for:
 > - Runtime-determined paths (e.g., from configuration or user input)
 > - Cross-process state synchronization (`SharedState`)
-> - Comparing arbitrary `Value` trees without a lager store
+> - Comparing arbitrary `ImmerValue` trees without a lager store
 
 **Performance Optimizations:**
 1. **Fast path equality**: Skips check entirely if states are identical
@@ -851,21 +841,21 @@ using namespace lager_ext;
 PathWatcher watcher;
 
 // Register paths to watch
-watcher.watch("/users/0/name", [](const Value& old_v, const Value& new_v) {
+watcher.watch("/users/0/name", [](const ImmerValue& old_v, const ImmerValue& new_v) {
     std::cout << "Name: " << old_v.as_string() << " -> " << new_v.as_string() << "\n";
 });
 
-watcher.watch("/users/0/age", [](const Value& old_v, const Value& new_v) {
+watcher.watch("/users/0/age", [](const ImmerValue& old_v, const ImmerValue& new_v) {
     std::cout << "Age changed\n";
 });
 
-watcher.watch("/config/theme", [](const Value& old_v, const Value& new_v) {
+watcher.watch("/config/theme", [](const ImmerValue& old_v, const ImmerValue& new_v) {
     update_ui_theme(new_v.as_string());
 });
 
 // Check for changes (call after state update)
-Value old_state = /* previous */;
-Value new_state = /* current */;
+ImmerValue old_state = /* previous */;
+ImmerValue new_state = /* current */;
 
 std::size_t triggered = watcher.check(old_state, new_state);
 std::cout << "Triggered " << triggered << " callbacks\n";
@@ -973,18 +963,18 @@ std::string round_trip = escaped.to_string_path();
 
 > **When to use each constructor:**
 > ```cpp
-> // ✅ String literal - zero-copy (uses const char[N] template)
+> // �?String literal - zero-copy (uses const char[N] template)
 > Path p1{"/config/theme"};
 > 
-> // ✅ Dynamic string you no longer need - zero-copy (takes ownership)
+> // �?Dynamic string you no longer need - zero-copy (takes ownership)
 > std::string dynamic = build_path();
 > Path p2{std::move(dynamic)};  // dynamic is now empty
 > 
-> // ✅ String view from external source - copies (safe)
+> // �?String view from external source - copies (safe)
 > std::string_view external = get_path();
 > Path p3{external};  // Copies because external may be temporary
 > 
-> // ✅ Dynamic path building - use push_back()
+> // �?Dynamic path building - use push_back()
 > Path p4;
 > p4.push_back("users");
 > p4.push_back(get_user_index());
@@ -1008,19 +998,19 @@ using namespace std::string_view_literals;
 
 // ========== Zero-Allocation Core Operations ==========
 
-// Get value at path (returns null Value if path doesn't exist)
+// Get value at path (returns null ImmerValue if path doesn't exist)
 // Uses string_view literals for zero heap allocation
-Value val = get_at_path(state, {{"users"sv, size_t(0), "name"sv}});
+ImmerValue val = get_at_path(state, {{"users"sv, size_t(0), "name"sv}});
 
 // Set value at path (strict mode - fails silently if path doesn't exist)
-Value updated = set_at_path(state, {{"users"sv, size_t(0), "name"sv}}, Value{"Alice"});
+ImmerValue updated = set_at_path(state, {{"users"sv, size_t(0), "name"sv}}, ImmerValue{"Alice"});
 
 // Set with auto-vivification (creates intermediate maps/vectors as needed)
-Value new_state = set_at_path_vivify(Value{}, {{"a"sv, "b"sv, "c"sv}}, Value{123});
+ImmerValue new_state = set_at_path_vivify(ImmerValue{}, {{"a"sv, "b"sv, "c"sv}}, ImmerValue{123});
 // Result: {"a": {"b": {"c": 123}}}
 
 // Erase at path (for maps: removes key, for vectors: sets to null)
-Value without_key = erase_at_path(state, {{"users"sv, size_t(0), "email"sv}});
+ImmerValue without_key = erase_at_path(state, {{"users"sv, size_t(0), "email"sv}});
 
 // ========== Path Validation ==========
 
@@ -1037,7 +1027,7 @@ std::size_t depth = valid_path_depth(state, {{"users"sv, size_t(99), "name"sv}})
 Path dynamic_path;
 dynamic_path.push_back(user_input_key);  // Copied into internal buffer
 dynamic_path.push_back(0);
-Value val = get_at_path(state, dynamic_path);  // Implicit PathView conversion
+ImmerValue val = get_at_path(state, dynamic_path);  // Implicit PathView conversion
 ```
 
 **Core API Reference:**
@@ -1068,25 +1058,25 @@ Value val = get_at_path(state, dynamic_path);  // Implicit PathView conversion
 **Best Practices:**
 
 ```cpp
-// ✅ Good: Compile-time path for fixed access
+// �?Good: Compile-time path for fixed access
 using NamePath = StaticPath<"/users/0/name">;
-Value name = NamePath::get(state);
+ImmerValue name = NamePath::get(state);
 
-// ✅ Good: Reuse PathLens for repeated access
+// �?Good: Reuse PathLens for repeated access
 PathLens user_lens = root / "users" / selected_id;
-Value name = (user_lens / "name").get(state);
-Value age = (user_lens / "age").get(state);
+ImmerValue name = (user_lens / "name").get(state);
+ImmerValue age = (user_lens / "age").get(state);
 
-// ✅ Good: Direct access for one-off use
-Value theme = path::get(state, "/config/theme");
+// �?Good: Direct access for one-off use
+ImmerValue theme = path::get(state, "/config/theme");
 
-// ❌ Avoid: Recreating lens in tight loop
+// �?Avoid: Recreating lens in tight loop
 for (int i = 0; i < 1000; ++i) {
     auto lens = PathLens() / "items" / i / "value";  // Recreated each iteration!
     process(lens.get(state));
 }
 
-// ✅ Better: Build path once, reuse
+// �?Better: Build path once, reuse
 PathLens items = root / "items";
 for (int i = 0; i < 1000; ++i) {
     auto lens = items / i / "value";
@@ -1115,13 +1105,13 @@ struct DiffEntry {
     ValueBox new_value;  // New value box (zero-copy reference)
     
     // Convenience accessors
-    const Value& get_old() const;  // Dereference old_value box
-    const Value& get_new() const;  // Dereference new_value box
-    const Value& value() const;    // Returns appropriate value based on type
+    const ImmerValue& get_old() const;  // Dereference old_value box
+    const ImmerValue& get_new() const;  // Dereference new_value box
+    const ImmerValue& value() const;    // Returns appropriate value based on type
 };
 ```
 
-> **Performance Note:** `DiffEntry` uses `ValueBox` (alias for `immer::box<Value>`) internally for zero-copy storage. When you access values via `get_old()` or `get_new()`, you get a reference to the original data without any copying.
+> **Performance Note:** `DiffEntry` uses `ValueBox` (alias for `immer::box<ImmerValue>`) internally for zero-copy storage. When you access values via `get_old()` or `get_new()`, you get a reference to the original data without any copying.
 
 ### 5.2 DiffEntryCollector
 
@@ -1131,8 +1121,8 @@ struct DiffEntry {
 #include <lager_ext/value_diff.h>
 using namespace lager_ext;
 
-Value old_val = /* ... */;
-Value new_val = /* ... */;
+ImmerValue old_val = /* ... */;
+ImmerValue new_val = /* ... */;
 
 // Create a collector and compute differences
 DiffEntryCollector collector;
@@ -1172,7 +1162,7 @@ collector.diff(old_val, new_val, false);
 
 ### 5.3 DiffValueCollector (Tree-structured Result)
 
-`DiffValueCollector` organizes diff results as a `Value` tree, mirroring the original data structure. This is more efficient than `DiffEntryCollector` when you need to process changes by path, as it builds the tree structure during traversal (single pass).
+`DiffValueCollector` organizes diff results as a `ImmerValue` tree, mirroring the original data structure. This is more efficient than `DiffEntryCollector` when you need to process changes by path, as it builds the tree structure during traversal (single pass).
 
 **Structure:**
 - Intermediate nodes mirror the original structure (maps/vectors)
@@ -1182,27 +1172,27 @@ collector.diff(old_val, new_val, false);
 #include <lager_ext/value_diff.h>
 using namespace lager_ext;
 
-Value old_val = Value::map({
-    {"user", Value::map({
+ImmerValue old_val = ImmerValue::map({
+    {"user", ImmerValue::map({
         {"name", "Alice"},
         {"age", 25}
     })}
 });
 
-Value new_val = Value::map({
-    {"user", Value::map({
+ImmerValue new_val = ImmerValue::map({
+    {"user", ImmerValue::map({
         {"name", "Bob"},      // changed
         {"age", 25},
         {"email", "bob@example.com"}  // added
     })}
 });
 
-// Compute diff as a Value tree
+// Compute diff as a ImmerValue tree
 DiffValueCollector collector;
 collector.diff(old_val, new_val);
 
-// Get the result as a Value tree
-const Value& tree = collector.get();
+// Get the result as a ImmerValue tree
+const ImmerValue& tree = collector.get();
 
 // Result structure:
 // {
@@ -1222,17 +1212,17 @@ const Value& tree = collector.get();
 // Print the diff tree
 collector.print();
 
-// Traverse the result like any Value
-Value user_diffs = tree.at("user");
-Value name_diff = user_diffs.at("name");
+// Traverse the result like any ImmerValue
+ImmerValue user_diffs = tree.at("user");
+ImmerValue name_diff = user_diffs.at("name");
 
 // Check if a node is a diff leaf, then get its type
 if (DiffValueCollector::is_diff_node(name_diff)) {
     DiffEntry::Type type = DiffValueCollector::get_diff_type(name_diff);
     
     if (type == DiffEntry::Type::Change) {
-        Value old_v = DiffValueCollector::get_old_value(name_diff);   // "Alice"
-        Value new_v = DiffValueCollector::get_new_value(name_diff);   // "Bob"
+        ImmerValue old_v = DiffValueCollector::get_old_value(name_diff);   // "Alice"
+        ImmerValue new_v = DiffValueCollector::get_new_value(name_diff);   // "Bob"
         
         std::cout << "Name changed from " << old_v.as_string() 
                   << " to " << new_v.as_string() << std::endl;
@@ -1240,12 +1230,12 @@ if (DiffValueCollector::is_diff_node(name_diff)) {
 }
 
 // Convenience function for one-liner usage
-Value diff_tree = diff_as_value(old_val, new_val);
+ImmerValue diff_tree = diff_as_value(old_val, new_val);
 ```
 
 **Special Keys in Diff Nodes:**
 
-| Key | Description | Value Type |
+| Key | Description | ImmerValue Type |
 |-----|-------------|------------|
 | `_diff_type` | Type of change | `uint8_t` (0=Add, 1=Remove, 2=Change) |
 | `_old` | Previous value | Present for Remove and Change |
@@ -1257,10 +1247,10 @@ Value diff_tree = diff_as_value(old_val, new_val);
 
 | Method | Return Type | Description |
 |--------|-------------|-------------|
-| `DiffValueCollector::is_diff_node(val)` | `bool` | Check if a Value is a diff leaf node |
+| `DiffValueCollector::is_diff_node(val)` | `bool` | Check if a ImmerValue is a diff leaf node |
 | `DiffValueCollector::get_diff_type(val)` | `DiffEntry::Type` | Get the diff type enum |
-| `DiffValueCollector::get_old_value(val)` | `Value` | Get the old value from a diff node |
-| `DiffValueCollector::get_new_value(val)` | `Value` | Get the new value from a diff node |
+| `DiffValueCollector::get_old_value(val)` | `ImmerValue` | Get the old value from a diff node |
+| `DiffValueCollector::get_new_value(val)` | `ImmerValue` | Get the new value from a diff node |
 
 ### 5.4 DiffNodeView (Optimized Access)
 
@@ -1271,8 +1261,8 @@ Value diff_tree = diff_as_value(old_val, new_val);
 using namespace lager_ext;
 
 // Get a diff node from DiffValueCollector result
-Value diff_tree = diff_as_value(old_val, new_val);
-Value name_diff = diff_tree.at("user").at("name");
+ImmerValue diff_tree = diff_as_value(old_val, new_val);
+ImmerValue name_diff = diff_tree.at("user").at("name");
 
 // Parse once, access multiple times (O(1) after parse)
 DiffNodeView view;
@@ -1292,11 +1282,11 @@ if (view.parse(name_diff)) {
     }
     
     // Convenience accessors
-    const Value& meaningful = view.value();  // Returns appropriate value based on type
+    const ImmerValue& meaningful = view.value();  // Returns appropriate value based on type
 }
 
 // Batch processing example - parse once per node
-void process_diff_tree(const Value& node) {
+void process_diff_tree(const ImmerValue& node) {
     DiffNodeView view;
     if (view.parse(node)) {
         // This is a diff leaf node
@@ -1315,19 +1305,19 @@ void process_diff_tree(const Value& node) {
 | Member | Type | Description |
 |--------|------|-------------|
 | `type` | `DiffEntry::Type` | The type of change (Add/Remove/Change) |
-| `old_value` | `const Value*` | Pointer to old value (nullptr if not present) |
-| `new_value` | `const Value*` | Pointer to new value (nullptr if not present) |
+| `old_value` | `const ImmerValue*` | Pointer to old value (nullptr if not present) |
+| `new_value` | `const ImmerValue*` | Pointer to new value (nullptr if not present) |
 
 **DiffNodeView Methods:**
 
 | Method | Return Type | Description |
 |--------|-------------|-------------|
-| `parse(val)` | `bool` | Parse a Value into this view. Returns true if valid diff node. |
+| `parse(val)` | `bool` | Parse a ImmerValue into this view. Returns true if valid diff node. |
 | `has_old()` | `bool` | Check if old_value is available |
 | `has_new()` | `bool` | Check if new_value is available |
-| `get_old()` | `const Value&` | Get old value (throws if not available) |
-| `get_new()` | `const Value&` | Get new value (throws if not available) |
-| `value()` | `const Value&` | Get meaningful value based on type |
+| `get_old()` | `const ImmerValue&` | Get old value (throws if not available) |
+| `get_new()` | `const ImmerValue&` | Get new value (throws if not available) |
+| `value()` | `const ImmerValue&` | Get meaningful value based on type |
 
 > **Performance Tip:** Use `DiffNodeView` when accessing the same diff node multiple times. A single `parse()` call performs 3 hash lookups, but subsequent access to `type`, `old_value`, and `new_value` is O(1).
 
@@ -1355,7 +1345,7 @@ if (has_any_difference(old_val, new_val, false)) {
 | Collector | Output | Best For |
 |-----------|--------|----------|
 | `DiffEntryCollector` | `std::vector<DiffEntry>` | Flat iteration over all changes |
-| `DiffValueCollector` | `Value` tree | Hierarchical traversal, path-based access |
+| `DiffValueCollector` | `ImmerValue` tree | Hierarchical traversal, path-based access |
 
 Both collectors use zero-copy internally with `ValueBox` for optimal performance
 
@@ -1365,12 +1355,12 @@ Both collectors use zero-copy internally with `ValueBox` for optimal performance
 
 `lager_ext` provides two complementary systems for cross-process data sharing:
 
-1. **SharedValueHandle** (`shared_value.h`) - Zero-copy shared memory for raw `Value` data transfer
+1. **SharedValueHandle** (`shared_value.h`) - Zero-copy shared memory for raw `ImmerValue` data transfer
 2. **StatePublisher/StateSubscriber** (`shared_state.h`) - Higher-level state synchronization with versioning and diff support
 
 ### 6.1 SharedValueHandle (Low-Level Shared Memory)
 
-`SharedValueHandle` provides zero-copy cross-process `Value` sharing using memory-mapped regions:
+`SharedValueHandle` provides zero-copy cross-process `ImmerValue` sharing using memory-mapped regions:
 
 ```cpp
 #include <lager_ext/shared_value.h>
@@ -1378,14 +1368,14 @@ using namespace lager_ext;
 
 // ========== Process A (Writer) ==========
 SharedValueHandle writer;
-Value state = MapBuilder()
+ImmerValue state = MapBuilder()
     .set("users", VectorBuilder()
         .push(MapBuilder().set("name", "Alice").set("age", 30).build())
         .push(MapBuilder().set("name", "Bob").set("age", 25).build())
         .build())
     .build();
 
-// Create shared memory and write Value
+// Create shared memory and write ImmerValue
 if (writer.create("my_app_state", state, /*max_size=*/10 * 1024 * 1024)) {
     // State is now accessible to other processes
 }
@@ -1396,8 +1386,8 @@ if (reader.open("my_app_state")) {
     // Zero-copy read (pointer directly into shared memory)
     const SharedValue* shared = reader.shared_value();
     
-    // Deep copy to local Value for manipulation
-    Value local_copy = reader.copy_to_local();
+    // Deep copy to local ImmerValue for manipulation
+    ImmerValue local_copy = reader.copy_to_local();
 }
 ```
 
@@ -1405,12 +1395,12 @@ if (reader.open("my_app_state")) {
 
 | Method | Description |
 |--------|-------------|
-| `create(name, value, max_size)` | Create shared memory and write Value |
+| `create(name, value, max_size)` | Create shared memory and write ImmerValue |
 | `open(name)` | Open existing shared memory region |
 | `shared_value()` | Get raw pointer to SharedValue (zero-copy read) |
-| `copy_to_local()` | Deep copy SharedValue to local Value |
+| `copy_to_local()` | Deep copy SharedValue to local ImmerValue |
 | `is_valid()` | Check if the handle is valid |
-| `is_value_ready()` | Check if Value has been initialized |
+| `is_value_ready()` | Check if ImmerValue has been initialized |
 | `last_error()` | Get last error message |
 
 ### 6.2 SharedMemoryRegion (Low-Level API)
@@ -1461,11 +1451,11 @@ config.size = 64 * 1024;  // 64KB
 StatePublisher publisher(config);
 
 // Publish full state
-Value initial_state = create_initial_state();
+ImmerValue initial_state = create_initial_state();
 publisher.publish(initial_state);
 
 // Publish incremental diff (more efficient for updates)
-Value new_state = apply_changes(initial_state);
+ImmerValue new_state = apply_changes(initial_state);
 bool used_diff = publisher.publish_diff(initial_state, new_state);
 
 // Check statistics
@@ -1477,14 +1467,14 @@ StateSubscriber subscriber(config);
 
 // Non-blocking poll
 if (subscriber.poll()) {
-    Value state = subscriber.current();
+    ImmerValue state = subscriber.current();
 }
 
 // Blocking wait with timeout
-Value state = subscriber.wait_for_update(std::chrono::milliseconds{100});
+ImmerValue state = subscriber.wait_for_update(std::chrono::milliseconds{100});
 
 // Register callback
-subscriber.on_update([](const Value& new_state, uint64_t version) {
+subscriber.on_update([](const ImmerValue& new_state, uint64_t version) {
     std::cout << "State updated to version " << version << std::endl;
 });
 
@@ -1537,8 +1527,8 @@ for (const auto& [path, value] : diff.added) {
 ByteBuffer encoded = encode_diff(diff);
 DiffResult decoded = decode_diff(encoded);
 
-// Apply diff to a Value
-Value updated = apply_diff(base_value, diff);
+// Apply diff to a ImmerValue
+ImmerValue updated = apply_diff(base_value, diff);
 ```
 
 ---
@@ -1554,12 +1544,12 @@ The `lager_adapters.h` header provides seamless integration with the [lager](htt
 using namespace lager_ext;
 ```
 
-This module bridges `lager_ext`'s `Value`-based API with lager's strongly-typed cursor/reader/store ecosystem:
+This module bridges `lager_ext`'s `ImmerValue`-based API with lager's strongly-typed cursor/reader/store ecosystem:
 
 | Function | Purpose |
 |----------|---------|
-| `zoom_value()` | Zoom a `lager::cursor<Value>` or `lager::reader<Value>` to a sub-path |
-| `value_middleware()` | Store middleware for intercepting Value state changes |
+| `zoom_value()` | Zoom a `lager::cursor<ImmerValue>` or `lager::reader<ImmerValue>` to a sub-path |
+| `value_middleware()` | Store middleware for intercepting ImmerValue state changes |
 | `value_diff_middleware()` | Convenience middleware that logs all state diffs |
 | `watch_path()` | Watch a specific path for changes (reactive) |
 
@@ -1571,12 +1561,12 @@ Zoom a lager cursor or reader to a sub-path using `PathLens`, `Path`, or variadi
 #include <lager_ext/lager_adapters.h>
 using namespace lager_ext;
 
-lager::cursor<Value> cursor = /* from lager store */;
+lager::cursor<ImmerValue> cursor = /* from lager store */;
 
 // ========== Using PathLens ==========
 auto name_cursor = zoom_value(cursor, root / "users" / 0 / "name");
-Value name = name_cursor.get();
-name_cursor.set(Value{"Alice"});
+ImmerValue name = name_cursor.get();
+name_cursor.set(ImmerValue{"Alice"});
 
 // ========== Using Path ==========
 Path path{"users", size_t(0), "name"};
@@ -1586,9 +1576,9 @@ auto name_cursor2 = zoom_value(cursor, path);
 auto name_cursor3 = zoom_value(cursor, "users", 0, "name");
 
 // ========== Works with readers too ==========
-lager::reader<Value> reader = cursor;  // implicit conversion
+lager::reader<ImmerValue> reader = cursor;  // implicit conversion
 auto name_reader = zoom_value(reader, "users" / 0 / "name");
-Value name = name_reader.get();  // read-only
+ImmerValue name = name_reader.get();  // read-only
 ```
 
 **API Reference:**
@@ -1599,7 +1589,7 @@ Value name = name_reader.get();  // read-only
 | `zoom_value(reader, Path)` | Zoom using a Path |
 | `zoom_value(reader, elements...)` | Zoom using variadic path elements |
 
-> **Note:** `zoom_value()` works with any lager reader or cursor type that has `value_type = Value`.
+> **Note:** `zoom_value()` works with any lager reader or cursor type that has `value_type = ImmerValue`.
 
 ### 7.3 value_middleware() - Store Middleware
 
@@ -1614,7 +1604,7 @@ auto store = lager::make_store<MyAction>(
     initial_state,
     lager::with_manual_event_loop{},
     value_middleware({
-        .on_change = [](const Value& old_state, const Value& new_state) {
+        .on_change = [](const ImmerValue& old_state, const ImmerValue& new_state) {
             std::cout << "State changed!\n";
             // Handle state change...
         }
@@ -1628,7 +1618,7 @@ auto store = lager::make_store<MyAction>(
     value_middleware({
         .enable_diff_logging = true,
         .enable_deep_diff = true,
-        .on_change = [](const Value& old_s, const Value& new_s) {
+        .on_change = [](const ImmerValue& old_s, const ImmerValue& new_s) {
             // Custom handling
         }
     })
@@ -1649,7 +1639,7 @@ auto store = lager::make_store<MyAction>(
 |--------|------|---------|-------------|
 | `enable_diff_logging` | `bool` | `false` | Log diffs to console |
 | `enable_deep_diff` | `bool` | `true` | Use recursive diff |
-| `on_change` | `function<void(Value, Value)>` | `nullptr` | Callback on state change |
+| `on_change` | `function<void(ImmerValue, ImmerValue)>` | `nullptr` | Callback on state change |
 
 ### 7.4 watch_path() - Path-based Subscriptions
 
@@ -1659,18 +1649,18 @@ Watch a specific path in a lager reader/cursor for changes. The callback is trig
 #include <lager_ext/lager_adapters.h>
 using namespace lager_ext;
 
-lager::reader<Value> reader = /* from store */;
+lager::reader<ImmerValue> reader = /* from store */;
 
 // ========== Watch with Path ==========
 auto conn = watch_path(reader, Path{"users", size_t(0), "status"}, 
-    [](const Value& new_status) {
+    [](const ImmerValue& new_status) {
         std::cout << "Status changed to: " << new_status.as_string() << "\n";
     }
 );
 
 // ========== Watch with PathLens ==========
 auto conn2 = watch_path(reader, root / "config" / "theme", 
-    [](const Value& theme) {
+    [](const ImmerValue& theme) {
         update_ui_theme(theme.as_string());
     }
 );
@@ -1695,13 +1685,13 @@ Both mechanisms monitor paths for changes, but they serve different use cases:
 **When to use which:**
 
 ```cpp
-// ✅ Use watch_path() when:
+// �?Use watch_path() when:
 // - You already have a lager store
 // - You're watching a few paths
 // - You want automatic reactive updates
 auto conn = watch_path(store, "users" / 0 / "name", on_name_change);
 
-// ✅ Use PathWatcher when:
+// �?Use PathWatcher when:
 // - You're watching many paths with shared prefixes
 // - You don't have a lager store (e.g., cross-process sync)
 // - You need performance statistics
@@ -1716,7 +1706,7 @@ watcher.watch("/users/0/email", callback3);
 
 ## 8. IPC (Inter-Process Communication)
 
-The IPC module provides high-performance, lock-free cross-process communication using shared memory. It is designed for scenarios requiring sub-microsecond latency, such as game engine ↔ editor communication.
+The IPC module provides high-performance, lock-free cross-process communication using shared memory. It is designed for scenarios requiring sub-microsecond latency, such as game engine �?editor communication.
 
 > **Note:** This module requires building with `-DLAGER_EXT_ENABLE_IPC=ON` (Windows only).
 
@@ -1779,8 +1769,8 @@ if (!receiver) {
 #### Producer Operations
 
 ```cpp
-/// Post a Value (non-blocking, fire-and-forget)
-bool post(uint32_t msgId, const Value& data = {});
+/// Post a ImmerValue (non-blocking, fire-and-forget)
+bool post(uint32_t msgId, const ImmerValue& data = {});
 
 /// Post raw bytes (no serialization overhead)
 bool postRaw(uint32_t msgId, const void* data, size_t size);
@@ -1796,7 +1786,7 @@ size_t pendingCount() const;
 
 ```cpp
 // Post structured data (non-blocking)
-Value playerState = MapBuilder()
+ImmerValue playerState = MapBuilder()
     .set("x", 100.5f)
     .set("y", 200.0f)
     .set("health", 100)
@@ -1815,7 +1805,7 @@ sender->postRaw(MSG_POSITION, &pos, sizeof(pos));
 /// Received message structure
 struct ReceivedMessage {
     uint32_t msgId;
-    Value data;
+    ImmerValue data;
     uint64_t timestamp;
 };
 
@@ -1899,7 +1889,7 @@ auto editorPair = ChannelPair::connect("EngineEditor");
 
 ```cpp
 /// Post to the other endpoint (non-blocking, fire-and-forget)
-bool post(uint32_t msgId, const Value& data = {});
+bool post(uint32_t msgId, const ImmerValue& data = {});
 
 /// Non-blocking receive
 std::optional<Channel::ReceivedMessage> tryReceive();
@@ -1910,9 +1900,9 @@ std::optional<Channel::ReceivedMessage> receive(
 );
 
 /// Synchronous request/reply (blocking, like SendMessage)
-std::optional<Value> send(
+std::optional<ImmerValue> send(
     uint32_t msgId,
-    const Value& data,
+    const ImmerValue& data,
     std::chrono::milliseconds timeout = std::chrono::seconds(30)
 );
 ```
@@ -1935,7 +1925,7 @@ while (auto msg = editorPair->tryReceive()) {
 
 ```cpp
 // Editor sends request and waits for engine response (blocking)
-Value request = MapBuilder()
+ImmerValue request = MapBuilder()
     .set("entityId", 42)
     .finish();
 
@@ -1970,7 +1960,7 @@ struct Message {
 static_assert(sizeof(Message) == 256);
 ```
 
-- **Inline data (≤240 bytes):** Stored directly in the message, no extra allocation
+- **Inline data (�?40 bytes):** Stored directly in the message, no extra allocation
 - **Large data:** Must be serialized to fit within 240 bytes, or use raw byte API
 
 ### 8.5 Performance Characteristics
@@ -1997,11 +1987,11 @@ Benchmark results comparing IPC Channel to Windows native messaging (10,000 iter
 #### Thread Safety Rules
 
 ```cpp
-// ❌ WRONG: Multiple producers
+// �?WRONG: Multiple producers
 std::thread t1([&]{ channel->post(1, data1); });
 std::thread t2([&]{ channel->post(2, data2); });  // Data corruption!
 
-// ✅ CORRECT: Single producer, single consumer
+// �?CORRECT: Single producer, single consumer
 // Producer process/thread
 channel->post(1, data);
 
@@ -2049,7 +2039,7 @@ while (auto msg = receiver->tryReceive()) {
 | One-way data streaming | `Channel` |
 | Bidirectional communication | `ChannelPair` |
 | High-frequency small updates | `postRaw()` / `tryReceiveRaw()` |
-| Complex structured data | `post()` with `Value` |
+| Complex structured data | `post()` with `ImmerValue` |
 | Request/reply pattern (blocking) | `ChannelPair::send()` |
 | Fire-and-forget messaging | `Channel::post()` / `ChannelPair::post()` |
 
@@ -2084,15 +2074,15 @@ using namespace lager_ext::ipc;
 **Double-buffer mode (default):**
 
 ```
-+------------------+  ← Header (64 bytes, cache-line aligned)
-| atomic<uint64_t> |  ← state (63-bit version + 1-bit active_index)
-| uint32_t size    |  ← sizeof(T) for validation
-| uint32_t flags   |  ← reserved
++------------------+  �?Header (64 bytes, cache-line aligned)
+| atomic<uint64_t> |  �?state (63-bit version + 1-bit active_index)
+| uint32_t size    |  �?sizeof(T) for validation
+| uint32_t flags   |  �?reserved
 | padding[48]      |  
 +------------------+
-| Buffer 0 [T]     |  ← aligned to 64 bytes
+| Buffer 0 [T]     |  �?aligned to 64 bytes
 +------------------+
-| Buffer 1 [T]     |  ← aligned to 64 bytes
+| Buffer 1 [T]     |  �?aligned to 64 bytes
 +------------------+
 ```
 
@@ -2103,13 +2093,13 @@ The `state` field encodes:
 **Single-buffer mode (`SharedBufferOnce<T>`):**
 
 ```
-+------------------+  ← Header (64 bytes, cache-line aligned)
-| atomic<uint64_t> |  ← state (0 = not ready, 1 = ready)
-| uint32_t size    |  ← sizeof(T) for validation
-| uint32_t flags   |  ← reserved
++------------------+  �?Header (64 bytes, cache-line aligned)
+| atomic<uint64_t> |  �?state (0 = not ready, 1 = ready)
+| uint32_t size    |  �?sizeof(T) for validation
+| uint32_t flags   |  �?reserved
 | padding[48]      |  
 +------------------+
-| Buffer 0 [T]     |  ← aligned to 64 bytes (only one buffer)
+| Buffer 0 [T]     |  �?aligned to 64 bytes (only one buffer)
 +------------------+
 ```
 
@@ -2319,9 +2309,9 @@ int main() {
 }
 ```
 
-#### 8.7.7 Value Transfer via SPSC
+#### 8.7.7 ImmerValue Transfer via SPSC
 
-For transferring complex `Value` objects, use serialization with a fixed-size message buffer. Since this is typically a one-shot transfer, `SharedBufferOnce` is recommended:
+For transferring complex `ImmerValue` objects, use serialization with a fixed-size message buffer. Since this is typically a one-shot transfer, `SharedBufferOnce` is recommended:
 
 ```cpp
 #include <lager_ext/serialization.h>
@@ -2335,7 +2325,7 @@ struct ValueMessage {
 static_assert(std::is_trivially_copyable_v<ValueMessage>);
 
 // ========== Producer: serialize and send ==========
-Value gameState = MapBuilder()
+ImmerValue gameState = MapBuilder()
     .set("level", 5)
     .set("position", Vec3{1.0f, 2.0f, 3.0f})
     .finish();
@@ -2354,13 +2344,13 @@ auto buffer = SharedBufferOnce<ValueMessage>::open("ValueTransfer");
 buffer->take_ownership();  // Consumer will cleanup
 if (buffer->is_ready()) {
     const ValueMessage& msg = buffer->read();
-    Value received = deserialize(msg.data, msg.size);
-    // Use received Value...
+    ImmerValue received = deserialize(msg.data, msg.size);
+    // Use received ImmerValue...
 }
 // Shared memory cleaned up automatically
 ```
 
-> **Tip:** For continuous Value synchronization (multiple writes), use `SharedBufferSPSC<ValueMessage>` (double-buffer mode) instead.
+> **Tip:** For continuous ImmerValue synchronization (multiple writes), use `SharedBufferSPSC<ValueMessage>` (double-buffer mode) instead.
 
 #### 8.7.8 Performance Characteristics
 
@@ -2387,10 +2377,10 @@ if (buffer->is_ready()) {
 
 | Scenario | Recommended API |
 |----------|-----------------|
-| Continuous state sync (editor ↔ runtime) | **SharedBufferSPSC<T>** (Double mode) |
+| Continuous state sync (editor �?runtime) | **SharedBufferSPSC<T>** (Double mode) |
 | Game engine frame data streaming | **SharedBufferSPSC<T>** (Double mode) |
 | One-shot large config transfer | **SharedBufferOnce<T>** (Single mode) |
-| One-shot Value transfer | **SharedBufferOnce<ValueMessage>** + serialization |
+| One-shot ImmerValue transfer | **SharedBufferOnce<ValueMessage>** + serialization |
 | Multiple small messages | `Channel` |
 | Request/response patterns | `ChannelPair` |
 | Multiple producers or consumers | `SharedValueHandle` with locking |
@@ -2400,9 +2390,9 @@ if (buffer->is_ready()) {
 
 | Criteria | Double Mode | Single Mode |
 |----------|-------------|-------------|
-| Memory usage | 2× sizeof(T) | 1× sizeof(T) ✅ |
-| Multiple writes | ✅ Yes | ❌ One write only |
-| Version tracking | ✅ has_update() | ❌ is_ready() only |
+| Memory usage | 2× sizeof(T) | 1× sizeof(T) �?|
+| Multiple writes | �?Yes | �?One write only |
+| Version tracking | �?has_update() | �?is_ready() only |
 | Use case | Streaming | Initialization |
 
 ### 8.8 WindowsMessageBridge (User-Mode Windows Message Forwarding)
@@ -2655,7 +2645,7 @@ int main() {
 | `WM_COPYDATA` | ~180 µs | ~5K/sec | Kernel + data copy |
 
 **When to use WindowsMessageBridge:**
-- Cross-process input forwarding (game ↔ editor)
+- Cross-process input forwarding (game �?editor)
 - Real-time UI synchronization
 - Any scenario requiring high-frequency Windows message transfer between processes
 
@@ -2672,7 +2662,7 @@ This section covers the mutable data structures and conversion utilities for sce
 
 ### 9.1 MutableValue Overview
 
-`MutableValue` provides a mutable, JSON-like data structure as an alternative to the immutable `Value` type. It's designed for:
+`MutableValue` provides a mutable, JSON-like data structure as an alternative to the immutable `ImmerValue` type. It's designed for:
 
 - **C++ reflection data**: Receiving dynamically-typed data from reflection systems
 - **Complex tree building**: Constructing deep nested structures with many intermediate modifications
@@ -2682,16 +2672,16 @@ This section covers the mutable data structures and conversion utilities for sce
 #include <lager_ext/mutable_value.h>
 using namespace lager_ext;
 
-// MutableValue supports the same data types as Value:
+// MutableValue supports the same data types as ImmerValue:
 // - Primitives: int8-64, uint8-64, float, double, bool
 // - Strings: std::string
 // - Containers: MutableValueMap (robin_map), MutableValueVector (std::vector)
 // - Math types: Vec2, Vec3, Vec4, Mat3, Mat4x3
 ```
 
-**Key Differences from `Value`:**
+**Key Differences from `ImmerValue`:**
 
-| Feature | `Value` (immutable) | `MutableValue` |
+| Feature | `ImmerValue` (immutable) | `MutableValue` |
 |---------|---------------------|----------------|
 | Modification | Returns new value (COW) | In-place modification |
 | Ownership | Shared (refcounted) | Exclusive (`unique_ptr`) |
@@ -2713,7 +2703,7 @@ MutableValue float_val(3.14f);            // float
 MutableValue double_val(3.14159);         // double
 MutableValue str_val("hello");            // string
 
-// ========== Factory Methods (consistent with Value class) ==========
+// ========== Factory Methods (consistent with ImmerValue class) ==========
 auto map_v = MutableValue::map();
 auto vec_v = MutableValue::vector();
 
@@ -2754,7 +2744,7 @@ val.is_math_type();    // true if any math type
 val.is<int32_t>();
 val.is<std::string>();
 
-// ========== Value Access (throws on type mismatch) ==========
+// ========== ImmerValue Access (throws on type mismatch) ==========
 std::string& s = val.as<std::string>();
 
 // ========== Safe Access (returns nullptr on mismatch) ==========
@@ -2773,7 +2763,7 @@ std::string_view sv = val.as_string_view();  // no allocation
 std::string moved_str = std::move(val).as_string();  // moves string out
 
 // ========== Count (returns 0 or 1) ==========
-std::size_t n = val.count("key");  // like Value::count()
+std::size_t n = val.count("key");  // like ImmerValue::count()
 
 // Math accessors
 Vec2 v2 = val.as_vec2({0,0});
@@ -2841,7 +2831,7 @@ if (auto* users = data.get("users")) {
 
 ### 9.5 Path-based Access
 
-`MutableValue` supports the same `PathView` system as `Value`:
+`MutableValue` supports the same `PathView` system as `ImmerValue`:
 
 ```cpp
 #include <lager_ext/mutable_value.h>
@@ -2875,26 +2865,26 @@ if (auto* user = root.get_at_path(user_path)) {
 }
 ```
 
-### 9.6 MutableValue ↔ Value Conversion
+### 9.6 MutableValue �?ImmerValue Conversion
 
 ```cpp
 #include <lager_ext/utils.h>
 using namespace lager_ext;
 
-// ========== MutableValue -> Value ==========
+// ========== MutableValue -> ImmerValue ==========
 MutableValue mv = MutableValue::map();
 mv.set("name", "Player");
 mv.set("health", 100);
 mv.set("position", Vec3{1.0f, 2.0f, 3.0f});
 
-// Convert to immutable Value
-Value immutable = to_value(mv);
+// Convert to immutable ImmerValue
+ImmerValue immutable = to_value(mv);
 
 // Move variant (may avoid string copies)
-Value moved = to_value(std::move(mv));
+ImmerValue moved = to_value(std::move(mv));
 
-// ========== Value -> MutableValue ==========
-Value v = MapBuilder()
+// ========== ImmerValue -> MutableValue ==========
+ImmerValue v = MapBuilder()
     .set("data", VectorBuilder()
         .push(1).push(2).push(3)
         .build())
@@ -2909,10 +2899,10 @@ mutable_v.set("data_count", mutable_v.get("data")->size());
 
 | Scenario | Recommended |
 |----------|-------------|
-| Simple data, few modifications | `Value` directly |
-| Complex tree with many updates | `MutableValue` → `to_value()` |
-| Reflection/deserialization | `MutableValue` → `to_value()` |
-| lager store state | `Value` (immutable required) |
+| Simple data, few modifications | `ImmerValue` directly |
+| Complex tree with many updates | `MutableValue` �?`to_value()` |
+| Reflection/deserialization | `MutableValue` �?`to_value()` |
+| lager store state | `ImmerValue` (immutable required) |
 | Temporary computation | `MutableValue` |
 
 ### 9.7 FastSharedValue (High-Performance Shared Memory)
@@ -2926,7 +2916,7 @@ using namespace lager_ext;
 // ========== FastSharedValueHandle (Writer) ==========
 FastSharedValueHandle writer;
 
-Value large_state = /* build a large state tree */;
+ImmerValue large_state = /* build a large state tree */;
 
 // O(n) construction using fake transience policy
 if (writer.create("my_fast_state", large_state, 100 * 1024 * 1024)) {
@@ -2939,16 +2929,16 @@ if (reader.open("my_fast_state")) {
     // Zero-copy access
     const FastSharedValue* shared = reader.shared_value();
     
-    // Deep copy to local Value
-    Value local = reader.copy_to_local();
+    // Deep copy to local ImmerValue
+    ImmerValue local = reader.copy_to_local();
 }
 
 // ========== Direct Conversion Functions ==========
-// Value -> FastSharedValue (O(n) with transient)
+// ImmerValue -> FastSharedValue (O(n) with transient)
 FastSharedValue fast_shared = fast_deep_copy_to_shared(local_value);
 
-// FastSharedValue -> Value
-Value local = fast_deep_copy_to_local(fast_shared);
+// FastSharedValue -> ImmerValue
+ImmerValue local = fast_deep_copy_to_local(fast_shared);
 ```
 
 **FastSharedValue vs SharedValue:**
@@ -2966,15 +2956,15 @@ Value local = fast_deep_copy_to_local(fast_shared);
 
 | Method | Time | Memory |
 |--------|------|--------|
-| Direct `Value` construction | ~15ms | ~5MB |
-| `MutableValue` → `to_value()` | ~8ms | ~3MB |
+| Direct `ImmerValue` construction | ~15ms | ~5MB |
+| `MutableValue` �?`to_value()` | ~8ms | ~3MB |
 | `SharedValue` (O(n log n)) | ~25ms | ~12MB |
 | `FastSharedValue` (O(n)) | ~10ms | ~5MB |
 
 **Recommendations:**
 
-1. **Simple structures**: Use `Value` with `MapBuilder`/`VectorBuilder`
-2. **Complex tree building**: Use `MutableValue` → `to_value()`
+1. **Simple structures**: Use `ImmerValue` with `MapBuilder`/`VectorBuilder`
+2. **Complex tree building**: Use `MutableValue` �?`to_value()`
 3. **Shared memory (small)**: Use `SharedValueHandle`
 4. **Shared memory (large)**: Use `FastSharedValueHandle`
 
@@ -3038,12 +3028,12 @@ The macro generates:
 
 #### Dynamic String Events
 
-Dynamic events use string names and `Value` payloads:
+Dynamic events use string names and `ImmerValue` payloads:
 
 ```cpp
 // No definition needed - use at runtime
-bus.publish("debug.log", Value{"Log message"});
-bus.publish("plugin.event", Value::map({{"action", "click"}, {"x", 100}}));
+bus.publish("debug.log", ImmerValue{"Log message"});
+bus.publish("plugin.event", ImmerValue::map({{"action", "click"}, {"x", 100}}));
 ```
 
 ### 10.3 Subscribing to Events
@@ -3077,19 +3067,19 @@ private:
 
 ```cpp
 // Single name
-bus.subscribe("debug.log", [](const Value& payload) {
+bus.subscribe("debug.log", [](const ImmerValue& payload) {
     std::cout << "Debug: " << to_json(payload) << "\n";
 });
 
 // Multiple names
-bus.subscribe({"warning", "error"}, [](std::string_view name, const Value& payload) {
+bus.subscribe({"warning", "error"}, [](std::string_view name, const ImmerValue& payload) {
     std::cout << name << ": " << to_json(payload) << "\n";
 });
 
 // Filter function (match all starting with "custom.")
 bus.subscribe(
     [](std::string_view name) { return name.starts_with("custom."); },
-    [](std::string_view name, const Value& payload) {
+    [](std::string_view name, const ImmerValue& payload) {
         std::cout << "Custom event: " << name << "\n";
     }
 );
@@ -3107,8 +3097,8 @@ bus.publish(NodeTransformChanged{
 });
 
 // Publish dynamic event
-bus.publish("debug.log", Value{"Debugging info"});
-bus.publish("custom.plugin.event", Value::map({
+bus.publish("debug.log", ImmerValue{"Debugging info"});
+bus.publish("custom.plugin.event", ImmerValue::map({
     {"action", "save"},
     {"target", "scene.json"}
 }));
@@ -3141,7 +3131,7 @@ public:
     void subscribe(EventBus& bus) {
         connections_ += bus.subscribe<DocumentOpened>([](const auto& evt) { /*...*/ });
         connections_ += bus.subscribe<DocumentSaved>([](const auto& evt) { /*...*/ });
-        connections_ += bus.subscribe("debug.log", [](const Value& v) { /*...*/ });
+        connections_ += bus.subscribe("debug.log", [](const ImmerValue& v) { /*...*/ });
     }
     
 private:
@@ -3233,10 +3223,10 @@ struct RemoteCommand {
 template <>
 struct IpcEventTrait<RemoteCommand> {
     static constexpr bool is_ipc_event = true;
-    static Value serialize(const RemoteCommand& evt) {
-        return Value::map({{"command", evt.command}, {"priority", evt.priority}});
+    static ImmerValue serialize(const RemoteCommand& evt) {
+        return ImmerValue::map({{"command", evt.command}, {"priority", evt.priority}});
     }
-    static RemoteCommand deserialize(const Value& v) {
+    static RemoteCommand deserialize(const ImmerValue& v) {
         return RemoteCommand{
             .command = v.at("command").as<std::string>(),
             .priority = v.at("priority").as<int>()
@@ -3256,7 +3246,7 @@ struct IpcEventTrait<RemoteCommand> {
 LAGER_EXT_IPC_EVENT(RemoteCommand,
     std::string command; int priority;
 ,
-    return Value::map({{"command", evt.command}, {"priority", evt.priority}});
+    return ImmerValue::map({{"command", evt.command}, {"priority", evt.priority}});
 ,
     return RemoteCommand{.command = v.at("command").as<std::string>(), .priority = v.at("priority").as<int>()};
 );
@@ -3296,7 +3286,7 @@ remote.post_remote(RemoteCommand{.command = "start", .priority = 1});
 remote.broadcast(StatusUpdate{.component = "Renderer", .status = "OK"});
 
 // Post dynamic event (non-blocking)
-remote.post_remote("remote.ping", Value{"hello"});
+remote.post_remote("remote.ping", ImmerValue{"hello"});
 ```
 
 #### Receiving Events
@@ -3308,7 +3298,7 @@ remote.subscribe_remote<RemoteCommand>([](const RemoteCommand& cmd) {
 });
 
 // Subscribe to dynamic remote events
-remote.subscribe_remote("remote.ping", [](const Value& v) {
+remote.subscribe_remote("remote.ping", [](const ImmerValue& v) {
     std::cout << "Ping: " << to_json(v) << "\n";
 });
 
@@ -3323,15 +3313,15 @@ remote.poll();
 
 ```cpp
 // Register request handler
-remote.on_request("query.status", [](const Value& request) -> Value {
-    return Value::map({
+remote.on_request("query.status", [](const ImmerValue& request) -> ImmerValue {
+    return ImmerValue::map({
         {"status", "ok"},
         {"uptime", 12345}
     });
 });
 
 // Send request and wait for response (blocking, in another process)
-auto response = remote.send("query.status", Value{}, std::chrono::seconds(5));
+auto response = remote.send("query.status", ImmerValue{}, std::chrono::seconds(5));
 if (response) {
     std::cout << "Response: " << to_json(*response) << "\n";
 }
@@ -3347,8 +3337,8 @@ if (response) {
 
 | Header | Description |
 |--------|-------------|
-| `<lager_ext/value.h>` | Core `Value` type, type aliases, comparison operators |
-| `<lager_ext/value_fwd.h>` | Forward declarations for Value and Builder types |
+| `<lager_ext/value.h>` | Core `ImmerValue` type, type aliases, comparison operators |
+| `<lager_ext/value_fwd.h>` | Forward declarations for ImmerValue and Builder types |
 | `<lager_ext/mutable_value.h>` | Mutable dynamic value type (non-immutable alternative) |
 | `<lager_ext/builders.h>` | Builder classes for O(n) container construction |
 | `<lager_ext/serialization.h>` | Binary and JSON serialization |
@@ -3358,7 +3348,7 @@ if (response) {
 | `<lager_ext/lager_lens.h>` | PathLens, ZoomedValue and lager lens integration |
 | `<lager_ext/lager_adapters.h>` | **Lager integration** - `zoom_value()`, middleware, `watch_path()` |
 | `<lager_ext/static_path.h>` | Compile-time static path lens (C++20 NTTP) |
-| `<lager_ext/value_diff.h>` | Value difference detection (`DiffEntryCollector`, `DiffValueCollector`) |
+| `<lager_ext/value_diff.h>` | ImmerValue difference detection (`DiffEntryCollector`, `DiffValueCollector`) |
 | `<lager_ext/shared_state.h>` | Cross-process shared state |
 | `<lager_ext/shared_value.h>` | Low-level shared memory value operations |
 | `<lager_ext/fast_shared_value.h>` | High-performance shared value with fake transience (O(n) build) |
@@ -3371,7 +3361,7 @@ if (response) {
 | `<lager_ext/delta_undo.h>` | Delta-based undo/redo system |
 | `<lager_ext/undo.h>` | Unified abstract undo/redo interface |
 | `<lager_ext/multi_store.h>` | Multi-document state management |
-| `<lager_ext/utils.h>` | Utility functions (`MutableValue` ↔ `Value` conversion) |
+| `<lager_ext/utils.h>` | Utility functions (`MutableValue` �?`ImmerValue` conversion) |
 | `<lager_ext/event_bus.h>` | **EventBus** - High-performance local pub/sub messaging |
 | `<lager_ext/event_bus_ipc.h>` | RemoteBus for cross-process messaging (requires `LAGER_EXT_ENABLE_IPC`) |
 
@@ -3389,7 +3379,7 @@ using namespace lager_ext;
 
 int main() {
     // Build a complex structure using builders (O(n) construction)
-    Value state = MapBuilder()
+    ImmerValue state = MapBuilder()
         .set("config", MapBuilder()
             .set("debug", true)
             .set("timeout", 30)
@@ -3407,11 +3397,11 @@ int main() {
         .finish();
 
     // Read nested value using path
-    Value name = state.at("users").at(0).at("name");
+    ImmerValue name = state.at("users").at(0).at("name");
     std::cout << name.as_string() << std::endl;  // "Alice"
 
     // Update nested value (immutable - returns new state)
-    Value new_state = set_at_path(state, 
+    ImmerValue new_state = set_at_path(state, 
         {"users", size_t(0), "name"}, "Charlie");
 
     // Original unchanged
@@ -3424,7 +3414,7 @@ int main() {
 
     // Serialize to binary
     ByteBuffer buffer = serialize(state);
-    Value restored = deserialize(buffer);
+    ImmerValue restored = deserialize(buffer);
 
     return 0;
 }
@@ -3439,10 +3429,10 @@ using namespace lager_ext;
 
 int main() {
     // Create a transform component
-    Value transform = MapBuilder()
-        .set("position", Value::vec3(0.0f, 0.0f, 0.0f))
-        .set("rotation", Value::vec4(0.0f, 0.0f, 0.0f, 1.0f))  // quaternion
-        .set("scale", Value::vec3(1.0f, 1.0f, 1.0f))
+    ImmerValue transform = MapBuilder()
+        .set("position", ImmerValue::vec3(0.0f, 0.0f, 0.0f))
+        .set("rotation", ImmerValue::vec4(0.0f, 0.0f, 0.0f, 1.0f))  // quaternion
+        .set("scale", ImmerValue::vec3(1.0f, 1.0f, 1.0f))
         .finish();
 
     // Read position
@@ -3450,7 +3440,7 @@ int main() {
     std::cout << "Position: " << pos[0] << ", " << pos[1] << ", " << pos[2] << std::endl;
 
     // Update position
-    Value moved = transform.set("position", Value::vec3(10.0f, 0.0f, 5.0f));
+    ImmerValue moved = transform.set("position", ImmerValue::vec3(10.0f, 0.0f, 5.0f));
 
     // Check type
     if (moved.at("rotation").is_vec4()) {
@@ -3472,8 +3462,8 @@ int main() {
 using namespace lager_ext;
 
 int main() {
-    // Value is optimized for single-threaded use (IMMER_NO_THREAD_SAFETY=1)
-    Value state = MapBuilder()
+    // ImmerValue is optimized for single-threaded use (IMMER_NO_THREAD_SAFETY=1)
+    ImmerValue state = MapBuilder()
         .set("counter", 0)
         .finish();
 
@@ -3482,13 +3472,13 @@ int main() {
     
     std::thread t1([&state, &state_mutex]() {
         std::lock_guard<std::mutex> lock(state_mutex);
-        Value copy = state;  // Safe under lock
+        ImmerValue copy = state;  // Safe under lock
         // ... read copy safely
     });
 
     std::thread t2([&state, &state_mutex]() {
         std::lock_guard<std::mutex> lock(state_mutex);
-        Value copy = state;  // Safe under lock
+        ImmerValue copy = state;  // Safe under lock
         // ... read copy safely
     });
 
@@ -3503,12 +3493,12 @@ int main() {
 
 ## Notes
 
-- All `Value` operations are **immutable** - modifications return new values.
-- `Value` is optimized for single-threaded use via `IMMER_NO_THREAD_SAFETY=1`.
+- All `ImmerValue` operations are **immutable** - modifications return new values.
+- `ImmerValue` is optimized for single-threaded use via `IMMER_NO_THREAD_SAFETY=1`.
 - For multi-threaded scenarios, use external synchronization (e.g., `std::mutex`).
 - Use `SharedState` for cross-process state synchronization.
 - Builders are essential for efficient O(n) construction of containers.
 - C++20 features are used: concepts, `<=>`, `std::span`, `source_location`.
-- Large matrices (Mat3, Mat4x3, Mat4) are boxed to keep `Value` variant size compact (~48 bytes).
+- Large matrices (Mat3, Mat4x3, Mat4) are boxed to keep `ImmerValue` variant size compact (~48 bytes).
 - Path operations support both compile-time (`static_path_lens`) and runtime (`PathLens`) access patterns.
 - Binary serialization uses native little-endian byte order (optimized for x86/x64).
