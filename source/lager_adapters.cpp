@@ -11,7 +11,7 @@ namespace lager_ext {
 auto value_diff_middleware(bool recursive) {
     return value_middleware({.enable_diff_logging = true,
                              .enable_deep_diff = recursive,
-                             .on_change = [recursive](const Value& old_state, const Value& new_state) {
+                             .on_change = [recursive](const ImmerValue& old_state, const ImmerValue& new_state) {
                                  // Check if there are actual changes using fast path comparison
                                  if (&old_state.data == &new_state.data) {
                                      return; // Same object, no changes

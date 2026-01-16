@@ -2,9 +2,9 @@
 // Licensed under the MIT License. See LICENSE file in the project root.
 
 /// @file builders.h
-/// @brief Builder classes for efficient O(n) construction of immutable Value containers.
+/// @brief Builder classes for efficient O(n) construction of immutable ImmerValue containers.
 ///
-/// This file provides transient-based builders for constructing Value containers:
+/// This file provides transient-based builders for constructing ImmerValue containers:
 /// - MapBuilder: Build value_map efficiently
 /// - VectorBuilder: Build value_vector efficiently
 /// - ArrayBuilder: Build value_array efficiently
@@ -15,14 +15,14 @@
 ///   #include <lager_ext/builders.h>
 ///
 ///   // Build a map with multiple entries in O(n) time
-///   Value config = MapBuilder()
+///   ImmerValue config = MapBuilder()
 ///       .set("width", 1920)
 ///       .set("height", 1080)
 ///       .set("fullscreen", true)
 ///       .finish();
 ///
 ///   // Build a vector efficiently
-///   Value items = VectorBuilder()
+///   ImmerValue items = VectorBuilder()
 ///       .push_back("item1")
 ///       .push_back("item2")
 ///       .push_back("item3")
@@ -53,7 +53,7 @@ public:
     ///   auto result = MapBuilder(config)
     ///       .set("updated", true)
     ///       .finish();
-    explicit MapBuilder(const Value& existing)
+    explicit MapBuilder(const ImmerValue& existing)
         : transient_(existing.is<BoxedValueMap>() ? existing.get_if<BoxedValueMap>()->get().transient()
                                                   : ValueMap{}.transient()) {}
 
@@ -67,16 +67,16 @@ public:
 
     /// Set a key-value pair
     /// @param key The key (string_view to avoid allocation on lookup, but key is copied internally)
-    /// @param val The value (any type convertible to Value)
+    /// @param val The value (any type convertible to ImmerValue)
     /// @return Reference to this builder for chaining
     template <typename T>
     MapBuilder& set(std::string_view key, T&& val) {
-        transient_.set(std::string{key}, Value{std::forward<T>(val)});
+        transient_.set(std::string{key}, ImmerValue{std::forward<T>(val)});
         return *this;
     }
 
-    /// Set a key with an already constructed Value
-    MapBuilder& set(std::string_view key, Value val) {
+    /// Set a key with an already constructed ImmerValue
+    MapBuilder& set(std::string_view key, ImmerValue val) {
         transient_.set(std::string{key}, std::move(val));
         return *this;
     }
@@ -88,7 +88,7 @@ public:
     }
 
     /// Set with const char* key (disambiguation for string literals)
-    MapBuilder& set(const char* key, Value val) { return set(std::string_view{key}, std::move(val)); }
+    MapBuilder& set(const char* key, ImmerValue val) { return set(std::string_view{key}, std::move(val)); }
 
     /// Set with const string& key (disambiguation for string lvalue)
     template <typename T>
@@ -97,17 +97,17 @@ public:
     }
 
     /// Set with const string& key (disambiguation for string lvalue)
-    MapBuilder& set(const std::string& key, Value val) { return set(std::string_view{key}, std::move(val)); }
+    MapBuilder& set(const std::string& key, ImmerValue val) { return set(std::string_view{key}, std::move(val)); }
 
     /// Set with rvalue string key (zero-copy key transfer)
     template <typename T>
     MapBuilder& set(std::string&& key, T&& val) {
-        transient_.set(std::move(key), Value{std::forward<T>(val)});
+        transient_.set(std::move(key), ImmerValue{std::forward<T>(val)});
         return *this;
     }
 
     /// Set with rvalue string key (zero-copy key transfer)
-    MapBuilder& set(std::string&& key, Value val) {
+    MapBuilder& set(std::string&& key, ImmerValue val) {
         transient_.set(std::move(key), std::move(val));
         return *this;
     }
@@ -124,22 +124,22 @@ public:
 
     /// Get a previously set value by key
     /// @param key The key to look up
-    /// @param default_val Value to return if key doesn't exist (default: null)
+    /// @param default_val ImmerValue to return if key doesn't exist (default: null)
     /// @return The value, or default_val if not found
-    [[nodiscard]] Value get(std::string_view key, Value default_val = Value{}) const {
+    [[nodiscard]] ImmerValue get(std::string_view key, ImmerValue default_val = ImmerValue{}) const {
         if (auto* found = transient_.find(key)) {
-            return *found;  // Container Boxing: ValueMap stores Value directly
+            return *found;  // Container Boxing: ValueMap stores ImmerValue directly
         }
         return default_val;
     }
 
     /// Update a previously set value by key using a function
     /// @param key The key to update
-    /// @param fn Function taking Value and returning Value
+    /// @param fn Function taking ImmerValue and returning ImmerValue
     /// @return Reference to this builder for chaining
     /// @note If key doesn't exist, no change is made
     template <typename Fn>
-        requires ValueTransformer<Fn, Value>
+        requires ValueTransformer<Fn, ImmerValue>
     MapBuilder& update_at(std::string_view key, Fn&& fn) {
         if (auto* found = transient_.find(key)) {
             auto new_val = std::forward<Fn>(fn)(*found);  // Container Boxing: no .get()
@@ -150,12 +150,12 @@ public:
 
     /// Update or insert: fn receives current value (null if key doesn't exist)
     /// @param key The key to upsert
-    /// @param fn Function taking Value (may be null) and returning Value
+    /// @param fn Function taking ImmerValue (may be null) and returning ImmerValue
     /// @return Reference to this builder for chaining
     template <typename Fn>
-        requires ValueTransformer<Fn, Value>
+        requires ValueTransformer<Fn, ImmerValue>
     MapBuilder& upsert(std::string_view key, Fn&& fn) {
-        Value current{};
+        ImmerValue current{};
         if (auto* found = transient_.find(key)) {
             current = *found;  // Container Boxing: no .get()
         }
@@ -182,12 +182,12 @@ public:
             return set(*first_key, std::forward<T>(val));
         }
 
-        Value root_val = get(*first_key);
+        ImmerValue root_val = get(*first_key);
         if (root_val.is_null())
             return *this; // Strict mode: path must exist
 
         // Use subpath(1) - zero-copy view slice
-        Value new_root = set_at_path_strict_impl(root_val, path.subpath(1), Value{std::forward<T>(val)});
+        ImmerValue new_root = set_at_path_strict_impl(root_val, path.subpath(1), ImmerValue{std::forward<T>(val)});
         if (!new_root.is_null()) {
             transient_.set(std::string{*first_key}, std::move(new_root));
         }
@@ -215,17 +215,17 @@ public:
         }
 
         // Get or create the root value for this key
-        Value root_val = get(*first_key);
+        ImmerValue root_val = get(*first_key);
 
         // Use subpath(1) - zero-copy view slice (no memory allocation)
-        Value new_root = set_at_path_vivify_impl(root_val, path.subpath(1), Value{std::forward<T>(val)});
+        ImmerValue new_root = set_at_path_vivify_impl(root_val, path.subpath(1), ImmerValue{std::forward<T>(val)});
         transient_.set(std::string{*first_key}, std::move(new_root));
         return *this;
     }
 
     /// Update value at a nested path using a function (strict mode)
     /// @param path The path to the value
-    /// @param fn Function taking Value and returning Value
+    /// @param fn Function taking ImmerValue and returning ImmerValue
     /// @return Reference to this builder for chaining
     /// @note If path doesn't exist, operation silently fails. Use update_at_path_vivify() to auto-create.
     template <typename Fn>
@@ -241,21 +241,21 @@ public:
             return update_at(*first_key, std::forward<Fn>(fn));
         }
 
-        Value root_val = get(*first_key);
+        ImmerValue root_val = get(*first_key);
         if (root_val.is_null())
             return *this; // Strict mode: path must exist
 
         PathView sub_path = path.subpath(1);
 
         // Get current value at path
-        Value current = get_at_path_impl(root_val, sub_path);
+        ImmerValue current = get_at_path_impl(root_val, sub_path);
         if (current.is_null())
             return *this; // Strict mode: path must exist
 
         // Apply function
-        Value new_val = std::forward<Fn>(fn)(std::move(current));
+        ImmerValue new_val = std::forward<Fn>(fn)(std::move(current));
         // Set back using strict impl
-        Value new_root = set_at_path_strict_impl(root_val, sub_path, std::move(new_val));
+        ImmerValue new_root = set_at_path_strict_impl(root_val, sub_path, std::move(new_val));
         if (!new_root.is_null()) {
             transient_.set(std::string{*first_key}, std::move(new_root));
         }
@@ -264,7 +264,7 @@ public:
 
     /// Update value at a nested path using a function with auto-vivification
     /// @param path The path to the value
-    /// @param fn Function taking Value and returning Value
+    /// @param fn Function taking ImmerValue and returning ImmerValue
     /// @return Reference to this builder for chaining
     template <typename Fn>
     MapBuilder& update_at_path_vivify(PathView path, Fn&& fn) {
@@ -279,35 +279,35 @@ public:
             return update_at(*first_key, std::forward<Fn>(fn));
         }
 
-        Value root_val = get(*first_key);
+        ImmerValue root_val = get(*first_key);
         PathView sub_path = path.subpath(1);
 
         // Get current value at path (may be null)
-        Value current = get_at_path_impl(root_val, sub_path);
+        ImmerValue current = get_at_path_impl(root_val, sub_path);
         // Apply function
-        Value new_val = std::forward<Fn>(fn)(std::move(current));
+        ImmerValue new_val = std::forward<Fn>(fn)(std::move(current));
         // Set back with vivification
-        Value new_root = set_at_path_vivify_impl(root_val, sub_path, std::move(new_val));
+        ImmerValue new_root = set_at_path_vivify_impl(root_val, sub_path, std::move(new_val));
         transient_.set(std::string{*first_key}, std::move(new_root));
         return *this;
     }
 
-    /// Finish building and return the immutable Value
+    /// Finish building and return the immutable ImmerValue
     /// Note: After calling finish(), the builder is in an undefined state
-    [[nodiscard]] Value finish() { return Value{BoxedValueMap{transient_.persistent()}}; }
+    [[nodiscard]] ImmerValue finish() { return ImmerValue{BoxedValueMap{transient_.persistent()}}; }
 
-    /// Finish and return just the map (not wrapped in Value)
+    /// Finish and return just the map (not wrapped in ImmerValue)
     [[nodiscard]] ValueMap finish_map() { return transient_.persistent(); }
 
 private:
     transient_type transient_;
 
     // Helper: get value at path using PathView (zero-copy)
-    static Value get_at_path_impl(const Value& root, PathView path) {
+    static ImmerValue get_at_path_impl(const ImmerValue& root, PathView path) {
         if (path.empty())
             return root;
 
-        Value child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, path[0]);
+        ImmerValue child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, path[0]);
 
         if (child.is_null())
             return child;
@@ -316,26 +316,26 @@ private:
 
     // Helper: set value at path (strict mode - returns null on failure)
     // Uses PathView for zero-copy path traversal
-    static Value set_at_path_strict_impl(const Value& root, PathView path, Value new_val) {
+    static ImmerValue set_at_path_strict_impl(const ImmerValue& root, PathView path, ImmerValue new_val) {
         if (path.empty())
             return new_val;
 
         const auto& elem = path[0];
-        Value current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
+        ImmerValue current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
 
         // Strict mode: if path doesn't exist, return null to signal failure
         if (current_child.is_null() && path.size() > 1) {
-            return Value{}; // Signal failure
+            return ImmerValue{}; // Signal failure
         }
 
-        Value new_child = set_at_path_strict_impl(current_child, path.subpath(1), std::move(new_val));
+        ImmerValue new_child = set_at_path_strict_impl(current_child, path.subpath(1), std::move(new_val));
         if (new_child.is_null() && path.size() > 1) {
-            return Value{}; // Propagate failure
+            return ImmerValue{}; // Propagate failure
         }
 
-        // Set child back to parent using Value's set method (handles Container Boxing internally)
+        // Set child back to parent using ImmerValue's set method (handles Container Boxing internally)
         return std::visit(
-            [&root, &new_child](auto key_or_idx) -> Value {
+            [&root, &new_child](auto key_or_idx) -> ImmerValue {
                 return root.set(key_or_idx, std::move(new_child));
             },
             elem);
@@ -343,28 +343,28 @@ private:
 
     // Helper: set value at path with vivification
     // Uses PathView for zero-copy path traversal
-    static Value set_at_path_vivify_impl(const Value& root, PathView path, Value new_val) {
+    static ImmerValue set_at_path_vivify_impl(const ImmerValue& root, PathView path, ImmerValue new_val) {
         if (path.empty())
             return new_val;
 
         const auto& elem = path[0];
-        Value current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
+        ImmerValue current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
 
         // Prepare child for next level if needed
         if (current_child.is_null() && path.size() > 1) {
             const auto& next = path[1];
             if (std::holds_alternative<std::string_view>(next)) {
-                current_child = Value{BoxedValueMap{ValueMap{}}};
+                current_child = ImmerValue{BoxedValueMap{ValueMap{}}};
             } else {
-                current_child = Value{BoxedValueVector{ValueVector{}}};
+                current_child = ImmerValue{BoxedValueVector{ValueVector{}}};
             }
         }
 
-        Value new_child = set_at_path_vivify_impl(current_child, path.subpath(1), std::move(new_val));
+        ImmerValue new_child = set_at_path_vivify_impl(current_child, path.subpath(1), std::move(new_val));
 
         // Set child back to parent
         return std::visit(
-            [&root, &new_child](auto key_or_idx) -> Value {
+            [&root, &new_child](auto key_or_idx) -> ImmerValue {
                 return root.set_vivify(key_or_idx, std::move(new_child));
             },
             elem);
@@ -382,8 +382,8 @@ public:
     /// Create a builder from an existing vector (for incremental modification)
     explicit VectorBuilder(const ValueVector& existing) : transient_(existing.transient()) {}
 
-    /// Create a builder from a Value containing a vector
-    explicit VectorBuilder(const Value& existing)
+    /// Create a builder from a ImmerValue containing a vector
+    explicit VectorBuilder(const ImmerValue& existing)
         : transient_(existing.is<BoxedValueVector>() ? existing.get_if<BoxedValueVector>()->get().transient()
                                                      : ValueVector{}.transient()) {}
 
@@ -398,12 +398,12 @@ public:
     /// Append a value to the end
     template <typename T>
     VectorBuilder& push_back(T&& val) {
-        transient_.push_back(Value{std::forward<T>(val)});
+        transient_.push_back(ImmerValue{std::forward<T>(val)});
         return *this;
     }
 
-    /// Append an already constructed Value
-    VectorBuilder& push_back(Value val) {
+    /// Append an already constructed ImmerValue
+    VectorBuilder& push_back(ImmerValue val) {
         transient_.push_back(std::move(val));
         return *this;
     }
@@ -412,7 +412,7 @@ public:
     template <typename T>
     VectorBuilder& set(std::size_t index, T&& val) {
         if (index < transient_.size()) {
-            transient_.set(index, Value{std::forward<T>(val)});
+            transient_.set(index, ImmerValue{std::forward<T>(val)});
         }
         return *this;
     }
@@ -421,7 +421,7 @@ public:
     [[nodiscard]] std::size_t size() const { return transient_.size(); }
 
     /// Get a previously set value by index
-    [[nodiscard]] Value get(std::size_t index, Value default_val = Value{}) const {
+    [[nodiscard]] ImmerValue get(std::size_t index, ImmerValue default_val = ImmerValue{}) const {
         if (index < transient_.size()) {
             return transient_[index];  // Container Boxing: no .get()
         }
@@ -430,7 +430,7 @@ public:
 
     /// Update a previously set value by index using a function
     template <typename Fn>
-        requires ValueTransformer<Fn, Value>
+        requires ValueTransformer<Fn, ImmerValue>
     VectorBuilder& update_at(std::size_t index, Fn&& fn) {
         if (index < transient_.size()) {
             auto new_val = std::forward<Fn>(fn)(transient_[index]);  // Container Boxing: no .get()
@@ -454,11 +454,11 @@ public:
             return set(*first_idx, std::forward<T>(val));
         }
 
-        Value root_val = transient_[*first_idx];  // Container Boxing: no .get()
+        ImmerValue root_val = transient_[*first_idx];  // Container Boxing: no .get()
         if (root_val.is_null())
             return *this; // Strict mode: path must exist
 
-        Value new_root = set_at_path_strict_impl(root_val, path.subpath(1), Value{std::forward<T>(val)});
+        ImmerValue new_root = set_at_path_strict_impl(root_val, path.subpath(1), ImmerValue{std::forward<T>(val)});
         if (!new_root.is_null()) {
             transient_.set(*first_idx, std::move(new_root));
         }
@@ -480,8 +480,8 @@ public:
             return set(*first_idx, std::forward<T>(val));
         }
 
-        Value root_val = transient_[*first_idx];  // Container Boxing: no .get()
-        Value new_root = set_at_path_vivify_impl(root_val, path.subpath(1), Value{std::forward<T>(val)});
+        ImmerValue root_val = transient_[*first_idx];  // Container Boxing: no .get()
+        ImmerValue new_root = set_at_path_vivify_impl(root_val, path.subpath(1), ImmerValue{std::forward<T>(val)});
         transient_.set(*first_idx, std::move(new_root));
         return *this;
     }
@@ -489,7 +489,7 @@ public:
     /// Update value at a nested path using a function (strict mode)
     /// @note If path doesn't exist, operation silently fails. Use update_at_path_vivify() to auto-create.
     template <typename Fn>
-        requires ValueTransformer<Fn, Value>
+        requires ValueTransformer<Fn, ImmerValue>
     VectorBuilder& update_at_path(PathView path, Fn&& fn) {
         if (path.empty())
             return *this;
@@ -502,17 +502,17 @@ public:
             return update_at(*first_idx, std::forward<Fn>(fn));
         }
 
-        Value root_val = transient_[*first_idx];  // Container Boxing: no .get()
+        ImmerValue root_val = transient_[*first_idx];  // Container Boxing: no .get()
         if (root_val.is_null())
             return *this; // Strict mode: path must exist
 
         PathView sub_path = path.subpath(1);
-        Value current = get_at_path_impl(root_val, sub_path);
+        ImmerValue current = get_at_path_impl(root_val, sub_path);
         if (current.is_null())
             return *this; // Strict mode: path must exist
 
-        Value new_val = std::forward<Fn>(fn)(std::move(current));
-        Value new_root = set_at_path_strict_impl(root_val, sub_path, std::move(new_val));
+        ImmerValue new_val = std::forward<Fn>(fn)(std::move(current));
+        ImmerValue new_root = set_at_path_strict_impl(root_val, sub_path, std::move(new_val));
         if (!new_root.is_null()) {
             transient_.set(*first_idx, std::move(new_root));
         }
@@ -521,7 +521,7 @@ public:
 
     /// Update value at a nested path using a function with auto-vivification
     template <typename Fn>
-        requires ValueTransformer<Fn, Value>
+        requires ValueTransformer<Fn, ImmerValue>
     VectorBuilder& update_at_path_vivify(PathView path, Fn&& fn) {
         if (path.empty())
             return *this;
@@ -534,29 +534,29 @@ public:
             return update_at(*first_idx, std::forward<Fn>(fn));
         }
 
-        Value root_val = transient_[*first_idx];  // Container Boxing: no .get()
+        ImmerValue root_val = transient_[*first_idx];  // Container Boxing: no .get()
         PathView sub_path = path.subpath(1);
-        Value current = get_at_path_impl(root_val, sub_path);
-        Value new_val = std::forward<Fn>(fn)(std::move(current));
-        Value new_root = set_at_path_vivify_impl(root_val, sub_path, std::move(new_val));
+        ImmerValue current = get_at_path_impl(root_val, sub_path);
+        ImmerValue new_val = std::forward<Fn>(fn)(std::move(current));
+        ImmerValue new_root = set_at_path_vivify_impl(root_val, sub_path, std::move(new_val));
         transient_.set(*first_idx, std::move(new_root));
         return *this;
     }
 
-    /// Finish building and return the immutable Value
-    [[nodiscard]] Value finish() { return Value{BoxedValueVector{transient_.persistent()}}; }
+    /// Finish building and return the immutable ImmerValue
+    [[nodiscard]] ImmerValue finish() { return ImmerValue{BoxedValueVector{transient_.persistent()}}; }
 
-    /// Finish and return just the vector (not wrapped in Value)
+    /// Finish and return just the vector (not wrapped in ImmerValue)
     [[nodiscard]] ValueVector finish_vector() { return transient_.persistent(); }
 
 private:
     transient_type transient_;
 
     // Helper: get value at path using PathView (zero-copy)
-    static Value get_at_path_impl(const Value& root, PathView path) {
+    static ImmerValue get_at_path_impl(const ImmerValue& root, PathView path) {
         if (path.empty())
             return root;
-        Value child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, path[0]);
+        ImmerValue child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, path[0]);
         if (child.is_null())
             return child;
         return get_at_path_impl(child, path.subpath(1));
@@ -564,26 +564,26 @@ private:
 
     // Helper: set value at path (strict mode - returns null on failure)
     // Uses PathView for zero-copy path traversal
-    static Value set_at_path_strict_impl(const Value& root, PathView path, Value new_val) {
+    static ImmerValue set_at_path_strict_impl(const ImmerValue& root, PathView path, ImmerValue new_val) {
         if (path.empty())
             return new_val;
 
         const auto& elem = path[0];
-        Value current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
+        ImmerValue current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
 
         // Strict mode: if path doesn't exist, return null to signal failure
         if (current_child.is_null() && path.size() > 1) {
-            return Value{}; // Signal failure
+            return ImmerValue{}; // Signal failure
         }
 
-        Value new_child = set_at_path_strict_impl(current_child, path.subpath(1), std::move(new_val));
+        ImmerValue new_child = set_at_path_strict_impl(current_child, path.subpath(1), std::move(new_val));
         if (new_child.is_null() && path.size() > 1) {
-            return Value{}; // Propagate failure
+            return ImmerValue{}; // Propagate failure
         }
 
-        // Set child back to parent using Value's set method (handles Container Boxing internally)
+        // Set child back to parent using ImmerValue's set method (handles Container Boxing internally)
         return std::visit(
-            [&root, &new_child](auto key_or_idx) -> Value {
+            [&root, &new_child](auto key_or_idx) -> ImmerValue {
                 return root.set(key_or_idx, std::move(new_child));
             },
             elem);
@@ -591,22 +591,22 @@ private:
 
     // Helper: set value at path with vivification
     // Uses PathView for zero-copy path traversal
-    static Value set_at_path_vivify_impl(const Value& root, PathView path, Value new_val) {
+    static ImmerValue set_at_path_vivify_impl(const ImmerValue& root, PathView path, ImmerValue new_val) {
         if (path.empty())
             return new_val;
         const auto& elem = path[0];
-        Value current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
+        ImmerValue current_child = std::visit([&root](const auto& key_or_idx) { return root.at(key_or_idx); }, elem);
         if (current_child.is_null() && path.size() > 1) {
             const auto& next = path[1];
             if (std::holds_alternative<std::string_view>(next)) {
-                current_child = Value{BoxedValueMap{ValueMap{}}};
+                current_child = ImmerValue{BoxedValueMap{ValueMap{}}};
             } else {
-                current_child = Value{BoxedValueVector{ValueVector{}}};
+                current_child = ImmerValue{BoxedValueVector{ValueVector{}}};
             }
         }
-        Value new_child = set_at_path_vivify_impl(current_child, path.subpath(1), std::move(new_val));
+        ImmerValue new_child = set_at_path_vivify_impl(current_child, path.subpath(1), std::move(new_val));
         return std::visit(
-            [&root, &new_child](auto key_or_idx) -> Value {
+            [&root, &new_child](auto key_or_idx) -> ImmerValue {
                 return root.set_vivify(key_or_idx, std::move(new_child));
             },
             elem);
@@ -620,7 +620,7 @@ public:
 
     ArrayBuilder() : transient_(ValueArray{}.transient()) {}
     explicit ArrayBuilder(const ValueArray& existing) : transient_(existing.transient()) {}
-    explicit ArrayBuilder(const Value& existing)
+    explicit ArrayBuilder(const ImmerValue& existing)
         : transient_(existing.is<BoxedValueArray>() ? existing.get_if<BoxedValueArray>()->get().transient()
                                                     : ValueArray{}.transient()) {}
 
@@ -631,18 +631,18 @@ public:
 
     template <typename T>
     ArrayBuilder& push_back(T&& val) {
-        transient_.push_back(Value{std::forward<T>(val)});
+        transient_.push_back(ImmerValue{std::forward<T>(val)});
         return *this;
     }
 
-    ArrayBuilder& push_back(Value val) {
+    ArrayBuilder& push_back(ImmerValue val) {
         transient_.push_back(std::move(val));
         return *this;
     }
 
     [[nodiscard]] std::size_t size() const { return transient_.size(); }
 
-    [[nodiscard]] Value finish() { return Value{BoxedValueArray{transient_.persistent()}}; }
+    [[nodiscard]] ImmerValue finish() { return ImmerValue{BoxedValueArray{transient_.persistent()}}; }
 
     [[nodiscard]] ValueArray finish_array() { return transient_.persistent(); }
 
@@ -657,7 +657,7 @@ public:
 
     TableBuilder() : transient_(ValueTable{}.transient()) {}
     explicit TableBuilder(const ValueTable& existing) : transient_(existing.transient()) {}
-    explicit TableBuilder(const Value& existing)
+    explicit TableBuilder(const ImmerValue& existing)
         : transient_(existing.is<BoxedValueTable>() ? existing.get_if<BoxedValueTable>()->get().transient()
                                                     : ValueTable{}.transient()) {}
 
@@ -670,12 +670,12 @@ public:
     /// Note: TableEntry::value still uses ValueBox (Element Boxing for tables)
     template <typename T>
     TableBuilder& insert(std::string_view id, T&& val) {
-        transient_.insert(TableEntry{std::string{id}, ValueBox{Value{std::forward<T>(val)}}});
+        transient_.insert(TableEntry{std::string{id}, ValueBox{ImmerValue{std::forward<T>(val)}}});
         return *this;
     }
 
-    /// Insert an already constructed Value
-    TableBuilder& insert(std::string_view id, Value val) {
+    /// Insert an already constructed ImmerValue
+    TableBuilder& insert(std::string_view id, ImmerValue val) {
         transient_.insert(TableEntry{std::string{id}, ValueBox{std::move(val)}});
         return *this;
     }
@@ -687,7 +687,7 @@ public:
     }
 
     /// Insert with const char* id (disambiguation for string literals)
-    TableBuilder& insert(const char* id, Value val) { return insert(std::string_view{id}, std::move(val)); }
+    TableBuilder& insert(const char* id, ImmerValue val) { return insert(std::string_view{id}, std::move(val)); }
 
     /// Insert with const string& id (disambiguation for string lvalue)
     template <typename T>
@@ -696,26 +696,26 @@ public:
     }
 
     /// Insert with const string& id (disambiguation for string lvalue)
-    TableBuilder& insert(const std::string& id, Value val) {
+    TableBuilder& insert(const std::string& id, ImmerValue val) {
         return insert(std::string_view{id}, std::move(val));
     }
 
     /// Insert with rvalue string id (zero-copy id transfer)
     template <typename T>
     TableBuilder& insert(std::string&& id, T&& val) {
-        transient_.insert(TableEntry{std::move(id), ValueBox{Value{std::forward<T>(val)}}});
+        transient_.insert(TableEntry{std::move(id), ValueBox{ImmerValue{std::forward<T>(val)}}});
         return *this;
     }
 
     /// Insert with rvalue string id (zero-copy id transfer)
-    TableBuilder& insert(std::string&& id, Value val) {
+    TableBuilder& insert(std::string&& id, ImmerValue val) {
         transient_.insert(TableEntry{std::move(id), ValueBox{std::move(val)}});
         return *this;
     }
 
     [[nodiscard]] bool contains(std::string_view id) const { return transient_.count(id) > 0; }
 
-    [[nodiscard]] Value get(std::string_view id, Value default_val = Value{}) const {
+    [[nodiscard]] ImmerValue get(std::string_view id, ImmerValue default_val = ImmerValue{}) const {
         const auto* ptr = transient_.find(id);
         if (ptr) {
             return ptr->value.get();  // TableEntry::value is ValueBox, needs .get()
@@ -724,20 +724,20 @@ public:
     }
 
     template <typename Fn>
-        requires ValueTransformer<Fn, Value>
+        requires ValueTransformer<Fn, ImmerValue>
     TableBuilder& update(std::string_view id, Fn&& fn) {
         const auto* ptr = transient_.find(id);
         if (ptr) {
-            auto new_val = Value{std::forward<Fn>(fn)(ptr->value.get())};  // TableEntry::value is ValueBox
+            auto new_val = ImmerValue{std::forward<Fn>(fn)(ptr->value.get())};  // TableEntry::value is ValueBox
             transient_.insert(TableEntry{std::string{id}, ValueBox{std::move(new_val)}});
         }
         return *this;
     }
 
     template <typename Fn>
-        requires ValueTransformer<Fn, Value>
+        requires ValueTransformer<Fn, ImmerValue>
     TableBuilder& upsert(std::string_view id, Fn&& fn) {
-        Value current{};
+        ImmerValue current{};
         const auto* ptr = transient_.find(id);
         if (ptr) {
             current = ptr->value.get();  // TableEntry::value is ValueBox
@@ -749,7 +749,7 @@ public:
 
     [[nodiscard]] std::size_t size() const { return transient_.size(); }
 
-    [[nodiscard]] Value finish() { return Value{BoxedValueTable{transient_.persistent()}}; }
+    [[nodiscard]] ImmerValue finish() { return ImmerValue{BoxedValueTable{transient_.persistent()}}; }
 
     [[nodiscard]] ValueTable finish_table() { return transient_.persistent(); }
 

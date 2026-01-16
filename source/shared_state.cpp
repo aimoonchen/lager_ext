@@ -36,7 +36,7 @@ namespace lager_ext {
 // 24      1       update_type (0=full, 1=diff)
 // 25      3       reserved
 // 28      4       data_size
-// 32      N       data (serialized Value or diff)
+// 32      N       data (serialized ImmerValue or diff)
 // ============================================================
 
 static constexpr uint64_t SHARED_MEMORY_MAGIC = 0x494D4D4552535453ULL; // "IMMERSST"
@@ -213,7 +213,7 @@ struct StatePublisher::Impl {
     SharedMemoryRegion shm;
     SharedMemoryConfig config;
     Stats stats;
-    Value last_state;
+    ImmerValue last_state;
     std::unique_ptr<bip::named_semaphore> notify_sem;
     std::string sem_name;
 
@@ -300,11 +300,11 @@ void StatePublisher::close() noexcept {
 StatePublisher::StatePublisher(StatePublisher&&) noexcept = default;
 StatePublisher& StatePublisher::operator=(StatePublisher&&) noexcept = default;
 
-void StatePublisher::publish(const Value& state) {
+void StatePublisher::publish(const ImmerValue& state) {
     publish_full(state);
 }
 
-bool StatePublisher::publish_diff(const Value& old_state, const Value& new_state) {
+bool StatePublisher::publish_diff(const ImmerValue& old_state, const ImmerValue& new_state) {
     if (!impl_->shm.is_valid())
         return false;
 
@@ -334,7 +334,7 @@ bool StatePublisher::publish_diff(const Value& old_state, const Value& new_state
     }
 }
 
-void StatePublisher::publish_full(const Value& state) {
+void StatePublisher::publish_full(const ImmerValue& state) {
     if (!impl_->shm.is_valid())
         return;
 
@@ -366,7 +366,7 @@ struct StateSubscriber::Impl {
     SharedMemoryRegion shm;
     SharedMemoryConfig config;
     Stats stats;
-    Value current_state;
+    ImmerValue current_state;
     uint64_t current_version = 0;
 
     std::vector<UpdateCallback> callbacks;
@@ -494,7 +494,7 @@ StateSubscriber::~StateSubscriber() = default;
 StateSubscriber::StateSubscriber(StateSubscriber&&) noexcept = default;
 StateSubscriber& StateSubscriber::operator=(StateSubscriber&&) noexcept = default;
 
-const Value& StateSubscriber::current() const noexcept {
+const ImmerValue& StateSubscriber::current() const noexcept {
     return impl_->current_state;
 }
 
@@ -510,14 +510,14 @@ bool StateSubscriber::poll() {
     return false;
 }
 
-Value StateSubscriber::try_get_update() {
+ImmerValue StateSubscriber::try_get_update() {
     if (poll()) {
         return impl_->current_state;
     }
-    return Value{}; // null Value indicates no update available
+    return ImmerValue{}; // null ImmerValue indicates no update available
 }
 
-Value StateSubscriber::wait_for_update(std::chrono::milliseconds timeout) {
+ImmerValue StateSubscriber::wait_for_update(std::chrono::milliseconds timeout) {
     // Use semaphore-based waiting if available (more efficient, no CPU burn)
     if (impl_->notify_sem && impl_->use_semaphore_wait) {
         // First check if there's already an update available
@@ -621,10 +621,10 @@ bool StateSubscriber::is_valid() const noexcept {
 // Helper: Compare two Values and collect differences
 // OPTIMIZATION: Uses path_stack for zero-allocation path building during recursion.
 // Only creates Path objects when adding to result (unavoidable copy at that point).
-static void collect_diff_recursive(const Value& old_val, const Value& new_val, std::vector<PathElement>& path_stack,
+static void collect_diff_recursive(const ImmerValue& old_val, const ImmerValue& new_val, std::vector<PathElement>& path_stack,
                                    std::size_t path_depth, DiffResult& result) {
     // Same value (early exit for identical data)
-    // Note: For Value types, we compare the variant data directly
+    // Note: For ImmerValue types, we compare the variant data directly
     // Structural sharing is detected at the box level in container comparisons below
     if (old_val.data == new_val.data) [[likely]] {
         return;
@@ -649,7 +649,7 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val, s
             path_stack.resize(path_depth + 1);
         }
 
-        // Container Boxing: ValueMap now stores Value directly
+        // Container Boxing: ValueMap now stores ImmerValue directly
         // Check for added and modified entries
         for (const auto& [key, new_child] : new_map) {
             path_stack[path_depth] = std::string_view{key};
@@ -692,11 +692,11 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val, s
 
         std::size_t min_size = std::min(old_vec.size(), new_vec.size());
 
-        // Container Boxing: ValueVector now stores Value directly
+        // Container Boxing: ValueVector now stores ImmerValue directly
         // Compare common elements
         for (std::size_t i = 0; i < min_size; ++i) {
-            const Value& old_child = old_vec[i];
-            const Value& new_child = new_vec[i];
+            const ImmerValue& old_child = old_vec[i];
+            const ImmerValue& new_child = new_vec[i];
 
             // Check if same value (by address for identity)
             if (&old_child.data != &new_child.data) [[unlikely]] {
@@ -736,10 +736,10 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val, s
 
         std::size_t min_size = std::min(old_arr.size(), new_arr.size());
 
-        // Container Boxing: ValueArray now stores Value directly
+        // Container Boxing: ValueArray now stores ImmerValue directly
         for (std::size_t i = 0; i < min_size; ++i) {
-            const Value& old_child = old_arr[i];
-            const Value& new_child = new_arr[i];
+            const ImmerValue& old_child = old_arr[i];
+            const ImmerValue& new_child = new_arr[i];
 
             // Check if same value (by address for identity)
             if (&old_child.data != &new_child.data) [[unlikely]] {
@@ -772,7 +772,7 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val, s
     }
 }
 
-DiffResult collect_diff(const Value& old_val, const Value& new_val) {
+DiffResult collect_diff(const ImmerValue& old_val, const ImmerValue& new_val) {
     DiffResult result;
     std::vector<PathElement> path_stack;
     path_stack.reserve(16); // Pre-allocate for typical path depths
@@ -918,7 +918,7 @@ DiffResult decode_diff(const ByteBuffer& data) {
         uint32_t value_size = read_uint32(ptr, end);
         if (ptr + value_size > end)
             throw std::runtime_error("Invalid value data");
-        Value value = deserialize(ptr, value_size);
+        ImmerValue value = deserialize(ptr, value_size);
         ptr += value_size;
         diff.added.emplace_back(std::move(path), std::move(value));
     }
@@ -928,7 +928,7 @@ DiffResult decode_diff(const ByteBuffer& data) {
     diff.removed.reserve(removed_count);
     for (uint32_t i = 0; i < removed_count; ++i) {
         Path path = read_path(ptr, end);
-        diff.removed.emplace_back(std::move(path), Value{}); // Empty value for removed
+        diff.removed.emplace_back(std::move(path), ImmerValue{}); // Empty value for removed
     }
 
     // Read modified entries
@@ -939,9 +939,9 @@ DiffResult decode_diff(const ByteBuffer& data) {
         uint32_t value_size = read_uint32(ptr, end);
         if (ptr + value_size > end)
             throw std::runtime_error("Invalid value data");
-        Value new_value = deserialize(ptr, value_size);
+        ImmerValue new_value = deserialize(ptr, value_size);
         ptr += value_size;
-        diff.modified.push_back({std::move(path), Value{}, std::move(new_value)});
+        diff.modified.push_back({std::move(path), ImmerValue{}, std::move(new_value)});
     }
 
     return diff;
@@ -953,8 +953,8 @@ DiffResult decode_diff(const ByteBuffer& data) {
 
 // Uses path_core.h functions: set_at_path, erase_at_path
 
-Value apply_diff(const Value& base, const DiffResult& diff) {
-    Value result = base;
+ImmerValue apply_diff(const ImmerValue& base, const DiffResult& diff) {
+    ImmerValue result = base;
 
     // Apply removals first (erase from maps or set to null for arrays)
     for (const auto& [path, _] : diff.removed) {

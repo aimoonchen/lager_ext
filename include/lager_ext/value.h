@@ -2,9 +2,9 @@
 // Licensed under the MIT License. See LICENSE file in the project root.
 
 /// @file value.h
-/// @brief Common Value type definition and utilities for JSON-like dynamic data.
+/// @brief Common ImmerValue type definition and utilities for JSON-like dynamic data.
 ///
-/// This file defines the core Value type that can represent:
+/// This file defines the core ImmerValue type that can represent:
 /// - Primitive types: int, float, double, bool, string
 /// - Math types: Vec2, Vec3, Vec4, Mat3, Mat4x3 (fixed-size float arrays)
 /// - Container types: map, vector, array, table (using immer's immutable containers)
@@ -187,7 +187,7 @@ struct TransparentStringEqual {
 // Size Traits for Incomplete Type Support
 //
 // immer::vector needs sizeof(T) to calculate leaf node parameters.
-// When T is incomplete (like Value before its definition), we use
+// When T is incomplete (like ImmerValue before its definition), we use
 // size_traits to provide an estimated size at compile time.
 // ============================================================
 
@@ -218,42 +218,42 @@ constexpr auto derive_bl() {
 // Container Type Forward Declarations
 // ============================================================
 
-// Forward declare Value for container definitions
-struct Value;
+// Forward declare ImmerValue for container definitions
+struct ImmerValue;
 
-// Specialize size_traits for Value before container definitions
+// Specialize size_traits for ImmerValue before container definitions
 // Estimated size: 16 bytes (for derive_bl calculation)
 template <>
-struct size_traits<Value> {
+struct size_traits<ImmerValue> {
     static constexpr std::size_t value = 16;
 };
 
-/// ValueBox wraps Value in an immer::box for efficient sharing
+/// ValueBox wraps ImmerValue in an immer::box for efficient sharing
 /// Used by TableEntry and for explicit boxing scenarios
-using ValueBox = immer::box<Value>;
+using ValueBox = immer::box<ImmerValue>;
 
 /// Boxed string type for O(1) equality comparison in diff operations
 using BoxedString = immer::box<std::string>;
 
 // ============================================================
-// Raw Container Types (store Value directly, no boxing)
+// Raw Container Types (store ImmerValue directly, no boxing)
 //
-// These are the actual immer containers that store Value elements.
+// These are the actual immer containers that store ImmerValue elements.
 // Container Boxing wraps these in immer::box for O(1) diff comparison.
 // ============================================================
 
 /// Map container with transparent lookup support
-/// Stores Value directly (Container Boxing architecture)
-using ValueMap = immer::map<std::string, Value, TransparentStringHash, TransparentStringEqual>;
+/// Stores ImmerValue directly (Container Boxing architecture)
+using ValueMap = immer::map<std::string, ImmerValue, TransparentStringHash, TransparentStringEqual>;
 
 /// Vector container for ordered sequences
-/// Uses derive_bl to bypass sizeof(Value) requirement for incomplete type
-using ValueVector = immer::vector<Value, immer::default_memory_policy, 
+/// Uses derive_bl to bypass sizeof(ImmerValue) requirement for incomplete type
+using ValueVector = immer::vector<ImmerValue, immer::default_memory_policy, 
                                   immer::default_bits, 
-                                  derive_bl<size_traits<Value>::value>()>;
+                                  derive_bl<size_traits<ImmerValue>::value>()>;
 
 /// Array container for small fixed-size sequences
-using ValueArray = immer::array<Value>;
+using ValueArray = immer::array<ImmerValue>;
 
 /// Table entry with string id
 /// Note: TableEntry::value uses ValueBox (Element Boxing for tables)
@@ -274,7 +274,7 @@ using ValueTable = immer::table<TableEntry, immer::table_key_fn, TransparentStri
 //
 // These wrap the raw containers in immer::box for:
 // - O(1) identity comparison in immer::diff
-// - Efficient sharing across Value instances
+// - Efficient sharing across ImmerValue instances
 // ============================================================
 
 /// Boxed map container
@@ -297,7 +297,7 @@ using BoxedMat4 = immer::box<Mat4>;
 /// @brief Byte buffer type for binary serialization
 using ByteBuffer = std::vector<uint8_t>;
 
-struct Value {
+struct ImmerValue {
     // Type aliases for raw container types (unboxed)
     using value_box = ValueBox;
     using boxed_string = BoxedString;
@@ -324,115 +324,115 @@ struct Value {
     // Constructors for primitive and math types
     // Note: constexpr is intentionally omitted because:
     //   1. Container types (map, vector, etc.) are not constexpr-constructible
-    //   2. Value is designed for runtime dynamic data (like JSON), not compile-time constants
+    //   2. ImmerValue is designed for runtime dynamic data (like JSON), not compile-time constants
     //   3. Consistency: most constructors can't be constexpr anyway
-    Value() noexcept : data(std::monostate{}) {}
-    Value(int8_t v) noexcept : data(v) {}
-    Value(int16_t v) noexcept : data(v) {}
-    Value(int32_t v) noexcept : data(v) {}
-    Value(int64_t v) noexcept : data(v) {}
-    Value(uint8_t v) noexcept : data(v) {}
-    Value(uint16_t v) noexcept : data(v) {}
-    Value(uint32_t v) noexcept : data(v) {}
-    Value(uint64_t v) noexcept : data(v) {}
-    Value(float v) noexcept : data(v) {}
-    Value(double v) noexcept : data(v) {}
-    Value(bool v) noexcept : data(v) {}
+    ImmerValue() noexcept : data(std::monostate{}) {}
+    ImmerValue(int8_t v) noexcept : data(v) {}
+    ImmerValue(int16_t v) noexcept : data(v) {}
+    ImmerValue(int32_t v) noexcept : data(v) {}
+    ImmerValue(int64_t v) noexcept : data(v) {}
+    ImmerValue(uint8_t v) noexcept : data(v) {}
+    ImmerValue(uint16_t v) noexcept : data(v) {}
+    ImmerValue(uint32_t v) noexcept : data(v) {}
+    ImmerValue(uint64_t v) noexcept : data(v) {}
+    ImmerValue(float v) noexcept : data(v) {}
+    ImmerValue(double v) noexcept : data(v) {}
+    ImmerValue(bool v) noexcept : data(v) {}
     
     // String constructors - box the string
-    Value(const std::string& v) : data(boxed_string{v}) {}
-    Value(std::string&& v) noexcept : data(boxed_string{std::move(v)}) {}
-    Value(const char* v) : data(boxed_string{std::string{v}}) {}
-    Value(boxed_string v) : data(std::move(v)) {}
+    ImmerValue(const std::string& v) : data(boxed_string{v}) {}
+    ImmerValue(std::string&& v) noexcept : data(boxed_string{std::move(v)}) {}
+    ImmerValue(const char* v) : data(boxed_string{std::string{v}}) {}
+    ImmerValue(boxed_string v) : data(std::move(v)) {}
     
     // Math type constructors
-    Value(Vec2 v) noexcept : data(v) {}
-    Value(Vec3 v) noexcept : data(v) {}
-    Value(Vec4 v) noexcept : data(v) {}
-    Value(const Mat3& v) : data(boxed_mat3{v}) {}
-    Value(const Mat4x3& v) : data(boxed_mat4x3{v}) {}
-    Value(const Mat4& v) : data(boxed_mat4{v}) {}
-    Value(boxed_mat3 v) : data(std::move(v)) {}
-    Value(boxed_mat4x3 v) : data(std::move(v)) {}
-    Value(boxed_mat4 v) : data(std::move(v)) {}
+    ImmerValue(Vec2 v) noexcept : data(v) {}
+    ImmerValue(Vec3 v) noexcept : data(v) {}
+    ImmerValue(Vec4 v) noexcept : data(v) {}
+    ImmerValue(const Mat3& v) : data(boxed_mat3{v}) {}
+    ImmerValue(const Mat4x3& v) : data(boxed_mat4x3{v}) {}
+    ImmerValue(const Mat4& v) : data(boxed_mat4{v}) {}
+    ImmerValue(boxed_mat3 v) : data(std::move(v)) {}
+    ImmerValue(boxed_mat4x3 v) : data(std::move(v)) {}
+    ImmerValue(boxed_mat4 v) : data(std::move(v)) {}
     
     // Boxed container constructors (Container Boxing)
-    Value(boxed_value_map v) : data(std::move(v)) {}
-    Value(boxed_value_vector v) : data(std::move(v)) {}
-    Value(boxed_value_array v) : data(std::move(v)) {}
-    Value(boxed_value_table v) : data(std::move(v)) {}
+    ImmerValue(boxed_value_map v) : data(std::move(v)) {}
+    ImmerValue(boxed_value_vector v) : data(std::move(v)) {}
+    ImmerValue(boxed_value_array v) : data(std::move(v)) {}
+    ImmerValue(boxed_value_table v) : data(std::move(v)) {}
     
     // Raw container constructors - auto-box
-    Value(value_map v) : data(boxed_value_map{std::move(v)}) {}
-    Value(value_vector v) : data(boxed_value_vector{std::move(v)}) {}
-    Value(value_array v) : data(boxed_value_array{std::move(v)}) {}
-    Value(value_table v) : data(boxed_value_table{std::move(v)}) {}
+    ImmerValue(value_map v) : data(boxed_value_map{std::move(v)}) {}
+    ImmerValue(value_vector v) : data(boxed_value_vector{std::move(v)}) {}
+    ImmerValue(value_array v) : data(boxed_value_array{std::move(v)}) {}
+    ImmerValue(value_table v) : data(boxed_value_table{std::move(v)}) {}
 
     // Factory functions for container types
-    // Container Boxing: containers store Value directly (not ValueBox)
-    static Value map(std::initializer_list<std::pair<std::string, Value>> init) {
+    // Container Boxing: containers store ImmerValue directly (not ValueBox)
+    static ImmerValue map(std::initializer_list<std::pair<std::string, ImmerValue>> init) {
         auto t = value_map{}.transient();
         for (const auto& [key, val] : init) {
-            t.set(key, val);  // Store Value directly
+            t.set(key, val);  // Store ImmerValue directly
         }
-        return Value{boxed_value_map{t.persistent()}};
+        return ImmerValue{boxed_value_map{t.persistent()}};
     }
 
-    static Value vector(std::initializer_list<Value> init) {
+    static ImmerValue vector(std::initializer_list<ImmerValue> init) {
         auto t = value_vector{}.transient();
         for (const auto& val : init) {
-            t.push_back(val);  // Store Value directly
+            t.push_back(val);  // Store ImmerValue directly
         }
-        return Value{boxed_value_vector{t.persistent()}};
+        return ImmerValue{boxed_value_vector{t.persistent()}};
     }
 
-    static Value array(std::initializer_list<Value> init) {
+    static ImmerValue array(std::initializer_list<ImmerValue> init) {
         value_array result;
         for (const auto& val : init) {
-            result = std::move(result).push_back(val);  // Store Value directly
+            result = std::move(result).push_back(val);  // Store ImmerValue directly
         }
-        return Value{boxed_value_array{std::move(result)}};
+        return ImmerValue{boxed_value_array{std::move(result)}};
     }
 
-    static Value table(std::initializer_list<std::pair<std::string, Value>> init) {
+    static ImmerValue table(std::initializer_list<std::pair<std::string, ImmerValue>> init) {
         auto t = value_table{}.transient();
         for (const auto& [id, val] : init) {
             t.insert(table_entry{id, value_box{val}});  // TableEntry::value uses ValueBox
         }
-        return Value{boxed_value_table{t.persistent()}};
+        return ImmerValue{boxed_value_table{t.persistent()}};
     }
 
     /// Factory functions for math types with explicit parameters
-    static Value vec2(float x, float y) { return Value{Vec2{x, y}}; }
+    static ImmerValue vec2(float x, float y) { return ImmerValue{Vec2{x, y}}; }
 
-    static Value vec3(float x, float y, float z) { return Value{Vec3{x, y, z}}; }
+    static ImmerValue vec3(float x, float y, float z) { return ImmerValue{Vec3{x, y, z}}; }
 
-    static Value vec4(float x, float y, float z, float w) { return Value{Vec4{x, y, z, w}}; }
+    static ImmerValue vec4(float x, float y, float z, float w) { return ImmerValue{Vec4{x, y, z, w}}; }
 
     /// Factory functions for math types from raw float pointers
     /// @note Useful for interop with other math libraries (GLM, Eigen, etc.)
-    static Value vec2(const float* ptr) { return Value{Vec2{ptr[0], ptr[1]}}; }
+    static ImmerValue vec2(const float* ptr) { return ImmerValue{Vec2{ptr[0], ptr[1]}}; }
 
-    static Value vec3(const float* ptr) { return Value{Vec3{ptr[0], ptr[1], ptr[2]}}; }
+    static ImmerValue vec3(const float* ptr) { return ImmerValue{Vec3{ptr[0], ptr[1], ptr[2]}}; }
 
-    static Value vec4(const float* ptr) { return Value{Vec4{ptr[0], ptr[1], ptr[2], ptr[3]}}; }
+    static ImmerValue vec4(const float* ptr) { return ImmerValue{Vec4{ptr[0], ptr[1], ptr[2], ptr[3]}}; }
 
-    static Value mat3(const float* ptr) {
+    static ImmerValue mat3(const float* ptr) {
         Mat3 m;
         std::memcpy(m.data(), ptr, sizeof(Mat3));
-        return Value{m};
+        return ImmerValue{m};
     }
 
-    static Value mat4x3(const float* ptr) {
+    static ImmerValue mat4x3(const float* ptr) {
         Mat4x3 m;
         std::memcpy(m.data(), ptr, sizeof(Mat4x3));
-        return Value{m};
+        return ImmerValue{m};
     }
 
-    static Value mat4(const float* ptr) {
+    static ImmerValue mat4(const float* ptr) {
         Mat4 m;
         std::memcpy(m.data(), ptr, sizeof(Mat4));
-        return Value{m};
+        return ImmerValue{m};
     }
 
     /// Get pointer to contained value of type T, or nullptr if type mismatch
@@ -468,34 +468,34 @@ struct Value {
 
     /// Access element by key (zero-allocation with transparent lookup)
     /// @note std::string and const char* implicitly convert to string_view (C++17+)
-    [[nodiscard]] Value at(std::string_view key) const {
+    [[nodiscard]] ImmerValue at(std::string_view key) const {
         // Container Boxing: unbox -> access
         if (auto* m = get_if<boxed_value_map>()) {
             if (auto* found = m->get().find(key))
-                return *found;  // Elements are Value directly
+                return *found;  // Elements are ImmerValue directly
         }
         if (auto* t = get_if<boxed_value_table>()) {
             if (auto* found = t->get().find(key))
                 return found->value.get();  // TableEntry::value is ValueBox
         }
-        detail::log_key_error("Value::at", key, "not found or type mismatch");
-        return Value{};
+        detail::log_key_error("ImmerValue::at", key, "not found or type mismatch");
+        return ImmerValue{};
     }
 
-    [[nodiscard]] Value at(std::size_t index) const {
+    [[nodiscard]] ImmerValue at(std::size_t index) const {
         // Container Boxing: unbox -> access
         if (auto* v = get_if<boxed_value_vector>()) {
             const auto& vec = v->get();
             if (index < vec.size())
-                return vec[index];  // Elements are Value directly
+                return vec[index];  // Elements are ImmerValue directly
         }
         if (auto* a = get_if<boxed_value_array>()) {
             const auto& arr = a->get();
             if (index < arr.size())
-                return arr[index];  // Elements are Value directly
+                return arr[index];  // Elements are ImmerValue directly
         }
-        detail::log_index_error("Value::at", index, "out of range or type mismatch");
-        return Value{};
+        detail::log_index_error("ImmerValue::at", index, "out of range or type mismatch");
+        return ImmerValue{};
     }
 
     /// Get value as type T, or return default if type mismatch
@@ -580,139 +580,139 @@ struct Value {
 
     /// Set value by string_view key
     /// Container Boxing: unbox -> modify -> rebox
-    [[nodiscard]] Value set(std::string_view key, Value val) const {
+    [[nodiscard]] ImmerValue set(std::string_view key, ImmerValue val) const {
         if (auto* m = get_if<boxed_value_map>()) {
             // Unbox -> modify -> rebox
-            return Value{boxed_value_map{m->get().set(std::string{key}, std::move(val))}};
+            return ImmerValue{boxed_value_map{m->get().set(std::string{key}, std::move(val))}};
         }
         if (auto* t = get_if<boxed_value_table>()) {
             // Unbox -> modify -> rebox (TableEntry::value uses ValueBox)
-            return Value{boxed_value_table{t->get().insert(table_entry{std::string{key}, value_box{std::move(val)}})}};
+            return ImmerValue{boxed_value_table{t->get().insert(table_entry{std::string{key}, value_box{std::move(val)}})}};
         }
-        detail::log_key_error("Value::set", key, "cannot set on non-map type");
+        detail::log_key_error("ImmerValue::set", key, "cannot set on non-map type");
         return *this;
     }
 
     /// Set value by const char* key (disambiguation for string literals)
-    [[nodiscard]] Value set(const char* key, Value val) const {
+    [[nodiscard]] ImmerValue set(const char* key, ImmerValue val) const {
         return set(std::string_view{key}, std::move(val));
     }
 
     /// Set value by const string& key (disambiguation for string lvalue)
-    [[nodiscard]] Value set(const std::string& key, Value val) const {
+    [[nodiscard]] ImmerValue set(const std::string& key, ImmerValue val) const {
         return set(std::string_view{key}, std::move(val));
     }
 
     /// Set value by rvalue string key (zero-copy key transfer)
-    [[nodiscard]] Value set(std::string&& key, Value val) const {
+    [[nodiscard]] ImmerValue set(std::string&& key, ImmerValue val) const {
         if (auto* m = get_if<boxed_value_map>()) {
             // Container Boxing: unbox -> modify -> rebox
-            return Value{boxed_value_map{m->get().set(std::move(key), std::move(val))}};
+            return ImmerValue{boxed_value_map{m->get().set(std::move(key), std::move(val))}};
         }
         if (auto* t = get_if<boxed_value_table>()) {
             // Container Boxing: unbox -> modify -> rebox
-            return Value{boxed_value_table{t->get().insert(table_entry{std::move(key), value_box{std::move(val)}})}};
+            return ImmerValue{boxed_value_table{t->get().insert(table_entry{std::move(key), value_box{std::move(val)}})}};
         }
-        detail::log_key_error("Value::set", key, "cannot set on non-map type");
+        detail::log_key_error("ImmerValue::set", key, "cannot set on non-map type");
         return *this;
     }
 
-    [[nodiscard]] Value set(std::size_t index, Value val) const {
+    [[nodiscard]] ImmerValue set(std::size_t index, ImmerValue val) const {
         if (auto* v = get_if<boxed_value_vector>()) {
             const auto& vec = v->get();
             if (index < vec.size()) {
                 // Container Boxing: unbox -> modify -> rebox
-                return Value{boxed_value_vector{vec.set(index, std::move(val))}};
+                return ImmerValue{boxed_value_vector{vec.set(index, std::move(val))}};
             }
         }
         if (auto* a = get_if<boxed_value_array>()) {
             const auto& arr = a->get();
             if (index < arr.size()) {
                 // Container Boxing: unbox -> modify -> rebox
-                return Value{boxed_value_array{arr.update(index, [&val](const Value&) { return std::move(val); })}};
+                return ImmerValue{boxed_value_array{arr.update(index, [&val](const ImmerValue&) { return std::move(val); })}};
             }
         }
-        detail::log_index_error("Value::set", index, "cannot set on non-vector type");
+        detail::log_index_error("ImmerValue::set", index, "cannot set on non-vector type");
         return *this;
     }
 
-    [[nodiscard]] Value set_vivify(std::string_view key, Value val) const {
+    [[nodiscard]] ImmerValue set_vivify(std::string_view key, ImmerValue val) const {
         if (auto* m = get_if<boxed_value_map>()) {
             // Container Boxing: unbox -> modify -> rebox
-            return Value{boxed_value_map{m->get().set(std::string{key}, std::move(val))}};
+            return ImmerValue{boxed_value_map{m->get().set(std::string{key}, std::move(val))}};
         }
         if (auto* t = get_if<boxed_value_table>()) {
             // Container Boxing: unbox -> modify -> rebox
-            return Value{boxed_value_table{t->get().insert(table_entry{std::string{key}, value_box{std::move(val)}})}};
+            return ImmerValue{boxed_value_table{t->get().insert(table_entry{std::string{key}, value_box{std::move(val)}})}};
         }
         if (is_null()) {
             // Auto-vivify: create new map
-            return Value{boxed_value_map{value_map{}.set(std::string{key}, std::move(val))}};
+            return ImmerValue{boxed_value_map{value_map{}.set(std::string{key}, std::move(val))}};
         }
-        detail::log_key_error("Value::set_vivify", key, "cannot set on non-map/non-null type");
+        detail::log_key_error("ImmerValue::set_vivify", key, "cannot set on non-map/non-null type");
         return *this;
     }
 
     /// Set value by const char* key with auto-vivification (disambiguation for string literals)
-    [[nodiscard]] Value set_vivify(const char* key, Value val) const {
+    [[nodiscard]] ImmerValue set_vivify(const char* key, ImmerValue val) const {
         return set_vivify(std::string_view{key}, std::move(val));
     }
 
     /// Set value by const string& key with auto-vivification (disambiguation for string lvalue)
-    [[nodiscard]] Value set_vivify(const std::string& key, Value val) const {
+    [[nodiscard]] ImmerValue set_vivify(const std::string& key, ImmerValue val) const {
         return set_vivify(std::string_view{key}, std::move(val));
     }
 
     /// Set value by rvalue string key with auto-vivification (zero-copy key transfer)
-    [[nodiscard]] Value set_vivify(std::string&& key, Value val) const {
+    [[nodiscard]] ImmerValue set_vivify(std::string&& key, ImmerValue val) const {
         if (auto* m = get_if<boxed_value_map>()) {
             // Container Boxing: unbox -> modify -> rebox
-            return Value{boxed_value_map{m->get().set(std::move(key), std::move(val))}};
+            return ImmerValue{boxed_value_map{m->get().set(std::move(key), std::move(val))}};
         }
         if (auto* t = get_if<boxed_value_table>()) {
             // Container Boxing: unbox -> modify -> rebox
-            return Value{boxed_value_table{t->get().insert(table_entry{std::move(key), value_box{std::move(val)}})}};
+            return ImmerValue{boxed_value_table{t->get().insert(table_entry{std::move(key), value_box{std::move(val)}})}};
         }
         if (is_null()) {
             // Auto-vivify: create new map
-            return Value{boxed_value_map{value_map{}.set(std::move(key), std::move(val))}};
+            return ImmerValue{boxed_value_map{value_map{}.set(std::move(key), std::move(val))}};
         }
-        detail::log_key_error("Value::set_vivify", key, "cannot set on non-map/non-null type");
+        detail::log_key_error("ImmerValue::set_vivify", key, "cannot set on non-map/non-null type");
         return *this;
     }
 
-    [[nodiscard]] Value set_vivify(std::size_t index, Value val) const {
+    [[nodiscard]] ImmerValue set_vivify(std::size_t index, ImmerValue val) const {
         if (auto* v = get_if<boxed_value_vector>()) {
             const auto& vec = v->get();
             if (index < vec.size()) {
                 // Container Boxing: unbox -> modify -> rebox
-                return Value{boxed_value_vector{vec.set(index, std::move(val))}};
+                return ImmerValue{boxed_value_vector{vec.set(index, std::move(val))}};
             }
             // Extend vector to fit index
             auto trans = vec.transient();
             while (trans.size() <= index)
-                trans.push_back(Value{});
+                trans.push_back(ImmerValue{});
             trans.set(index, std::move(val));
-            return Value{boxed_value_vector{trans.persistent()}};
+            return ImmerValue{boxed_value_vector{trans.persistent()}};
         }
         if (auto* a = get_if<boxed_value_array>()) {
             const auto& arr = a->get();
             if (index < arr.size()) {
                 // Container Boxing: unbox -> modify -> rebox
-                return Value{boxed_value_array{arr.update(index, [&val](const Value&) { return std::move(val); })}};
+                return ImmerValue{boxed_value_array{arr.update(index, [&val](const ImmerValue&) { return std::move(val); })}};
             }
-            detail::log_index_error("Value::set_vivify", index, "array index out of range");
+            detail::log_index_error("ImmerValue::set_vivify", index, "array index out of range");
             return *this;
         }
         if (is_null()) {
             // Auto-vivify: create new vector
             auto trans = value_vector{}.transient();
             for (std::size_t i = 0; i < index; ++i)
-                trans.push_back(Value{});
+                trans.push_back(ImmerValue{});
             trans.push_back(std::move(val));
-            return Value{boxed_value_vector{trans.persistent()}};
+            return ImmerValue{boxed_value_vector{trans.persistent()}};
         }
-        detail::log_index_error("Value::set_vivify", index, "cannot set on non-vector/non-null type");
+        detail::log_index_error("ImmerValue::set_vivify", index, "cannot set on non-vector/non-null type");
         return *this;
     }
 
@@ -743,25 +743,25 @@ struct Value {
 };
 
 // ============================================================
-// Value comparison operators (C++20)
+// ImmerValue comparison operators (C++20)
 //
 // Uses spaceship operator (<=>): compiler auto-generates ==, !=, <, >, <=, >=
 // Note: std::variant supports <=> in C++20, enabling lexicographic comparison
 // ============================================================
 
-/// Equality comparison for Value
-inline bool operator==(const Value& a, const Value& b) {
+/// Equality comparison for ImmerValue
+inline bool operator==(const ImmerValue& a, const ImmerValue& b) {
     return a.data == b.data;
 }
 
-/// Three-way comparison (spaceship operator) for Value
+/// Three-way comparison (spaceship operator) for ImmerValue
 /// Enables all comparison operators: ==, !=, <, >, <=, >=
 /// Returns std::partial_ordering because floating-point types may be NaN
 ///
 /// Optimization: Uses single-argument std::visit instead of two-argument version.
 /// This reduces template instantiations from O(N²) to O(N) where N is the number
 /// of variant alternatives (~23 types). This significantly improves compile times.
-inline std::partial_ordering operator<=>(const Value& a, const Value& b) {
+inline std::partial_ordering operator<=>(const ImmerValue& a, const ImmerValue& b) {
     // Compare type indices first - fast path for different types
     if (a.data.index() != b.data.index()) {
         return a.data.index() <=> b.data.index();
@@ -808,11 +808,11 @@ inline std::partial_ordering operator<=>(const Value& a, const Value& b) {
 // Utility functions
 // ============================================================
 
-// Convert Value to human-readable string
-[[nodiscard]] LAGER_EXT_API std::string value_to_string(const Value& val);
+// Convert ImmerValue to human-readable string
+[[nodiscard]] LAGER_EXT_API std::string value_to_string(const ImmerValue& val);
 
-// Print Value with indentation
-LAGER_EXT_API void print_value(const Value& val, const std::string& prefix = "", std::size_t depth = 0);
+// Print ImmerValue with indentation
+LAGER_EXT_API void print_value(const ImmerValue& val, const std::string& prefix = "", std::size_t depth = 0);
 
 // Note: PathView::to_dot_notation() and PathView::to_string_path() are declared in path_types.h
 
@@ -828,6 +828,6 @@ LAGER_EXT_API void print_value(const Value& val, const std::string& prefix = "",
 //   "config": { "version": 1, "theme": "dark" }
 // }
 // ============================================================
-LAGER_EXT_API Value create_sample_data();
+LAGER_EXT_API ImmerValue create_sample_data();
 
 } // namespace lager_ext

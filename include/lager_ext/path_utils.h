@@ -2,7 +2,7 @@
 // Licensed under the MIT License. See LICENSE file in the project root.
 
 /// @file path_utils.h
-/// @brief Path traversal engine and unified Path API for Value trees.
+/// @brief Path traversal engine and unified Path API for ImmerValue trees.
 ///
 /// This file provides:
 /// 1. Core path traversal functions (get_at_path, set_at_path, etc.)
@@ -21,16 +21,16 @@
 /// ```cpp
 /// using namespace std::string_view_literals;
 /// auto val = get_at_path(root, {{"users"sv, 0, "name"sv}});
-/// auto updated = set_at_path(root, {{"users"sv, 0, "age"sv}}, Value{30});
+/// auto updated = set_at_path(root, {{"users"sv, 0, "age"sv}}, ImmerValue{30});
 /// ```
 ///
 /// ### Unified path:: API (recommended)
 /// ```cpp
 /// // String path
-/// Value name = path::get(data, "/users/0/name");
+/// ImmerValue name = path::get(data, "/users/0/name");
 ///
 /// // Variadic path
-/// Value name = path::get(data, "users", 0, "name");
+/// ImmerValue name = path::get(data, "users", 0, "name");
 ///
 /// // Compile-time lens
 /// auto lens = path::lens<"/users/0/name">();
@@ -55,7 +55,7 @@ namespace detail {
 /// Get value at a single path element (key or index)
 /// @note Internal helper - prefer get_at_path() for public use
 /// @note Uses transparent lookup for zero-allocation string_view access
-[[nodiscard]] inline Value get_at_path_element(const Value& current, const PathElement& elem) {
+[[nodiscard]] inline ImmerValue get_at_path_element(const ImmerValue& current, const PathElement& elem) {
     if (auto* key = std::get_if<std::string_view>(&elem)) {
         return current.at(*key); // Zero-allocation: uses transparent lookup
     } else {
@@ -65,8 +65,8 @@ namespace detail {
 
 /// Set value at a single path element (key or index)
 /// @note Internal helper - prefer set_at_path() for public use
-/// @note Now uses Value::set(string_view) overload for cleaner code
-[[nodiscard]] inline Value set_at_path_element(const Value& current, const PathElement& elem, Value new_val) {
+/// @note Now uses ImmerValue::set(string_view) overload for cleaner code
+[[nodiscard]] inline ImmerValue set_at_path_element(const ImmerValue& current, const PathElement& elem, ImmerValue new_val) {
     if (auto* key = std::get_if<std::string_view>(&elem)) {
         return current.set(*key, std::move(new_val)); // Uses set(string_view) overload
     } else {
@@ -77,10 +77,10 @@ namespace detail {
 /// Erase a key from a map value
 /// @note Internal helper
 /// @note Container Boxing: uses BoxedValueMap, unbox -> modify -> rebox
-[[nodiscard]] inline Value erase_key_from_map(const Value& val, std::string_view key) {
+[[nodiscard]] inline ImmerValue erase_key_from_map(const ImmerValue& val, std::string_view key) {
     if (auto* boxed_map = val.get_if<BoxedValueMap>()) {
         auto new_map = boxed_map->get().erase(std::string{key});
-        return Value{BoxedValueMap{std::move(new_map)}};
+        return ImmerValue{BoxedValueMap{std::move(new_map)}};
     }
     return val;
 }
@@ -89,7 +89,7 @@ namespace detail {
 /// @note Internal helper - prefer is_valid_path() for public use
 /// @note Uses transparent lookup for zero-allocation string_view access
 /// @note Container Boxing: accesses BoxedValueMap/BoxedValueVector/BoxedValueArray
-[[nodiscard]] inline bool can_access_element(const Value& val, const PathElement& elem) {
+[[nodiscard]] inline bool can_access_element(const ImmerValue& val, const PathElement& elem) {
     if (auto* key = std::get_if<std::string_view>(&elem)) {
         if (const auto* boxed_map = val.get_if<BoxedValueMap>()) {
             return boxed_map->get().count(*key) > 0; // Zero-allocation: uses transparent lookup
@@ -116,8 +116,8 @@ namespace detail {
 /// @brief Get value at a path
 /// @param root The root value to traverse
 /// @param path The path to follow (PathView for zero-copy, or Path which implicitly converts)
-/// @return The value at the path, or null Value if any step fails
-[[nodiscard]] LAGER_EXT_API Value get_at_path(const Value& root, PathView path);
+/// @return The value at the path, or null ImmerValue if any step fails
+[[nodiscard]] LAGER_EXT_API ImmerValue get_at_path(const ImmerValue& root, PathView path);
 
 /// @brief Set value at a path (strict mode)
 /// @param root The root value
@@ -126,7 +126,7 @@ namespace detail {
 /// @return New root with the update applied
 /// @note If the path doesn't exist, the operation may silently fail.
 ///       Use set_at_path_vivify() to auto-create intermediate nodes.
-[[nodiscard]] LAGER_EXT_API Value set_at_path(const Value& root, PathView path, Value new_val);
+[[nodiscard]] LAGER_EXT_API ImmerValue set_at_path(const ImmerValue& root, PathView path, ImmerValue new_val);
 
 /// @brief Set value at a path with auto-vivification
 /// Creates intermediate maps/vectors as needed when path doesn't exist.
@@ -135,9 +135,9 @@ namespace detail {
 /// @param new_val The new value to set
 /// @return New root with the update applied
 /// @example
-///   Value result = set_at_path_vivify(Value{}, {{"a"sv, "b"sv, "c"sv}}, Value{100});
+///   ImmerValue result = set_at_path_vivify(ImmerValue{}, {{"a"sv, "b"sv, "c"sv}}, ImmerValue{100});
 ///   // result: {"a": {"b": {"c": 100}}}
-[[nodiscard]] LAGER_EXT_API Value set_at_path_vivify(const Value& root, PathView path, Value new_val);
+[[nodiscard]] LAGER_EXT_API ImmerValue set_at_path_vivify(const ImmerValue& root, PathView path, ImmerValue new_val);
 
 /// @brief Erase value at a path
 /// For maps: actually erases the key.
@@ -145,7 +145,7 @@ namespace detail {
 /// @param root The root value
 /// @param path The path to the value to erase
 /// @return New root with the element erased
-[[nodiscard]] LAGER_EXT_API Value erase_at_path(const Value& root, PathView path);
+[[nodiscard]] LAGER_EXT_API ImmerValue erase_at_path(const ImmerValue& root, PathView path);
 
 // ============================================================
 // Path Validation
@@ -155,13 +155,13 @@ namespace detail {
 /// @param root The root value
 /// @param path The path to check
 /// @return true if all elements in the path exist and can be accessed
-[[nodiscard]] LAGER_EXT_API bool is_valid_path(const Value& root, PathView path);
+[[nodiscard]] LAGER_EXT_API bool is_valid_path(const ImmerValue& root, PathView path);
 
 /// @brief Get the depth of valid traversal for a path
 /// @param root The root value
 /// @param path The path to check
 /// @return Number of path elements that can be successfully traversed (0 to path.size())
-[[nodiscard]] LAGER_EXT_API std::size_t valid_path_depth(const Value& root, PathView path);
+[[nodiscard]] LAGER_EXT_API std::size_t valid_path_depth(const ImmerValue& root, PathView path);
 
 // ============================================================
 // Unified path:: Namespace - Convenient High-Level API
@@ -231,18 +231,18 @@ template <PathElementType... Elems>
 // ============================================================
 
 /// @brief Get value at Path container
-[[nodiscard]] inline Value get(const Value& data, const PathVec& path) {
+[[nodiscard]] inline ImmerValue get(const ImmerValue& data, const PathVec& path) {
     return get_at_path(data, path);
 }
 
 /// @brief Get value at string path
-[[nodiscard]] inline Value get(const Value& data, std::string_view path_str) {
+[[nodiscard]] inline ImmerValue get(const ImmerValue& data, std::string_view path_str) {
     return get_at_path(data, Path{path_str});
 }
 
 /// @brief Get value at variadic path
 template <PathElementType... Elems>
-[[nodiscard]] Value get(const Value& data, Elems&&... path_elements) {
+[[nodiscard]] ImmerValue get(const ImmerValue& data, Elems&&... path_elements) {
     return get_at_path(data, make_path(std::forward<Elems>(path_elements)...).path());
 }
 
@@ -251,27 +251,27 @@ template <PathElementType... Elems>
 // ============================================================
 
 /// @brief Set value at Path container
-[[nodiscard]] inline Value set(const Value& data, const PathVec& path, Value new_value) {
+[[nodiscard]] inline ImmerValue set(const ImmerValue& data, const PathVec& path, ImmerValue new_value) {
     return set_at_path(data, path, std::move(new_value));
 }
 
 /// @brief Set value at string path
-[[nodiscard]] inline Value set(const Value& data, std::string_view path_str, Value new_value) {
+[[nodiscard]] inline ImmerValue set(const ImmerValue& data, std::string_view path_str, ImmerValue new_value) {
     return set_at_path(data, Path{path_str}, std::move(new_value));
 }
 
 /// @brief Set value at variadic path
 /// @note Parameters: (data, path_elem1, path_elem2, ..., new_value)
-/// @example set(data, "users", 0, "name", Value{"Alice"})
+/// @example set(data, "users", 0, "name", ImmerValue{"Alice"})
 template <typename... Args>
     requires(sizeof...(Args) >= 2) // At least one path element + value
-[[nodiscard]] Value set(const Value& data, Args&&... args) {
+[[nodiscard]] ImmerValue set(const ImmerValue& data, Args&&... args) {
     // Extract the last argument as value, rest as path elements
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
         auto args_tuple = std::forward_as_tuple(std::forward<Args>(args)...);
         constexpr std::size_t N = sizeof...(Args);
         Path p = make_path(std::get<Is>(std::move(args_tuple))...).path();
-        return set_at_path(data, p, Value{std::get<N - 1>(std::move(args_tuple))});
+        return set_at_path(data, p, ImmerValue{std::get<N - 1>(std::move(args_tuple))});
     }(std::make_index_sequence<sizeof...(Args) - 1>{});
 }
 
@@ -281,13 +281,13 @@ template <typename... Args>
 
 /// @brief Update value at Path container using a function
 template <typename Fn>
-[[nodiscard]] Value over(const Value& data, const PathVec& path, Fn&& fn) {
+[[nodiscard]] ImmerValue over(const ImmerValue& data, const PathVec& path, Fn&& fn) {
     return set_at_path(data, path, std::forward<Fn>(fn)(get_at_path(data, path)));
 }
 
 /// @brief Update value at string path using a function
 template <typename Fn>
-[[nodiscard]] Value over(const Value& data, std::string_view path_str, Fn&& fn) {
+[[nodiscard]] ImmerValue over(const ImmerValue& data, std::string_view path_str, Fn&& fn) {
     Path path{path_str};
     return set_at_path(data, path, std::forward<Fn>(fn)(get_at_path(data, path)));
 }
@@ -295,7 +295,7 @@ template <typename Fn>
 /// @brief Update value at variadic path using a function
 /// @note Parameters: (data, path_elem1, ..., path_elemN, fn)
 template <typename Fn, PathElementType... Elems>
-[[nodiscard]] Value over(const Value& data, Fn&& fn, Elems&&... path_elements) {
+[[nodiscard]] ImmerValue over(const ImmerValue& data, Fn&& fn, Elems&&... path_elements) {
     auto path = make_path(std::forward<Elems>(path_elements)...).path();
     return set_at_path(data, path, std::forward<Fn>(fn)(get_at_path(data, path)));
 }
@@ -305,12 +305,12 @@ template <typename Fn, PathElementType... Elems>
 // ============================================================
 
 /// @brief Set value at Path container, creating intermediate nodes as needed
-[[nodiscard]] inline Value set_vivify(const Value& data, const PathVec& path, Value new_value) {
+[[nodiscard]] inline ImmerValue set_vivify(const ImmerValue& data, const PathVec& path, ImmerValue new_value) {
     return set_at_path_vivify(data, path, std::move(new_value));
 }
 
 /// @brief Set value at string path with auto-vivification
-[[nodiscard]] inline Value set_vivify(const Value& data, std::string_view path_str, Value new_value) {
+[[nodiscard]] inline ImmerValue set_vivify(const ImmerValue& data, std::string_view path_str, ImmerValue new_value) {
     return set_at_path_vivify(data, Path{path_str}, std::move(new_value));
 }
 
@@ -318,12 +318,12 @@ template <typename Fn, PathElementType... Elems>
 /// @note Parameters: (data, path_elem1, ..., path_elemN, new_value)
 template <typename... Args>
     requires(sizeof...(Args) >= 2)
-[[nodiscard]] Value set_vivify(const Value& data, Args&&... args) {
+[[nodiscard]] ImmerValue set_vivify(const ImmerValue& data, Args&&... args) {
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
         auto args_tuple = std::forward_as_tuple(std::forward<Args>(args)...);
         constexpr std::size_t N = sizeof...(Args);
         Path p = make_path(std::get<Is>(std::move(args_tuple))...).path();
-        return set_at_path_vivify(data, p, Value{std::get<N - 1>(std::move(args_tuple))});
+        return set_at_path_vivify(data, p, ImmerValue{std::get<N - 1>(std::move(args_tuple))});
     }(std::make_index_sequence<sizeof...(Args) - 1>{});
 }
 
@@ -333,18 +333,18 @@ template <typename... Args>
 
 /// @brief Erase value at Path container
 /// For maps: erases the key. For vectors: sets to null.
-[[nodiscard]] inline Value erase(const Value& data, const PathVec& path) {
+[[nodiscard]] inline ImmerValue erase(const ImmerValue& data, const PathVec& path) {
     return erase_at_path(data, path);
 }
 
 /// @brief Erase value at string path
-[[nodiscard]] inline Value erase(const Value& data, std::string_view path_str) {
+[[nodiscard]] inline ImmerValue erase(const ImmerValue& data, std::string_view path_str) {
     return erase_at_path(data, Path{path_str});
 }
 
 /// @brief Erase value at variadic path
 template <PathElementType... Elems>
-[[nodiscard]] Value erase(const Value& data, Elems&&... path_elements) {
+[[nodiscard]] ImmerValue erase(const ImmerValue& data, Elems&&... path_elements) {
     return erase_at_path(data, make_path(std::forward<Elems>(path_elements)...).path());
 }
 
@@ -353,18 +353,18 @@ template <PathElementType... Elems>
 // ============================================================
 
 /// @brief Check if a Path container exists in the data
-[[nodiscard]] inline bool exists(const Value& data, const PathVec& path) {
+[[nodiscard]] inline bool exists(const ImmerValue& data, const PathVec& path) {
     return is_valid_path(data, path);
 }
 
 /// @brief Check if a string path exists in the data
-[[nodiscard]] inline bool exists(const Value& data, std::string_view path_str) {
+[[nodiscard]] inline bool exists(const ImmerValue& data, std::string_view path_str) {
     return is_valid_path(data, Path{path_str});
 }
 
 /// @brief Check if a variadic path exists in the data
 template <PathElementType... Elems>
-[[nodiscard]] bool exists(const Value& data, Elems&&... path_elements) {
+[[nodiscard]] bool exists(const ImmerValue& data, Elems&&... path_elements) {
     return is_valid_path(data, make_path(std::forward<Elems>(path_elements)...).path());
 }
 
@@ -373,12 +373,12 @@ template <PathElementType... Elems>
 // ============================================================
 
 /// @brief Get how deep a path can be traversed
-[[nodiscard]] inline std::size_t valid_depth(const Value& data, const PathVec& path) {
+[[nodiscard]] inline std::size_t valid_depth(const ImmerValue& data, const PathVec& path) {
     return valid_path_depth(data, path);
 }
 
 /// @brief Get how deep a string path can be traversed
-[[nodiscard]] inline std::size_t valid_depth(const Value& data, std::string_view path_str) {
+[[nodiscard]] inline std::size_t valid_depth(const ImmerValue& data, std::string_view path_str) {
     return valid_path_depth(data, Path{path_str});
 }
 
@@ -387,22 +387,22 @@ template <PathElementType... Elems>
 // ============================================================
 
 /// @brief Safe get with detailed error information
-[[nodiscard]] inline PathAccessResult safe_get(const Value& data, const PathVec& path) {
+[[nodiscard]] inline PathAccessResult safe_get(const ImmerValue& data, const PathVec& path) {
     return get_at_path_safe(data, path);
 }
 
 /// @brief Safe get at string path with detailed error information
-[[nodiscard]] inline PathAccessResult safe_get(const Value& data, std::string_view path_str) {
+[[nodiscard]] inline PathAccessResult safe_get(const ImmerValue& data, std::string_view path_str) {
     return get_at_path_safe(data, Path{path_str});
 }
 
 /// @brief Safe set with detailed error information
-[[nodiscard]] inline PathAccessResult safe_set(const Value& data, const PathVec& path, Value new_value) {
+[[nodiscard]] inline PathAccessResult safe_set(const ImmerValue& data, const PathVec& path, ImmerValue new_value) {
     return set_at_path_safe(data, path, std::move(new_value));
 }
 
 /// @brief Safe set at string path with detailed error information
-[[nodiscard]] inline PathAccessResult safe_set(const Value& data, std::string_view path_str, Value new_value) {
+[[nodiscard]] inline PathAccessResult safe_set(const ImmerValue& data, std::string_view path_str, ImmerValue new_value) {
     return set_at_path_safe(data, Path{path_str}, std::move(new_value));
 }
 

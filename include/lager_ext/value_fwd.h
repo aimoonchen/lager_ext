@@ -2,9 +2,9 @@
 // Licensed under the MIT License. See LICENSE file in the project root.
 
 /// @file value_fwd.h
-/// @brief Forward declarations for Value and Builder types
+/// @brief Forward declarations for ImmerValue and Builder types
 ///
-/// This header provides forward declarations for Value and Builder types, allowing
+/// This header provides forward declarations for ImmerValue and Builder types, allowing
 /// headers to declare functions using these types without including the full
 /// value.h or builders.h headers. This reduces compilation dependencies.
 ///
@@ -12,13 +12,13 @@
 /// @code
 ///   // In header file:
 ///   #include <lager_ext/value_fwd.h>
-///   Value create_config();                    // OK - Forward declaration
+///   ImmerValue create_config();                    // OK - Forward declaration
 ///   MapBuilder& configure_builder();          // OK - Forward declaration
 ///
 ///   // In implementation file:
 ///   #include <lager_ext/value.h>
 ///   #include <lager_ext/builders.h>           // Include full definitions when needed
-///   Value create_config() { return Value::map({}); }  // OK - Full definition available
+///   ImmerValue create_config() { return ImmerValue::map({}); }  // OK - Full definition available
 /// @endcode
 
 #pragma once
@@ -30,22 +30,22 @@
 namespace lager_ext {
 
 // ============================================================
-// Value Type Forward Declarations
+// ImmerValue Type Forward Declarations
 // ============================================================
 //
-// Value is a concrete type (not a template) optimized for single-threaded use.
+// ImmerValue is a concrete type (not a template) optimized for single-threaded use.
 // Since IMMER_NO_THREAD_SAFETY=1 is set in lager_ext_config.h:
 //   - immer::default_memory_policy is already the optimal single-threaded policy
 //   - All immer containers use this policy by default
 //
 // ============================================================
 
-/// @brief Forward declaration of the Value type
+/// @brief Forward declaration of the ImmerValue type
 /// 
 /// This is the main type for representing JSON-like dynamic data.
 /// Uses immer::default_memory_policy which is configured for single-threaded
 /// high-performance use via lager_ext_config.h.
-struct Value;
+struct ImmerValue;
 
 // ============================================================
 // Builder Type Forward Declarations

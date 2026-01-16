@@ -82,15 +82,15 @@ public:
     StatePublisher& operator=(StatePublisher&&) noexcept;
 
     // Publish complete state (recommended for initial state)
-    void publish(const Value& state);
+    void publish(const ImmerValue& state);
 
     // Publish incremental diff (recommended for updates)
     // Returns true if diff was published, false if full state was published
     // (full state is published when diff would be larger)
-    bool publish_diff(const Value& old_state, const Value& new_state);
+    bool publish_diff(const ImmerValue& old_state, const ImmerValue& new_state);
 
     // Force publish full state even if diff might be smaller
-    void publish_full(const Value& state);
+    void publish_full(const ImmerValue& state);
 
     // Get current version number
     [[nodiscard]] uint64_t version() const noexcept;
@@ -124,10 +124,10 @@ private:
 //   StateSubscriber subscriber({"my_app_state"});
 //
 //   // Blocking wait:
-//   Value state = subscriber.wait_for_update();
+//   ImmerValue state = subscriber.wait_for_update();
 //
 //   // Or with callback:
-//   subscriber.on_update([](const Value& state) {
+//   subscriber.on_update([](const ImmerValue& state) {
 //       // Handle new state
 //   });
 // ============================================================
@@ -143,7 +143,7 @@ public:
     StateSubscriber& operator=(StateSubscriber&&) noexcept;
 
     // Get current state (returns cached state, does not wait)
-    [[nodiscard]] const Value& current() const noexcept;
+    [[nodiscard]] const ImmerValue& current() const noexcept;
 
     // Get current version
     [[nodiscard]] uint64_t version() const noexcept;
@@ -153,17 +153,17 @@ public:
     bool poll();
 
     // Try to get update without blocking
-    // Returns null Value if no update available
-    [[nodiscard]] Value try_get_update();
+    // Returns null ImmerValue if no update available
+    [[nodiscard]] ImmerValue try_get_update();
 
     // Wait for next update (blocking)
     // Returns the new state
     // timeout: max time to wait (0 = infinite)
-    [[nodiscard]] Value wait_for_update(std::chrono::milliseconds timeout = std::chrono::milliseconds{0});
+    [[nodiscard]] ImmerValue wait_for_update(std::chrono::milliseconds timeout = std::chrono::milliseconds{0});
 
     // Register callback for state updates
     // Callback is invoked when poll() detects an update
-    using UpdateCallback = std::function<void(const Value& new_state, uint64_t version)>;
+    using UpdateCallback = std::function<void(const ImmerValue& new_state, uint64_t version)>;
     void on_update(UpdateCallback callback);
 
     // Start background polling thread
@@ -198,17 +198,17 @@ private:
 // DiffResult - Structured diff for cross-process transfer
 //
 // Unlike DiffEntry (human-readable strings), DiffResult stores
-// actual Value objects for efficient binary serialization.
+// actual ImmerValue objects for efficient binary serialization.
 // ============================================================
 struct ModifiedEntry {
     Path path;
-    Value old_value;
-    Value new_value;
+    ImmerValue old_value;
+    ImmerValue new_value;
 };
 
 struct DiffResult {
-    std::vector<std::pair<Path, Value>> added;   // path -> new value
-    std::vector<std::pair<Path, Value>> removed; // path -> old value (optional)
+    std::vector<std::pair<Path, ImmerValue>> added;   // path -> new value
+    std::vector<std::pair<Path, ImmerValue>> removed; // path -> old value (optional)
     std::vector<ModifiedEntry> modified;         // path + old/new values
 
     [[nodiscard]] bool empty() const { return added.empty() && removed.empty() && modified.empty(); }
@@ -219,7 +219,7 @@ struct DiffResult {
 // ============================================================
 
 // Collect diff between two Values (returns structured diff)
-LAGER_EXT_API DiffResult collect_diff(const Value& old_val, const Value& new_val);
+LAGER_EXT_API DiffResult collect_diff(const ImmerValue& old_val, const ImmerValue& new_val);
 
 // Encode diff changes to binary format for transmission
 LAGER_EXT_API ByteBuffer encode_diff(const DiffResult& diff);
@@ -227,7 +227,7 @@ LAGER_EXT_API ByteBuffer encode_diff(const DiffResult& diff);
 // Decode diff changes from binary format
 LAGER_EXT_API DiffResult decode_diff(const ByteBuffer& data);
 
-// Apply diff to a Value, returning the new Value
-LAGER_EXT_API Value apply_diff(const Value& base, const DiffResult& diff);
+// Apply diff to a ImmerValue, returning the new ImmerValue
+LAGER_EXT_API ImmerValue apply_diff(const ImmerValue& base, const DiffResult& diff);
 
 } // namespace lager_ext

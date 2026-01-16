@@ -2,7 +2,7 @@
 // Licensed under the MIT License. See LICENSE file in the project root.
 
 /// @file fast_shared_value.h
-/// @brief FastSharedValue - High Performance Shared Memory Value with Fake Transience
+/// @brief FastSharedValue - High Performance Shared Memory ImmerValue with Fake Transience
 ///
 /// Differences from SharedValue:
 /// - SharedValue: uses no_transience_policy, construction complexity O(n log n)
@@ -158,7 +158,7 @@ struct FastSharedValue {
     using value_table = FastSharedValueTable;
     using table_entry = FastSharedTableEntry;
 
-    // Math types (same as Value's math types - fixed-size, trivially copyable)
+    // Math types (same as ImmerValue's math types - fixed-size, trivially copyable)
     using vec2_type = Vec2;
     using vec3_type = Vec3;
     using vec4_type = Vec4;
@@ -237,7 +237,7 @@ inline bool operator!=(const FastSharedValue& a, const FastSharedValue& b) {
 }
 
 //==============================================================================
-// Deep Copy Functions: FastSharedValue <-> Value
+// Deep Copy Functions: FastSharedValue <-> ImmerValue
 //
 // Provides two sets of interfaces:
 // 1. Explicit naming: fast_deep_copy_to_local / fast_deep_copy_to_shared
@@ -245,16 +245,16 @@ inline bool operator!=(const FastSharedValue& a, const FastSharedValue& b) {
 // interface)
 //==============================================================================
 
-Value fast_deep_copy_to_local(const FastSharedValue& shared);
-FastSharedValue fast_deep_copy_to_shared(const Value& local);
+ImmerValue fast_deep_copy_to_local(const FastSharedValue& shared);
+FastSharedValue fast_deep_copy_to_shared(const ImmerValue& local);
 
 // Overloaded version - consistent with SharedValue interface
-inline Value deep_copy_to_local(const FastSharedValue& shared);
-inline FastSharedValue deep_copy_to_shared_fast(const Value& local);
+inline ImmerValue deep_copy_to_local(const FastSharedValue& shared);
+inline FastSharedValue deep_copy_to_shared_fast(const ImmerValue& local);
 
 namespace detail {
 
-// FastSharedValue -> Value (using transient optimization)
+// FastSharedValue -> ImmerValue (using transient optimization)
 inline ValueBox copy_fast_shared_box_to_local(const FastSharedValueBox& shared_box) {
     return ValueBox{fast_deep_copy_to_local(shared_box.get())};
 }
@@ -293,7 +293,7 @@ inline ValueTable copy_fast_shared_table_to_local(const FastSharedValueTable& sh
     return transient.persistent();
 }
 
-// Value -> FastSharedValue (using transient optimization - this is the key optimization!)
+// ImmerValue -> FastSharedValue (using transient optimization - this is the key optimization!)
 inline FastSharedValueBox copy_local_box_to_fast_shared(const ValueBox& local_box) {
     return FastSharedValueBox{fast_deep_copy_to_shared(local_box.get())};
 }
@@ -339,67 +339,67 @@ inline FastSharedValueTable copy_local_table_to_fast_shared(const ValueTable& lo
 
 } // namespace detail
 
-inline Value fast_deep_copy_to_local(const FastSharedValue& shared) {
+inline ImmerValue fast_deep_copy_to_local(const FastSharedValue& shared) {
     return std::visit(
-        [](const auto& data) -> Value {
+        [](const auto& data) -> ImmerValue {
             using T = std::decay_t<decltype(data)>;
 
             if constexpr (std::is_same_v<T, std::monostate>) {
-                return Value{};
+                return ImmerValue{};
             }
             // Signed integers
             else if constexpr (std::is_same_v<T, int32_t>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, int64_t>) {
-                return Value{data};
+                return ImmerValue{data};
             }
             // Unsigned integers
             else if constexpr (std::is_same_v<T, uint32_t>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, uint64_t>) {
-                return Value{data};
+                return ImmerValue{data};
             }
             // Floating-point
             else if constexpr (std::is_same_v<T, float>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, double>) {
-                return Value{data};
+                return ImmerValue{data};
             }
             // Boolean
             else if constexpr (std::is_same_v<T, bool>) {
-                return Value{data};
+                return ImmerValue{data};
             }
             // String
             else if constexpr (std::is_same_v<T, ::shared_memory::SharedString>) {
-                return Value{data.to_string()};
+                return ImmerValue{data.to_string()};
             } else if constexpr (std::is_same_v<T, FastSharedValueMap>) {
-                return Value{detail::copy_fast_shared_map_to_local(data)};
+                return ImmerValue{detail::copy_fast_shared_map_to_local(data)};
             } else if constexpr (std::is_same_v<T, FastSharedValueVector>) {
-                return Value{detail::copy_fast_shared_vector_to_local(data)};
+                return ImmerValue{detail::copy_fast_shared_vector_to_local(data)};
             } else if constexpr (std::is_same_v<T, FastSharedValueArray>) {
-                return Value{detail::copy_fast_shared_array_to_local(data)};
+                return ImmerValue{detail::copy_fast_shared_array_to_local(data)};
             } else if constexpr (std::is_same_v<T, FastSharedValueTable>) {
-                return Value{detail::copy_fast_shared_table_to_local(data)};
+                return ImmerValue{detail::copy_fast_shared_table_to_local(data)};
             }
             // Math types - trivially copyable, direct copy
             else if constexpr (std::is_same_v<T, Vec2>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, Vec3>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, Vec4>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, Mat3>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, Mat4x3>) {
-                return Value{data};
+                return ImmerValue{data};
             } else {
-                return Value{};
+                return ImmerValue{};
             }
         },
         shared.data);
 }
 
-inline FastSharedValue fast_deep_copy_to_shared(const Value& local) {
+inline FastSharedValue fast_deep_copy_to_shared(const ImmerValue& local) {
     return std::visit(
         [](const auto& data) -> FastSharedValue {
             using T = std::decay_t<decltype(data)>;
@@ -460,11 +460,11 @@ inline FastSharedValue fast_deep_copy_to_shared(const Value& local) {
 }
 
 // Overloaded version implementation - consistent with SharedValue interface
-inline Value deep_copy_to_local(const FastSharedValue& shared) {
+inline ImmerValue deep_copy_to_local(const FastSharedValue& shared) {
     return fast_deep_copy_to_local(shared);
 }
 
-inline FastSharedValue deep_copy_to_shared_fast(const Value& local) {
+inline FastSharedValue deep_copy_to_shared_fast(const ImmerValue& local) {
     return fast_deep_copy_to_shared(local);
 }
 
@@ -489,17 +489,17 @@ public:
     FastSharedValueHandle(FastSharedValueHandle&&) = default;
     FastSharedValueHandle& operator=(FastSharedValueHandle&&) = default;
 
-    /// @brief Create shared memory and write Value (called by process B)
+    /// @brief Create shared memory and write ImmerValue (called by process B)
     ///
     /// @param name Shared memory region name (unique identifier)
-    /// @param value The Value to copy to shared memory
+    /// @param value The ImmerValue to copy to shared memory
     /// @param max_size Maximum size of shared memory region (default 100MB)
     /// @return true on success, false on failure
     ///
     /// Uses fast_deep_copy_to_shared for O(n) construction complexity.
     /// On failure, the region is cleaned up automatically.
     /// Use last_error() to get the last error message (if any).
-    bool create(const char* name, const Value& value, size_t max_size = 100 * 1024 * 1024) {
+    bool create(const char* name, const ImmerValue& value, size_t max_size = 100 * 1024 * 1024) {
         last_error_.clear();
 
         if (!region_.create(name, max_size)) {
@@ -564,11 +564,11 @@ public:
         return reinterpret_cast<const FastSharedValue*>(static_cast<char*>(region_.base()) + offset);
     }
 
-    // Deep copy to local Value
-    Value copy_to_local() const {
+    // Deep copy to local ImmerValue
+    ImmerValue copy_to_local() const {
         const FastSharedValue* sv = shared_value();
         if (!sv) {
-            return Value{};
+            return ImmerValue{};
         }
         return fast_deep_copy_to_local(*sv);
     }

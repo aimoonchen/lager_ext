@@ -23,13 +23,13 @@ public:
     /// Remote handler with ID for lifecycle management
     struct RemoteHandler {
         uint64_t id;
-        std::move_only_function<void(const Value&)> handler;
+        std::move_only_function<void(const ImmerValue&) const> handler;
     };
 
     /// Domain handler with ID for lifecycle management
     struct DomainHandler {
         uint64_t id;
-        std::move_only_function<void(const RemoteBus::DomainEnvelope&, const Value&)> handler;
+        std::move_only_function<void(const RemoteBus::DomainEnvelope&, const ImmerValue&) const> handler;
     };
 
     Impl(std::string_view channel_name, EventBus& bus, Role role, std::size_t capacity)
@@ -63,13 +63,13 @@ public:
 
     ~Impl() = default;
 
-    bool post_remote(std::string_view event_name, const Value& payload) {
+    bool post_remote(std::string_view event_name, const ImmerValue& payload) {
         if (!connected_) {
             return false;
         }
 
         // Envelope: {"n": name, "d": data}
-        Value envelope = Value::map({{"n", std::string(event_name)}, {"d", payload}});
+        ImmerValue envelope = ImmerValue::map({{"n", std::string(event_name)}, {"d", payload}});
 
         if (channel_pair_) {
             return channel_pair_->post(detail::IPC_EVT_EVENT, envelope);
@@ -80,12 +80,12 @@ public:
         return false;
     }
 
-    bool broadcast(std::string_view event_name, const Value& payload) {
+    bool broadcast(std::string_view event_name, const ImmerValue& payload) {
         bus_.publish(event_name, payload);
         return post_remote(event_name, payload);
     }
 
-    Connection subscribe_remote_impl(std::string_view event_name, std::move_only_function<void(const Value&)> handler) {
+    Connection subscribe_remote_impl(std::string_view event_name, std::move_only_function<void(const ImmerValue&) const> handler) {
         uint64_t slot_id = next_slot_id_++;
         std::string name(event_name);
         
@@ -97,7 +97,7 @@ public:
         });
     }
 
-    Connection on_request_impl(std::string_view event_name, std::move_only_function<Value(const Value&)> handler) {
+    Connection on_request_impl(std::string_view event_name, std::move_only_function<ImmerValue(const ImmerValue&)> handler) {
         std::string name(event_name);
         request_handlers_[name] = std::move(handler);
         
@@ -108,7 +108,7 @@ public:
 
     Connection bridge_to_local(std::string_view event_name) {
         return subscribe_remote_impl(event_name,
-                                     [this, name = std::string(event_name)](const Value& v) { bus_.publish(name, v); });
+                                     [this, name = std::string(event_name)](const ImmerValue& v) { bus_.publish(name, v); });
     }
 
     std::size_t poll() {
@@ -155,7 +155,7 @@ public:
         return total;
     }
 
-    std::optional<Value> send(std::string_view event_name, const Value& payload,
+    std::optional<ImmerValue> send(std::string_view event_name, const ImmerValue& payload,
                               std::chrono::milliseconds timeout) {
         if (!connected_ || !channel_pair_) {
             return std::nullopt;
@@ -164,8 +164,8 @@ public:
         uint64_t req_id = next_request_id_++;
 
         // Request envelope with ID
-        Value envelope =
-            Value::map({{"n", std::string(event_name)}, {"d", payload}, {"r", static_cast<int64_t>(req_id)}});
+        ImmerValue envelope =
+            ImmerValue::map({{"n", std::string(event_name)}, {"d", payload}, {"r", static_cast<int64_t>(req_id)}});
 
         if (!channel_pair_->post(detail::IPC_EVT_REQUEST, envelope)) {
             return std::nullopt;
@@ -176,7 +176,7 @@ public:
         while (std::chrono::steady_clock::now() - start < timeout) {
             if (auto msg = channel_pair_->tryReceive()) {
                 if (msg->msgId == detail::IPC_EVT_RESPONSE) {
-                    const Value& env = msg->data;
+                    const ImmerValue& env = msg->data;
                     if (auto rid = try_get_int(env, "r"); rid && static_cast<uint64_t>(*rid) == req_id) {
                         return try_get_value(env, "d");
                     }
@@ -211,7 +211,7 @@ private:
         }
     }
 
-    void process_message(uint32_t msgId, const Value& envelope) {
+    void process_message(uint32_t msgId, const ImmerValue& envelope) {
         try {
             auto name = try_get_string(envelope, "n");
             auto payload = try_get_value(envelope, "d");
@@ -230,19 +230,19 @@ private:
         }
     }
 
-    void handle_request(const std::string& name, const Value& payload, const Value& envelope) {
+    void handle_request(const std::string& name, const ImmerValue& payload, const ImmerValue& envelope) {
         auto it = request_handlers_.find(name);
         if (it == request_handlers_.end()) {
             return;
         }
 
-        Value response = it->second(payload);
+        ImmerValue response = it->second(payload);
         auto req_id = try_get_value(envelope, "r");
         if (!req_id) {
             return;
         }
 
-        Value resp_envelope = Value::map({{"n", name}, {"d", response}, {"r", *req_id}});
+        ImmerValue resp_envelope = ImmerValue::map({{"n", name}, {"d", response}, {"r", *req_id}});
 
         if (channel_pair_) {
             channel_pair_->post(detail::IPC_EVT_RESPONSE, resp_envelope);
@@ -251,7 +251,7 @@ private:
         }
     }
 
-    void dispatch_to_handlers(const std::string& name, const Value& payload) {
+    void dispatch_to_handlers(const std::string& name, const ImmerValue& payload) {
         auto it = remote_handlers_.find(name);
         if (it != remote_handlers_.end()) {
             for (const auto& rh : it->second) {
@@ -275,8 +275,8 @@ private:
         }
     }
 
-    // Helper functions for safe Value access
-    static std::optional<std::string> try_get_string(const Value& v, const char* key) {
+    // Helper functions for safe ImmerValue access
+    static std::optional<std::string> try_get_string(const ImmerValue& v, const char* key) {
         try {
             return v.at(key).as<std::string>();
         } catch (...) {
@@ -284,7 +284,7 @@ private:
         }
     }
 
-    static std::optional<int64_t> try_get_int(const Value& v, const char* key) {
+    static std::optional<int64_t> try_get_int(const ImmerValue& v, const char* key) {
         try {
             return v.at(key).as<int64_t>();
         } catch (...) {
@@ -292,7 +292,7 @@ private:
         }
     }
 
-    static std::optional<Value> try_get_value(const Value& v, const char* key) {
+    static std::optional<ImmerValue> try_get_value(const ImmerValue& v, const char* key) {
         try {
             return v.at(key);
         } catch (...) {
@@ -314,7 +314,7 @@ private:
     uint64_t next_slot_id_ = 1;
     
     // Request-response handlers
-    std::unordered_map<std::string, std::move_only_function<Value(const Value&)>> request_handlers_;
+    std::unordered_map<std::string, std::move_only_function<ImmerValue(const ImmerValue&)>> request_handlers_;
     uint64_t next_request_id_ = 1;
 
     // Domain handlers - keyed by domain enum
@@ -323,7 +323,7 @@ private:
 public:
     // Domain subscription implementation
     Connection subscribe_domain_impl(ipc::MessageDomain domain,
-                                     std::move_only_function<void(const RemoteBus::DomainEnvelope&, const Value&)> handler) {
+                                     std::move_only_function<void(const RemoteBus::DomainEnvelope&, const ImmerValue&) const> handler) {
         uint64_t slot_id = next_slot_id_++;
         uint8_t domain_key = static_cast<uint8_t>(domain);
         
@@ -353,7 +353,7 @@ private:
         }
     }
 
-    void dispatch_to_domain_handlers(const ipc::Channel::ReceivedMessage& msg, const Value& payload) {
+    void dispatch_to_domain_handlers(const ipc::Channel::ReceivedMessage& msg, const ImmerValue& payload) {
         uint8_t domain_key = static_cast<uint8_t>(msg.domain);
         auto it = domain_handlers_.find(domain_key);
         if (it != domain_handlers_.end()) {
@@ -384,19 +384,19 @@ RemoteBus::~RemoteBus() = default;
 RemoteBus::RemoteBus(RemoteBus&&) noexcept = default;
 RemoteBus& RemoteBus::operator=(RemoteBus&&) noexcept = default;
 
-bool RemoteBus::post_remote(std::string_view event_name, const Value& payload) {
+bool RemoteBus::post_remote(std::string_view event_name, const ImmerValue& payload) {
     return impl_->post_remote(event_name, payload);
 }
 
-bool RemoteBus::broadcast(std::string_view event_name, const Value& payload) {
+bool RemoteBus::broadcast(std::string_view event_name, const ImmerValue& payload) {
     return impl_->broadcast(event_name, payload);
 }
 
-Connection RemoteBus::subscribe_remote_impl(std::string_view event_name, std::move_only_function<void(const Value&)> handler) {
+Connection RemoteBus::subscribe_remote_impl(std::string_view event_name, std::move_only_function<void(const ImmerValue&) const> handler) {
     return impl_->subscribe_remote_impl(event_name, std::move(handler));
 }
 
-Connection RemoteBus::on_request_impl(std::string_view event_name, std::move_only_function<Value(const Value&)> handler) {
+Connection RemoteBus::on_request_impl(std::string_view event_name, std::move_only_function<ImmerValue(const ImmerValue&)> handler) {
     return impl_->on_request_impl(event_name, std::move(handler));
 }
 
@@ -412,7 +412,7 @@ std::size_t RemoteBus::poll(std::chrono::milliseconds timeout) {
     return impl_->poll(timeout);
 }
 
-std::optional<Value> RemoteBus::send(std::string_view event_name, const Value& payload,
+std::optional<ImmerValue> RemoteBus::send(std::string_view event_name, const ImmerValue& payload,
                                      std::chrono::milliseconds timeout) {
     return impl_->send(event_name, payload, timeout);
 }
@@ -434,7 +434,7 @@ EventBus& RemoteBus::bus_ref() {
 }
 
 Connection RemoteBus::subscribe_domain_impl(MessageDomain domain,
-                                            std::move_only_function<void(const DomainEnvelope&, const Value&)> handler) {
+                                            std::move_only_function<void(const DomainEnvelope&, const ImmerValue&) const> handler) {
     return impl_->subscribe_domain_impl(domain, std::move(handler));
 }
 

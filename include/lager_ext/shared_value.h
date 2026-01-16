@@ -2,7 +2,7 @@
 // Licensed under the MIT License. See LICENSE file in the project root.
 
 /// @file shared_value.h
-/// @brief Shared memory Value type - supports zero-copy cross-process access.
+/// @brief Shared memory ImmerValue type - supports zero-copy cross-process access.
 ///
 /// Core concepts:
 /// 1. Uses fixed address mapping to ensure both processes see the same virtual address
@@ -15,17 +15,17 @@
 ///   - SharedValue      : Shared memory version for cross-process access (defined in this file)
 ///
 /// Convenient aliases:
-///   - Value     = UnsafeValue     (default, for single-threaded use)
+///   - ImmerValue     = UnsafeValue     (default, for single-threaded use)
 ///   - SyncValue = ThreadSafeValue (for multi-threaded use)
 ///
-/// SharedValue - Fully shared memory Value type:
+/// SharedValue - Fully shared memory ImmerValue type:
 ///   - Uses SharedString, all data is in shared memory
 ///   - True zero-copy cross-process access
 ///   - Process A can directly read-only access, or use deep_copy_to_local() for deep copy
 ///
 /// Main APIs:
-///   - deep_copy_to_shared(Value) -> SharedValue  (Process B writes)
-///   - deep_copy_to_local(SharedValue) -> Value   (Process A reads)
+///   - deep_copy_to_shared(ImmerValue) -> SharedValue  (Process B writes)
+///   - deep_copy_to_local(SharedValue) -> ImmerValue   (Process A reads)
 ///   - SharedValueHandle - Convenient shared memory management handle
 
 #pragma once
@@ -77,7 +77,7 @@ struct alignas(64) SharedMemoryHeader {
     size_t heap_offset;       // Heap area start offset
     size_t heap_size;         // Heap area size
     size_t heap_used;         // Heap area used size
-    size_t value_offset;      // Value object offset (0 = uninitialized)
+    size_t value_offset;      // ImmerValue object offset (0 = uninitialized)
     uint64_t _padding;        // Explicit padding for 64-byte alignment
 
     static constexpr uint32_t MAGIC = 0x53484D56; // "SHMV"
@@ -570,7 +570,7 @@ struct shared_heap {
 //==============================================================================
 // SharedValue Type Definition
 //
-// Value type using shared memory allocator
+// ImmerValue type using shared memory allocator
 //
 // Design goal: Maximum performance for one-time construction
 // - Heap policy: bump allocator (allocation is just pointer arithmetic)
@@ -605,7 +605,7 @@ using shared_memory_policy =
                          immer::no_lock_policy, immer::no_transience_policy, false, false>;
 
 //==============================================================================
-// SharedValue Type - Fully shared memory Value (uses SharedString)
+// SharedValue Type - Fully shared memory ImmerValue (uses SharedString)
 //
 // All data including strings are entirely in shared memory,
 // supporting true zero-copy cross-process access.
@@ -651,7 +651,7 @@ struct SharedValue {
     using value_table = SharedValueTable;
     using table_entry = SharedTableEntry;
 
-    // Math types (same as Value's math types - fixed-size, trivially copyable)
+    // Math types (same as ImmerValue's math types - fixed-size, trivially copyable)
     using vec2_type = Vec2;
     using vec3_type = Vec3;
     using vec4_type = Vec4;
@@ -730,7 +730,7 @@ inline bool operator!=(const SharedValue& a, const SharedValue& b) {
 }
 
 //==============================================================================
-// Deep Copy Functions: SharedValue <-> Value
+// Deep Copy Functions: SharedValue <-> ImmerValue
 //
 // [WARNING] PERFORMANCE WARNING:
 // deep_copy_to_shared() uses O(n log n) construction complexity because
@@ -743,8 +743,8 @@ inline bool operator!=(const SharedValue& a, const SharedValue& b) {
 // See fast_shared_value.h for details.
 //==============================================================================
 
-Value deep_copy_to_local(const SharedValue& shared);
-SharedValue deep_copy_to_shared(const Value& local);
+ImmerValue deep_copy_to_local(const SharedValue& shared);
+SharedValue deep_copy_to_shared(const ImmerValue& local);
 
 namespace detail {
 
@@ -825,67 +825,67 @@ inline SharedValueTable copy_local_table_to_shared(const ValueTable& local_table
 
 } // namespace detail
 
-inline Value deep_copy_to_local(const SharedValue& shared) {
+inline ImmerValue deep_copy_to_local(const SharedValue& shared) {
     return std::visit(
-        [](const auto& data) -> Value {
+        [](const auto& data) -> ImmerValue {
             using T = std::decay_t<decltype(data)>;
 
             if constexpr (std::is_same_v<T, std::monostate>) {
-                return Value{};
+                return ImmerValue{};
             }
             // Signed integers
             else if constexpr (std::is_same_v<T, int32_t>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, int64_t>) {
-                return Value{data};
+                return ImmerValue{data};
             }
             // Unsigned integers
             else if constexpr (std::is_same_v<T, uint32_t>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, uint64_t>) {
-                return Value{data};
+                return ImmerValue{data};
             }
             // Floating-point
             else if constexpr (std::is_same_v<T, float>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, double>) {
-                return Value{data};
+                return ImmerValue{data};
             }
             // Boolean
             else if constexpr (std::is_same_v<T, bool>) {
-                return Value{data};
+                return ImmerValue{data};
             }
             // String
             else if constexpr (std::is_same_v<T, shared_memory::SharedString>) {
-                return Value{data.to_string()};
+                return ImmerValue{data.to_string()};
             } else if constexpr (std::is_same_v<T, SharedValueMap>) {
-                return Value{detail::copy_shared_map_to_local(data)};
+                return ImmerValue{detail::copy_shared_map_to_local(data)};
             } else if constexpr (std::is_same_v<T, SharedValueVector>) {
-                return Value{detail::copy_shared_vector_to_local(data)};
+                return ImmerValue{detail::copy_shared_vector_to_local(data)};
             } else if constexpr (std::is_same_v<T, SharedValueArray>) {
-                return Value{detail::copy_shared_array_to_local(data)};
+                return ImmerValue{detail::copy_shared_array_to_local(data)};
             } else if constexpr (std::is_same_v<T, SharedValueTable>) {
-                return Value{detail::copy_shared_table_to_local(data)};
+                return ImmerValue{detail::copy_shared_table_to_local(data)};
             }
             // Math types - trivially copyable, direct copy
             else if constexpr (std::is_same_v<T, Vec2>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, Vec3>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, Vec4>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, Mat3>) {
-                return Value{data};
+                return ImmerValue{data};
             } else if constexpr (std::is_same_v<T, Mat4x3>) {
-                return Value{data};
+                return ImmerValue{data};
             } else {
-                return Value{};
+                return ImmerValue{};
             }
         },
         shared.data);
 }
 
-inline SharedValue deep_copy_to_shared(const Value& local) {
+inline SharedValue deep_copy_to_shared(const ImmerValue& local) {
     return std::visit(
         [](const auto& data) -> SharedValue {
             using T = std::decay_t<decltype(data)>;
@@ -946,7 +946,7 @@ inline SharedValue deep_copy_to_shared(const Value& local) {
 }
 
 //==============================================================================
-// SharedValueHandle - Handle for shared Value
+// SharedValueHandle - Handle for shared ImmerValue
 //
 // Encapsulates shared memory region and the SharedValue stored in it.
 // Provides convenient creation and access interface.
@@ -972,16 +972,16 @@ public:
     SharedValueHandle(SharedValueHandle&&) = default;
     SharedValueHandle& operator=(SharedValueHandle&&) = default;
 
-    /// @brief Create shared memory and write Value (called by process B)
+    /// @brief Create shared memory and write ImmerValue (called by process B)
     ///
     /// @param name Shared memory region name (unique identifier)
-    /// @param value The Value to copy to shared memory
+    /// @param value The ImmerValue to copy to shared memory
     /// @param max_size Maximum size of shared memory region (default 100MB)
     /// @return true on success, false on failure
     ///
     /// On failure, the region is cleaned up automatically.
     /// Use last_error() to get the last error message (if any).
-    bool create(const char* name, const Value& value, size_t max_size = 100 * 1024 * 1024) {
+    bool create(const char* name, const ImmerValue& value, size_t max_size = 100 * 1024 * 1024) {
         last_error_.clear();
 
         if (!region_.create(name, max_size)) {
@@ -1032,7 +1032,7 @@ public:
     // Open shared memory (called by process A)
     bool open(const char* name) { return region_.open(name); }
 
-    // Get shared Value (true zero-copy read-only access!)
+    // Get shared ImmerValue (true zero-copy read-only access!)
     // Note: Must be called after successful open()
     const SharedValue* shared_value() const noexcept {
         if (!region_.is_valid()) {
@@ -1046,18 +1046,18 @@ public:
         return reinterpret_cast<const SharedValue*>(static_cast<char*>(region_.base()) + offset);
     }
 
-    // Deep copy to local Value
-    Value copy_to_local() const {
+    // Deep copy to local ImmerValue
+    ImmerValue copy_to_local() const {
         const SharedValue* sv = shared_value();
         if (!sv) {
-            return Value{};
+            return ImmerValue{};
         }
         return deep_copy_to_local(*sv);
     }
 
     bool is_valid() const noexcept { return region_.is_valid(); }
 
-    // Check if Value has been initialized
+    // Check if ImmerValue has been initialized
     bool is_value_ready() const noexcept {
         if (!region_.is_valid())
             return false;

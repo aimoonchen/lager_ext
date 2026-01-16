@@ -1,22 +1,22 @@
 // lager_adapters.h - Adapters for seamless integration with lager library
 //
-// This header provides adapters that bridge lager_ext's Value-based API
+// This header provides adapters that bridge lager_ext's ImmerValue-based API
 // with lager's strongly-typed cursor/reader/store ecosystem.
 //
 // Features:
-// 1. zoom_value() - Zoom adapters for lager::reader<Value> and lager::cursor<Value>
-// 2. value_middleware - Store middleware for Value-based state management
+// 1. zoom_value() - Zoom adapters for lager::reader<ImmerValue> and lager::cursor<ImmerValue>
+// 2. value_middleware - Store middleware for ImmerValue-based state management
 // 3. watch_path() - Watch specific paths for changes
 //
 // Example usage:
-//   // Zoom a lager cursor to a Value path
+//   // Zoom a lager cursor to a ImmerValue path
 //   auto user_cursor = zoom_value(cursor, "users" / 0 / "name");
 //
 //   // Use middleware with lager store
 //   auto store = lager::make_store<Action>(init_state, loop, value_middleware());
 //
 //   // Watch a specific path for changes
-//   auto conn = watch_path(reader, {"users", 0, "status"}, [](const Value& v) {
+//   auto conn = watch_path(reader, {"users", 0, "status"}, [](const ImmerValue& v) {
 //       std::cout << "Status changed: " << v << "\n";
 //   });
 
@@ -44,38 +44,38 @@ namespace lager_ext {
 // ============================================================
 // Part 1: zoom_value() - Zoom adapters for lager::reader/cursor
 //
-// These functions allow zooming into a lager::reader<Value> or
-// lager::cursor<Value> using a PathLens or Path, returning a
+// These functions allow zooming into a lager::reader<ImmerValue> or
+// lager::cursor<ImmerValue> using a PathLens or Path, returning a
 // new reader/cursor focused on that sub-path.
 //
 // Unlike regular zoom() which requires a lens returning the same
-// type, zoom_value() always works with Value->Value lenses.
+// type, zoom_value() always works with ImmerValue->ImmerValue lenses.
 // ============================================================
 
-/// @brief Zoom a lager::reader<Value> to a sub-path
-/// @param reader The source reader containing a Value
+/// @brief Zoom a lager::reader<ImmerValue> to a sub-path
+/// @param reader The source reader containing a ImmerValue
 /// @param lens PathLens specifying the path to zoom to
-/// @return A new reader<Value> focused on the specified path
+/// @return A new reader<ImmerValue> focused on the specified path
 ///
 /// Example:
-///   lager::reader<Value> state_reader = /* ... */;
+///   lager::reader<ImmerValue> state_reader = /* ... */;
 ///   auto user_reader = zoom_value(state_reader, root / "users" / 0);
 template <typename ReaderT>
-    requires std::is_same_v<typename ReaderT::value_type, Value>
+    requires std::is_same_v<typename ReaderT::value_type, ImmerValue>
 [[nodiscard]] auto zoom_value(ReaderT reader, const PathLens& lens) {
     return reader.zoom(lens.to_lens());
 }
 
-/// @brief Zoom a lager::reader<Value> using a Path
+/// @brief Zoom a lager::reader<ImmerValue> using a Path
 template <typename ReaderT>
-    requires std::is_same_v<typename ReaderT::value_type, Value>
+    requires std::is_same_v<typename ReaderT::value_type, ImmerValue>
 [[nodiscard]] auto zoom_value(ReaderT reader, const Path& path) {
     return reader.zoom(lager_path_lens(path));
 }
 
 /// @brief Zoom using variadic path elements (e.g., zoom_value(r, "users", 0, "name"))
 template <typename ReaderT, PathElementType... Elements>
-    requires std::is_same_v<typename ReaderT::value_type, Value>
+    requires std::is_same_v<typename ReaderT::value_type, ImmerValue>
 [[nodiscard]] auto zoom_value(ReaderT reader, Elements&&... elements) {
     return zoom_value(std::move(reader), make_path(std::forward<Elements>(elements)...));
 }
@@ -84,16 +84,16 @@ template <typename ReaderT, PathElementType... Elements>
 // Part 2: value_middleware - Store middleware
 //
 // Middleware that integrates with lager::make_store to provide:
-// - Value change diffing
+// - ImmerValue change diffing
 // - Automatic path-based subscriptions
-// - Debug logging of Value state changes
+// - Debug logging of ImmerValue state changes
 // ============================================================
 
 /// @brief Configuration for value_middleware
 struct ValueMiddlewareConfig {
     bool enable_diff_logging = false; ///< Log all state diffs to console
     bool enable_deep_diff = true;     ///< Use recursive diff (vs shallow)
-    std::function<void(const Value& old_state, const Value& new_state)> on_change;
+    std::function<void(const ImmerValue& old_state, const ImmerValue& new_state)> on_change;
 };
 
 namespace detail {
@@ -109,8 +109,8 @@ auto make_value_middleware_impl(Config config) {
                 auto old_state = state;
                 auto result = original_reducer(std::forward<decltype(state)>(state), std::forward<decltype(act)>(act));
 
-                // If the state is a Value and we have a callback, notify
-                if constexpr (std::is_same_v<std::decay_t<decltype(state)>, Value>) {
+                // If the state is a ImmerValue and we have a callback, notify
+                if constexpr (std::is_same_v<std::decay_t<decltype(state)>, ImmerValue>) {
                     if (config.on_change) {
                         // Extract new state from result (handles both Model and pair<Model,
                         // Effect>)
@@ -134,7 +134,7 @@ auto make_value_middleware_impl(Config config) {
 
 } // namespace detail
 
-/// @brief Create a middleware for Value-based stores
+/// @brief Create a middleware for ImmerValue-based stores
 /// @param config Configuration options
 /// @return A store enhancer that can be passed to lager::make_store
 ///
@@ -143,7 +143,7 @@ auto make_value_middleware_impl(Config config) {
 ///       init_state,
 ///       loop,
 ///       value_middleware({
-///           .on_change = [](const Value& old_s, const Value& new_s) {
+///           .on_change = [](const ImmerValue& old_s, const ImmerValue& new_s) {
 ///               std::cout << "State changed!\n";
 ///           }
 ///       })
@@ -167,12 +167,12 @@ auto make_value_middleware_impl(Config config) {
 /// only the value at a specific path and only triggers when that
 /// value changes.
 ///
-/// @param watchable A lager::reader<Value> or lager::cursor<Value>
+/// @param watchable A lager::reader<ImmerValue> or lager::cursor<ImmerValue>
 /// @param path The path to watch
 /// @param callback Called with the new value when the path's value changes
 /// @return A watch connection that can be used to unwatch
 template <typename Watchable, typename Callback>
-    requires std::is_same_v<typename Watchable::value_type, Value>
+    requires std::is_same_v<typename Watchable::value_type, ImmerValue>
 auto watch_path(Watchable& watchable, const Path& path, Callback&& callback) {
     // Create a zoomed reader/cursor that only tracks the specific path
     auto zoomed = zoom_value(watchable, path);
@@ -183,14 +183,14 @@ auto watch_path(Watchable& watchable, const Path& path, Callback&& callback) {
 
 /// @brief Watch a path using PathLens
 template <typename Watchable, typename Callback>
-    requires std::is_same_v<typename Watchable::value_type, Value>
+    requires std::is_same_v<typename Watchable::value_type, ImmerValue>
 auto watch_path(Watchable& watchable, const PathLens& lens, Callback&& callback) {
     return watch_path(watchable, lens.path(), std::forward<Callback>(callback));
 }
 
 /// @brief Watch a path using variadic elements
 template <typename Watchable, typename Callback, PathElementType... Elements>
-    requires std::is_same_v<typename Watchable::value_type, Value>
+    requires std::is_same_v<typename Watchable::value_type, ImmerValue>
 auto watch_path(Watchable& watchable, Callback&& callback, Elements&&... elements) {
     return watch_path(watchable, make_path(std::forward<Elements>(elements)...).path(),
                       std::forward<Callback>(callback));

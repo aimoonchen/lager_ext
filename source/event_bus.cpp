@@ -22,16 +22,16 @@ EventBus::~EventBus() = default;
 EventBus::EventBus(EventBus&&) noexcept = default;
 EventBus& EventBus::operator=(EventBus&&) noexcept = default;
 
-void EventBus::publish(std::string_view event_name, const Value& payload) {
+void EventBus::publish(std::string_view event_name, const ImmerValue& payload) {
     const std::uint64_t hash = detail::fnv1a_hash(event_name);
     impl_->publish(hash, event_name, payload);
 }
 
 void EventBus::publish(std::string_view event_name) {
-    publish(event_name, Value{});
+    publish(event_name, ImmerValue{});
 }
 
-std::optional<Value> EventBus::request(std::string_view /*event_name*/, const Value& /*payload*/,
+std::optional<ImmerValue> EventBus::request(std::string_view /*event_name*/, const ImmerValue& /*payload*/,
                                        std::chrono::milliseconds /*timeout*/) {
     // Placeholder for future IPC integration
     // For local-only use, this is not typically needed
@@ -87,7 +87,7 @@ Connection EventBusImpl::subscribe_filter(FilterFunc filter, DynamicHandler hand
     return Connection(slot, this);
 }
 
-void EventBusImpl::publish(std::uint64_t hash, std::string_view event_name, const Value& payload) {
+void EventBusImpl::publish(std::uint64_t hash, std::string_view event_name, const ImmerValue& payload) {
     // Reuse dispatch buffer to avoid allocation
     dispatch_buffer_.clear();
 
@@ -136,7 +136,8 @@ void EventBusImpl::disconnect(Slot* slot) {
     // Remove from single_slots_
     if (slot->type == Slot::Type::Single) {
         if (auto it = single_slots_.find(slot->hash); it != single_slots_.end()) {
-            auto& vec = it->second;
+            // robin_map iterator's value is const, need to use mutable access
+            auto& vec = single_slots_[slot->hash];
             vec.erase(std::remove(vec.begin(), vec.end(), slot), vec.end());
             if (vec.empty()) {
                 single_slots_.erase(it);

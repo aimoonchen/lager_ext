@@ -108,9 +108,9 @@ template <FixedString Key>
 struct StaticKeyLens {
     static constexpr auto key = Key;
 
-    Value get(const Value& whole) const { return whole.at(key.view()); }
+    ImmerValue get(const ImmerValue& whole) const { return whole.at(key.view()); }
 
-    Value set(Value whole, Value part) const { return whole.set(key.view(), std::move(part)); }
+    ImmerValue set(ImmerValue whole, ImmerValue part) const { return whole.set(key.view(), std::move(part)); }
 };
 
 // Index lens - accesses a vector by index at compile time
@@ -118,9 +118,9 @@ template <std::size_t Index>
 struct StaticIndexLens {
     static constexpr std::size_t index = Index;
 
-    Value get(const Value& whole) const { return whole.at(index); }
+    ImmerValue get(const ImmerValue& whole) const { return whole.at(index); }
 
-    Value set(Value whole, Value part) const { return whole.set(index, std::move(part)); }
+    ImmerValue set(ImmerValue whole, ImmerValue part) const { return whole.set(index, std::move(part)); }
 };
 
 // ============================================================
@@ -139,18 +139,18 @@ struct ComposedLens {
     constexpr explicit ComposedLens(Lenses... ls) : lenses(std::move(ls)...) {}
 
     /// Get: Apply lenses left-to-right (lens0.get -> lens1.get -> ...)
-    Value get(const Value& v) const { return get_impl(v, std::index_sequence_for<Lenses...>{}); }
+    ImmerValue get(const ImmerValue& v) const { return get_impl(v, std::index_sequence_for<Lenses...>{}); }
 
     /// Set: Apply lenses right-to-left for the setter
-    Value set(Value v, const Value& x) const { return set_impl(std::move(v), x, std::index_sequence_for<Lenses...>{}); }
+    ImmerValue set(ImmerValue v, const ImmerValue& x) const { return set_impl(std::move(v), x, std::index_sequence_for<Lenses...>{}); }
 
 private:
     template <std::size_t... Is>
-    Value get_impl(const Value& v, std::index_sequence<Is...>) const {
+    ImmerValue get_impl(const ImmerValue& v, std::index_sequence<Is...>) const {
         if constexpr (sizeof...(Is) == 0) {
             return v;
         } else {
-            Value result = v;
+            ImmerValue result = v;
             // Fold expression: apply each lens's get in sequence
             ((result = std::get<Is>(lenses).get(result)), ...);
             return result;
@@ -158,7 +158,7 @@ private:
     }
 
     template <std::size_t... Is>
-    Value set_impl(Value v, const Value& x, std::index_sequence<Is...>) const {
+    ImmerValue set_impl(ImmerValue v, const ImmerValue& x, std::index_sequence<Is...>) const {
         if constexpr (sizeof...(Is) == 0) {
             return x;
         } else {
@@ -168,7 +168,7 @@ private:
 
     // Recursive set: need to get intermediate values, then set back
     template <std::size_t Current, std::size_t First, std::size_t... Rest>
-    Value set_recursive(Value v, const Value& x, std::index_sequence<First, Rest...>) const {
+    ImmerValue set_recursive(ImmerValue v, const ImmerValue& x, std::index_sequence<First, Rest...>) const {
         if constexpr (sizeof...(Rest) == 0) {
             // Base case: last lens
             return std::get<Current>(lenses).set(std::move(v), x);
@@ -190,9 +190,9 @@ struct ComposedLens<> {
 
     constexpr ComposedLens() = default;
 
-    Value get(const Value& v) const { return v; }
+    ImmerValue get(const ImmerValue& v) const { return v; }
 
-    Value set(Value, const Value& x) const { return x; }
+    ImmerValue set(ImmerValue, const ImmerValue& x) const { return x; }
 };
 
 // ============================================================
@@ -211,10 +211,10 @@ struct SegmentPath {
     static auto to_lens() { return make_lens_impl(std::index_sequence_for<Segments...>{}); }
 
     // Get value using this path
-    static Value get(const Value& v) { return to_lens().get(v); }
+    static ImmerValue get(const ImmerValue& v) { return to_lens().get(v); }
 
     // Set value using this path
-    static Value set(Value v, const Value& x) { return to_lens().set(std::move(v), x); }
+    static ImmerValue set(ImmerValue v, const ImmerValue& x) { return to_lens().set(std::move(v), x); }
 
     // Convert to runtime Path for compatibility
     static Path to_runtime_path() {
@@ -253,8 +253,8 @@ template <>
 struct SegmentPath<> {
     static constexpr std::size_t depth = 0;
 
-    static Value get(const Value& v) { return v; }
-    static Value set(Value, const Value& x) { return x; }
+    static ImmerValue get(const ImmerValue& v) { return v; }
+    static ImmerValue set(ImmerValue, const ImmerValue& x) { return x; }
     static Path to_runtime_path() { return {}; }
 };
 
@@ -458,7 +458,7 @@ struct BuildPath<Ptr, std::index_sequence<Is...>> {
 ///
 /// @example
 /// using UserNamePath = StaticPath<"/users/0/name">;
-/// Value name = UserNamePath::get(root);
+/// ImmerValue name = UserNamePath::get(root);
 template <FixedString Ptr>
 using StaticPath = typename detail::BuildPath<Ptr, std::make_index_sequence<detail::count_segments<Ptr>()>>::type;
 

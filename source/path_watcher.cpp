@@ -31,7 +31,7 @@ struct PathElementHash {
 };
 
 // Helper to check if two Values share the same underlying data (structural sharing)
-bool values_share_structure(const Value& a, const Value& b) {
+bool values_share_structure(const ImmerValue& a, const ImmerValue& b) {
     // Quick check: same variant index?
     if (a.type_index() != b.type_index())
         return false;
@@ -67,9 +67,9 @@ bool values_share_structure(const Value& a, const Value& b) {
 }
 
 // Get child value at path element
-Value get_child(const Value& parent, const PathElement& elem) {
+ImmerValue get_child(const ImmerValue& parent, const PathElement& elem) {
     return std::visit(
-        [&parent](const auto& key) -> Value {
+        [&parent](const auto& key) -> ImmerValue {
             using T = std::decay_t<decltype(key)>;
             if constexpr (std::is_same_v<T, std::string_view>) {
                 // Convert string_view to string for map lookup
@@ -219,7 +219,7 @@ void PathWatcher::clear() {
 // Change Detection
 // ============================================================
 
-std::size_t PathWatcher::check(const Value& old_state, const Value& new_state) {
+std::size_t PathWatcher::check(const ImmerValue& old_state, const ImmerValue& new_state) {
     ++stats_.total_checks;
 
     // Optimization 1: Fast path - identical objects
@@ -246,7 +246,7 @@ std::size_t PathWatcher::check(const Value& old_state, const Value& new_state) {
     return triggered;
 }
 
-std::size_t PathWatcher::check_node(WatchNode* node, const Value& old_val, const Value& new_val) {
+std::size_t PathWatcher::check_node(WatchNode* node, const ImmerValue& old_val, const ImmerValue& new_val) {
     if (!node)
         return 0;
 
@@ -269,8 +269,8 @@ std::size_t PathWatcher::check_node(WatchNode* node, const Value& old_val, const
         if (!child)
             continue;
 
-        Value old_child = get_child(old_val, elem);
-        Value new_child = get_child(new_val, elem);
+        ImmerValue old_child = get_child(old_val, elem);
+        ImmerValue new_child = get_child(new_val, elem);
 
         // Optimization: Prune if children share structure (haven't changed)
         if (values_share_structure(old_child, new_child)) {

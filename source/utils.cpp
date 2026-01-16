@@ -9,104 +9,104 @@
 namespace lager_ext {
 
 // ============================================================
-// MutableValue -> Value Conversion
+// MutableValue -> ImmerValue Conversion
 // ============================================================
 
-Value to_value(const MutableValue& mv) {
+ImmerValue to_value(const MutableValue& mv) {
     return std::visit(
-        [](const auto& val) -> Value {
+        [](const auto& val) -> ImmerValue {
             using T = std::decay_t<decltype(val)>;
 
             if constexpr (std::is_same_v<T, std::monostate>) {
-                return Value{};
+                return ImmerValue{};
             } else if constexpr (std::is_same_v<T, MutableValueMapPtr>) {
-                if (!val) return Value{BoxedValueMap{ValueMap{}}};
+                if (!val) return ImmerValue{BoxedValueMap{ValueMap{}}};
                 // Container Boxing: wrap in BoxedValueMap
                 // Use transient for O(n) batch construction instead of O(n log n)
                 auto transient = ValueMap{}.transient();
                 for (const auto& [key, child] : *val) {
                     transient.set(key, to_value(child));
                 }
-                return Value{BoxedValueMap{transient.persistent()}};
+                return ImmerValue{BoxedValueMap{transient.persistent()}};
             } else if constexpr (std::is_same_v<T, MutableValueVectorPtr>) {
-                if (!val) return Value{BoxedValueVector{ValueVector{}}};
+                if (!val) return ImmerValue{BoxedValueVector{ValueVector{}}};
                 // Container Boxing: wrap in BoxedValueVector
                 // Use transient for O(n) batch construction instead of O(n log n)
                 auto transient = ValueVector{}.transient();
                 for (const auto& child : *val) {
                     transient.push_back(to_value(child));
                 }
-                return Value{BoxedValueVector{transient.persistent()}};
+                return ImmerValue{BoxedValueVector{transient.persistent()}};
             } else if constexpr (std::is_same_v<T, MutableMat3Ptr>) {
-                // Unbox and convert to Value's boxed type
+                // Unbox and convert to ImmerValue's boxed type
                 if (val) {
-                    return Value{*val};
+                    return ImmerValue{*val};
                 }
-                return Value{};
+                return ImmerValue{};
             } else if constexpr (std::is_same_v<T, MutableMat4x3Ptr>) {
-                // Unbox and convert to Value's boxed type
+                // Unbox and convert to ImmerValue's boxed type
                 if (val) {
-                    return Value{*val};
+                    return ImmerValue{*val};
                 }
-                return Value{};
+                return ImmerValue{};
             } else {
                 // All other types (primitives, string, Vec2/3/4) can be used directly
-                return Value{val};
+                return ImmerValue{val};
             }
         },
         mv.data);
 }
 
-Value to_value(MutableValue&& mv) {
+ImmerValue to_value(MutableValue&& mv) {
     return std::visit(
-        [](auto&& val) -> Value {
+        [](auto&& val) -> ImmerValue {
             using T = std::decay_t<decltype(val)>;
 
             if constexpr (std::is_same_v<T, std::monostate>) {
-                return Value{};
+                return ImmerValue{};
             } else if constexpr (std::is_same_v<T, std::string>) {
                 // Move the string to avoid copy
-                return Value{std::move(val)};
+                return ImmerValue{std::move(val)};
             } else if constexpr (std::is_same_v<T, MutableValueMapPtr>) {
-                if (!val) return Value{BoxedValueMap{ValueMap{}}};
+                if (!val) return ImmerValue{BoxedValueMap{ValueMap{}}};
                 // Container Boxing: wrap in BoxedValueMap
                 // Use transient for O(n) batch construction instead of O(n log n)
                 auto transient = ValueMap{}.transient();
                 for (auto& [key, child] : *val) {
                     transient.set(key, to_value(std::move(child)));
                 }
-                return Value{BoxedValueMap{transient.persistent()}};
+                return ImmerValue{BoxedValueMap{transient.persistent()}};
             } else if constexpr (std::is_same_v<T, MutableValueVectorPtr>) {
-                if (!val) return Value{BoxedValueVector{ValueVector{}}};
+                if (!val) return ImmerValue{BoxedValueVector{ValueVector{}}};
                 // Container Boxing: wrap in BoxedValueVector
                 // Use transient for O(n) batch construction instead of O(n log n)
                 auto transient = ValueVector{}.transient();
                 for (auto& child : *val) {
                     transient.push_back(to_value(std::move(child)));
                 }
-                return Value{BoxedValueVector{transient.persistent()}};
+                return ImmerValue{BoxedValueVector{transient.persistent()}};
             } else if constexpr (std::is_same_v<T, MutableMat3Ptr>) {
                 if (val) {
-                    return Value{*val};
+                    return ImmerValue{*val};
                 }
-                return Value{};
+                return ImmerValue{};
             } else if constexpr (std::is_same_v<T, MutableMat4x3Ptr>) {
                 if (val) {
-                    return Value{*val};
+                    return ImmerValue{*val};
                 }
-                return Value{};
+                return ImmerValue{};
             } else {
-                return Value{val};
+                return ImmerValue{val};
             }
         },
         std::move(mv.data));
 }
 
 // ============================================================
-// Value -> MutableValue Conversion
+// ImmerValue -> MutableValue Conversion
 // ============================================================
 
-MutableValue to_mutable_value(const Value& v) {
+MutableValue to_mutable_value(const ImmerValue& v) {
     return std::visit(
         [](const auto& val) -> MutableValue {
             using T = std::decay_t<decltype(val)>;
@@ -118,7 +118,7 @@ MutableValue to_mutable_value(const Value& v) {
                 const auto& map = val.get();
                 MutableValueMap result;
                 result.reserve(map.size());
-                // Container Boxing: map now stores Value directly, not ValueBox
+                // Container Boxing: map now stores ImmerValue directly, not ValueBox
                 for (const auto& [key, child] : map) {
                     result.emplace(key, to_mutable_value(child));
                 }
@@ -128,7 +128,7 @@ MutableValue to_mutable_value(const Value& v) {
                 const auto& vec = val.get();
                 MutableValueVector result;
                 result.reserve(vec.size());
-                // Container Boxing: vector now stores Value directly, not ValueBox
+                // Container Boxing: vector now stores ImmerValue directly, not ValueBox
                 for (const auto& child : vec) {
                     result.push_back(to_mutable_value(child));
                 }
@@ -138,7 +138,7 @@ MutableValue to_mutable_value(const Value& v) {
                 const auto& arr = val.get();
                 MutableValueVector result;
                 result.reserve(arr.size());
-                // Container Boxing: array now stores Value directly, not ValueBox
+                // Container Boxing: array now stores ImmerValue directly, not ValueBox
                 for (const auto& child : arr) {
                     result.push_back(to_mutable_value(child));
                 }
@@ -150,16 +150,16 @@ MutableValue to_mutable_value(const Value& v) {
                 result.reserve(table.size());
                 for (const auto& entry : table) {
                     // entry is BasicTableEntry with .id and .value members
-                    // Container Boxing: entry.value is now Value directly, not ValueBox
+                    // Container Boxing: entry.value is now ImmerValue directly, not ValueBox
                     result.emplace(entry.id, to_mutable_value(entry.value));
                 }
                 return MutableValue{std::move(result)};
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat3>) {
                 // Unbox immer::box and create MutableValue with unique_ptr boxing
                 return MutableValue{*val};
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4x3>) {
                 return MutableValue{*val};
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4>) {
                 // MutableValue doesn't support Mat4, convert to null
                 // TODO: Add Mat4 support to MutableValue if needed
                 return MutableValue{};

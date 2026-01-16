@@ -21,7 +21,7 @@
 /// @code
 /// // Use abstract interface
 /// IUndoController& undo = get_undo_controller();
-/// undo.set_property("obj1", "name", Value{"NewName"});
+/// undo.set_property("obj1", "name", ImmerValue{"NewName"});
 ///
 /// if (undo.can_undo()) {
 ///     undo.undo();
@@ -71,17 +71,17 @@ public:
     [[nodiscard]] virtual const SceneObject* get_selected_object() const = 0;
 
     /// Get property value from an object
-    [[nodiscard]] virtual Value get_property(const std::string& object_id, const std::string& path) const = 0;
+    [[nodiscard]] virtual ImmerValue get_property(const std::string& object_id, const std::string& path) const = 0;
 
     // ============================================================
     // User Operations (create undo entries)
     // ============================================================
 
     /// Set a single property (creates undo entry)
-    virtual void set_property(const std::string& object_id, const std::string& path, Value value) = 0;
+    virtual void set_property(const std::string& object_id, const std::string& path, ImmerValue value) = 0;
 
     /// Set multiple properties atomically (creates single undo entry)
-    virtual void set_properties(const std::string& object_id, const std::map<std::string, Value>& updates) = 0;
+    virtual void set_properties(const std::string& object_id, const std::map<std::string, ImmerValue>& updates) = 0;
 
     // ============================================================
     // System Operations (no undo entries)
@@ -162,8 +162,8 @@ public:
 /// @code
 /// {
 ///     UndoTransaction tx(controller, "Move objects");
-///     controller.set_property("obj1", "x", Value{10});
-///     controller.set_property("obj1", "y", Value{20});
+///     controller.set_property("obj1", "x", ImmerValue{10});
+///     controller.set_property("obj1", "y", ImmerValue{20});
 ///     // Transaction committed on scope exit
 /// }
 /// @endcode

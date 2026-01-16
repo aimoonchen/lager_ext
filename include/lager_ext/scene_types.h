@@ -60,7 +60,7 @@ struct ComboOptions {
 
 /// Property UI metadata
 struct PropertyMeta {
-    std::string name;         ///< Property name (key in Value map)
+    std::string name;         ///< Property name (key in ImmerValue map)
     std::string display_name; ///< Human-readable name for UI
     std::string tooltip;      ///< Tooltip text
     std::string category;     ///< Category for grouping in property editor
@@ -104,12 +104,12 @@ struct UIMeta {
 struct SceneObject {
     std::string id;   ///< Unique object ID
     std::string type; ///< Object type name
-    Value data;       ///< Object properties as Value
+    ImmerValue data;       ///< Object properties as ImmerValue
     UIMeta meta;      ///< UI metadata for Qt binding
 
     std::vector<std::string> children; ///< Child object IDs
 
-    // Note: Cannot use defaulted operator== due to Value type
+    // Note: Cannot use defaulted operator== due to ImmerValue type
 };
 
 /// Complete scene state - using immer::map for structural sharing benefits

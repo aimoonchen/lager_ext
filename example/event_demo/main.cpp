@@ -52,10 +52,10 @@ struct RemoteCommand {
 template <>
 struct IpcEventTrait<RemoteCommand> {
     static constexpr bool is_ipc_event = true;
-    static Value serialize(const RemoteCommand& evt) {
-        return Value::map({{"command", evt.command}, {"priority", evt.priority}});
+    static ImmerValue serialize(const RemoteCommand& evt) {
+        return ImmerValue::map({{"command", evt.command}, {"priority", evt.priority}});
     }
-    static RemoteCommand deserialize(const Value& v) {
+    static RemoteCommand deserialize(const ImmerValue& v) {
         return RemoteCommand{.command = v.at("command").as<std::string>(), .priority = v.at("priority").as<int>()};
     }
 };
@@ -70,10 +70,10 @@ struct StatusUpdate {
 template <>
 struct IpcEventTrait<StatusUpdate> {
     static constexpr bool is_ipc_event = true;
-    static Value serialize(const StatusUpdate& evt) {
-        return Value::map({{"component", evt.component}, {"status", evt.status}, {"progress", evt.progress}});
+    static ImmerValue serialize(const StatusUpdate& evt) {
+        return ImmerValue::map({{"component", evt.component}, {"status", evt.status}, {"progress", evt.progress}});
     }
-    static StatusUpdate deserialize(const Value& v) {
+    static StatusUpdate deserialize(const ImmerValue& v) {
         return StatusUpdate{.component = v.at("component").as<std::string>(),
                             .status = v.at("status").as<std::string>(),
                             .progress = v.at("progress").as<double>()};
@@ -127,16 +127,16 @@ public:
 
         // Subscribe to dynamic string events
         connections_ +=
-            bus.subscribe("debug.log", [](const Value& v) { std::cout << "[Logger] Debug: " << to_json(v) << "\n"; });
+            bus.subscribe("debug.log", [](const ImmerValue& v) { std::cout << "[Logger] Debug: " << to_json(v) << "\n"; });
 
         // Subscribe to multiple dynamic events
-        connections_ += bus.subscribe({"warning", "error"}, [](std::string_view name, const Value& v) {
+        connections_ += bus.subscribe({"warning", "error"}, [](std::string_view name, const ImmerValue& v) {
             std::cout << "[Logger] " << name << ": " << to_json(v) << "\n";
         });
 
         // Subscribe with filter
         connections_ += bus.subscribe([](std::string_view name) { return name.starts_with("custom."); },
-                                      [](std::string_view name, const Value& v) {
+                                      [](std::string_view name, const ImmerValue& v) {
                                           std::cout << "[Logger] Custom event: " << name << " = " << to_json(v) << "\n";
                                       });
     }
@@ -167,10 +167,10 @@ void demo_local_events() {
 
     std::cout << "\n--- Publishing dynamic string events ---\n";
 
-    bus.publish("debug.log", Value{"Debugging information"});
-    bus.publish("warning", Value{"Low memory"});
-    bus.publish("error", Value{"File not found"});
-    bus.publish("custom.plugin.event", Value::map({{"action", "click"}, {"x", 100}, {"y", 200}}));
+    bus.publish("debug.log", ImmerValue{"Debugging information"});
+    bus.publish("warning", ImmerValue{"Low memory"});
+    bus.publish("error", ImmerValue{"File not found"});
+    bus.publish("custom.plugin.event", ImmerValue::map({{"action", "click"}, {"x", 100}, {"y", 200}}));
 
     std::cout << "\n--- Testing Guard mechanism ---\n";
 
@@ -242,7 +242,7 @@ void demo_remote_bus() {
 
     // Subscribe to dynamic remote events
     connections += remote.subscribe_remote(
-        "remote.ping", [](const Value& v) { std::cout << "[Remote Received] Ping: " << to_json(v) << "\n"; });
+        "remote.ping", [](const ImmerValue& v) { std::cout << "[Remote Received] Ping: " << to_json(v) << "\n"; });
 
     // Bridge certain remote events to local bus
     connections += remote.bridge_to_local<StatusUpdate>();
@@ -263,7 +263,7 @@ void demo_remote_bus() {
     std::cout << "[Remote] broadcast<StatusUpdate>: " << (sent ? "sent" : "local only") << "\n";
 
     // Publish dynamic event
-    sent = remote.post_remote("remote.command", Value::map({{"action", "save"}, {"target", "scene.json"}}));
+    sent = remote.post_remote("remote.command", ImmerValue::map({{"action", "save"}, {"target", "scene.json"}}));
     std::cout << "[Remote] post_remote(dynamic): " << (sent ? "queued" : "failed") << "\n";
 
     std::cout << "\n--- Polling for incoming events ---\n";
@@ -281,13 +281,13 @@ void demo_remote_bus() {
     std::cout << "\n--- Request/Response pattern ---\n";
 
     // Register a request handler (would be called when another process sends a request)
-    connections += remote.on_request("query.status", [](const Value& request) -> Value {
+    connections += remote.on_request("query.status", [](const ImmerValue& request) -> ImmerValue {
         std::cout << "[Remote] Handling request: " << to_json(request) << "\n";
-        return Value::map({{"status", "ok"}, {"uptime", 12345}});
+        return ImmerValue::map({{"status", "ok"}, {"uptime", 12345}});
     });
 
     // In another process, you would send a request like this:
-    // auto response = remote.request("query.status", Value::map({{"component", "all"}}), 5s);
+    // auto response = remote.request("query.status", ImmerValue::map({{"component", "all"}}), 5s);
 
     std::cout << "[Remote] Request handler registered for 'query.status'\n";
 }

@@ -120,13 +120,13 @@ struct ClearHistory {};
 struct SetProperty {
     std::string object_id;
     std::string property_path;
-    Value new_value;
+    ImmerValue new_value;
 };
 
 /// Set multiple properties atomically - creates a single delta
 struct SetProperties {
     std::string object_id;
-    std::map<std::string, Value> updates; // path -> new_value
+    std::map<std::string, ImmerValue> updates; // path -> new_value
 };
 
 /// Add a new object - delta removes it on undo
@@ -223,12 +223,12 @@ class LAGER_EXT_API DeltaFactory {
 public:
     /// Create delta for setting a single property
     static Delta create_set_property_delta(const std::string& object_id, const std::string& property_path,
-                                           const Value& old_value, const Value& new_value);
+                                           const ImmerValue& old_value, const ImmerValue& new_value);
 
     /// Create delta for setting multiple properties
     static Delta create_set_properties_delta(const std::string& object_id,
-                                             const std::map<std::string, Value>& old_values,
-                                             const std::map<std::string, Value>& new_values);
+                                             const std::map<std::string, ImmerValue>& old_values,
+                                             const std::map<std::string, ImmerValue>& new_values);
 
     /// Create delta for adding an object
     static Delta create_add_object_delta(const SceneObject& object, const std::string& parent_id);
@@ -274,11 +274,11 @@ public:
     [[nodiscard]] const SceneObject* get_selected_object() const;
 
     // Property access
-    [[nodiscard]] Value get_property(const std::string& object_id, const std::string& path) const;
-    void set_property(const std::string& object_id, const std::string& path, Value value);
+    [[nodiscard]] ImmerValue get_property(const std::string& object_id, const std::string& path) const;
+    void set_property(const std::string& object_id, const std::string& path, ImmerValue value);
 
     // Batch property updates (creates single undo entry)
-    void set_properties(const std::string& object_id, const std::map<std::string, Value>& updates);
+    void set_properties(const std::string& object_id, const std::map<std::string, ImmerValue>& updates);
 
     // Transaction support - group multiple operations into single undo
     void begin_transaction(const std::string& description);

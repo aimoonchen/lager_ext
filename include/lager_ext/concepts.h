@@ -4,7 +4,7 @@
 /// @file concepts.h
 /// @brief C++20 Concepts for lager_ext type constraints.
 ///
-/// This file defines concept constraints for Value types, enabling
+/// This file defines concept constraints for ImmerValue types, enabling
 /// compile-time type checking and better error messages.
 
 #pragma once
@@ -33,7 +33,7 @@ using Mat4 = std::array<float, 16>;
 // Primitive Type Concepts
 // ============================================================
 
-/// @brief Concept for primitive numeric and boolean types supported by Value
+/// @brief Concept for primitive numeric and boolean types supported by ImmerValue
 template <typename T>
 concept PrimitiveType = std::is_same_v<std::decay_t<T>, int8_t> || std::is_same_v<std::decay_t<T>, int16_t> ||
                         std::is_same_v<std::decay_t<T>, int32_t> || std::is_same_v<std::decay_t<T>, int64_t> ||

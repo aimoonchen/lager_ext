@@ -38,9 +38,9 @@ namespace ipc {
 // Helper wrappers for serialization (using lager_ext::serialize/deserialize)
 //=============================================================================
 
-/// Serialize Value directly to a pre-allocated buffer (zero-copy optimization)
+/// Serialize ImmerValue directly to a pre-allocated buffer (zero-copy optimization)
 /// @return Number of bytes written, or 0 if buffer too small or null value
-static size_t serialize_value_to(const Value& value, uint8_t* buffer, size_t buffer_size) {
+static size_t serialize_value_to(const ImmerValue& value, uint8_t* buffer, size_t buffer_size) {
     if (value.is_null()) {
         return 0;
     }
@@ -48,17 +48,17 @@ static size_t serialize_value_to(const Value& value, uint8_t* buffer, size_t buf
 }
 
 /// Get serialized size without allocating
-static size_t get_serialized_size(const Value& value) {
+static size_t get_serialized_size(const ImmerValue& value) {
     if (value.is_null()) {
         return 0;
     }
     return lager_ext::serialized_size(value);
 }
 
-/// Deserialize Value from bytes
-static Value deserialize_value(const uint8_t* data, size_t size) {
+/// Deserialize ImmerValue from bytes
+static ImmerValue deserialize_value(const uint8_t* data, size_t size) {
     if (size == 0 || data == nullptr) {
-        return Value{};
+        return ImmerValue{};
     }
     return lager_ext::deserialize(data, size);
 }
@@ -197,7 +197,7 @@ public:
     // Producer Operations
     //-------------------------------------------------------------------------
 
-    bool post(uint32_t msgId, const Value& data, MessageDomain domain) {
+    bool post(uint32_t msgId, const ImmerValue& data, MessageDomain domain) {
         if (!isProducer_ || !header_) [[unlikely]] {
             lastError_ = "Not a producer";
             return false;
@@ -342,7 +342,7 @@ public:
         if (msg->dataSize > 0) {
             result.data = deserialize_value(msg->inlineData, msg->dataSize);
         } else {
-            result.data = Value{};
+            result.data = ImmerValue{};
         }
 
         // Consume: increment read index with release semantics
@@ -472,7 +472,7 @@ std::unique_ptr<Channel> Channel::open(const std::string& name) {
     return channel;
 }
 
-bool Channel::post(uint32_t msgId, const Value& data, MessageDomain domain) {
+bool Channel::post(uint32_t msgId, const ImmerValue& data, MessageDomain domain) {
     return impl_->post(msgId, data, domain);
 }
 
@@ -572,7 +572,7 @@ public:
         return true;
     }
 
-    bool post(uint32_t msgId, const Value& data) {
+    bool post(uint32_t msgId, const ImmerValue& data) {
         if (!outChannel_)
             return false;
         return outChannel_->post(msgId, data);
@@ -602,7 +602,7 @@ public:
         return inChannel_->receive(timeout);
     }
 
-    std::optional<Value> send(uint32_t msgId, const Value& data, std::chrono::milliseconds timeout) {
+    std::optional<ImmerValue> send(uint32_t msgId, const ImmerValue& data, std::chrono::milliseconds timeout) {
         if (!post(msgId, data)) {
             return std::nullopt;
         }
@@ -652,7 +652,7 @@ std::unique_ptr<ChannelPair> ChannelPair::connect(const std::string& name) {
     return pair;
 }
 
-bool ChannelPair::post(uint32_t msgId, const Value& data) {
+bool ChannelPair::post(uint32_t msgId, const ImmerValue& data) {
     return impl_->post(msgId, data);
 }
 
@@ -672,7 +672,7 @@ std::optional<Channel::ReceivedMessage> ChannelPair::receive(std::chrono::millis
     return impl_->receive(timeout);
 }
 
-std::optional<Value> ChannelPair::send(uint32_t msgId, const Value& data,
+std::optional<ImmerValue> ChannelPair::send(uint32_t msgId, const ImmerValue& data,
                                        std::chrono::milliseconds timeout) {
     return impl_->send(msgId, data, timeout);
 }

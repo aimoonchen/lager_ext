@@ -65,10 +65,10 @@
 using namespace lager_ext;
 
 // ============================================================
-// Helper: Convert Value to QVariant
+// Helper: Convert ImmerValue to QVariant
 // ============================================================
 
-QVariant valueToQVariant(const Value& val) {
+QVariant valueToQVariant(const ImmerValue& val) {
     return std::visit(
         [](const auto& v) -> QVariant {
             using T = std::decay_t<decltype(v)>;
@@ -105,26 +105,26 @@ QVariant valueToQVariant(const Value& val) {
         val.data);
 }
 
-Value qvariantToValue(const QVariant& var) {
+ImmerValue qvariantToValue(const QVariant& var) {
     switch (var.typeId()) {
     case QMetaType::UnknownType:
-        return Value{};
+        return ImmerValue{};
     case QMetaType::Bool:
-        return Value{var.toBool()};
+        return ImmerValue{var.toBool()};
     case QMetaType::Int:
     case QMetaType::LongLong:
-        return Value{static_cast<int64_t>(var.toLongLong())};
+        return ImmerValue{static_cast<int64_t>(var.toLongLong())};
     case QMetaType::Double:
     case QMetaType::Float:
-        return Value{var.toDouble()};
+        return ImmerValue{var.toDouble()};
     case QMetaType::QString:
-        return Value{var.toString().toStdString()};
+        return ImmerValue{var.toString().toStdString()};
     case QMetaType::QVariantList: {
         ValueVector vec;
         for (const auto& item : var.toList()) {
             vec = vec.push_back(ValueBox(qvariantToValue(item)));
         }
-        return Value{vec};
+        return ImmerValue{vec};
     }
     case QMetaType::QVariantMap: {
         ValueMap map;
@@ -132,10 +132,10 @@ Value qvariantToValue(const QVariant& var) {
         for (auto it = qmap.begin(); it != qmap.end(); ++it) {
             map = map.set(it.key().toStdString(), ValueBox(qvariantToValue(it.value())));
         }
-        return Value{map};
+        return ImmerValue{map};
     }
     default:
-        return Value{var.toString().toStdString()};
+        return ImmerValue{var.toString().toStdString()};
     }
 }
 
@@ -154,16 +154,16 @@ public:
         createWidget(layout);
     }
 
-    void setValue(const Value& val) {
+    void setValue(const ImmerValue& val) {
         blockSignals(true);
         updateWidgetValue(val);
         blockSignals(false);
     }
 
-    Value getValue() const { return getWidgetValue(); }
+    ImmerValue getValue() const { return getWidgetValue(); }
 
 signals:
-    void valueChanged(const Value& newValue);
+    void valueChanged(const ImmerValue& newValue);
 
 private:
     void createWidget(QHBoxLayout* layout) {
@@ -172,7 +172,7 @@ private:
             auto* edit = new QLineEdit(this);
             edit->setReadOnly(meta_.read_only);
             connect(edit, &QLineEdit::editingFinished, this,
-                    [this, edit]() { emit valueChanged(Value{edit->text().toStdString()}); });
+                    [this, edit]() { emit valueChanged(ImmerValue{edit->text().toStdString()}); });
             widget_ = edit;
             break;
         }
@@ -184,7 +184,7 @@ private:
                 spin->setSingleStep(static_cast<int>(meta_.range->step));
             }
             connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), this,
-                    [this](int val) { emit valueChanged(Value{static_cast<int64_t>(val)}); });
+                    [this](int val) { emit valueChanged(ImmerValue{static_cast<int64_t>(val)}); });
             widget_ = spin;
             break;
         }
@@ -197,14 +197,14 @@ private:
                 spin->setSingleStep(meta_.range->step);
             }
             connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-                    [this](double val) { emit valueChanged(Value{val}); });
+                    [this](double val) { emit valueChanged(ImmerValue{val}); });
             widget_ = spin;
             break;
         }
         case WidgetType::CheckBox: {
             auto* check = new QCheckBox(this);
             check->setEnabled(!meta_.read_only);
-            connect(check, &QCheckBox::toggled, this, [this](bool checked) { emit valueChanged(Value{checked}); });
+            connect(check, &QCheckBox::toggled, this, [this](bool checked) { emit valueChanged(ImmerValue{checked}); });
             widget_ = check;
             break;
         }
@@ -224,7 +224,7 @@ private:
 
             connect(slider, &QSlider::valueChanged, this, [this, label](int val) {
                 label->setText(QString::number(val));
-                emit valueChanged(Value{static_cast<int64_t>(val)});
+                emit valueChanged(ImmerValue{static_cast<int64_t>(val)});
             });
 
             hbox->addWidget(slider, 1);
@@ -243,7 +243,7 @@ private:
                 }
             }
             connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-                    [this, combo](int) { emit valueChanged(Value{combo->currentText().toStdString()}); });
+                    [this, combo](int) { emit valueChanged(ImmerValue{combo->currentText().toStdString()}); });
             widget_ = combo;
             break;
         }
@@ -269,10 +269,10 @@ private:
 
             auto emitVector = [this]() {
                 ValueMap map;
-                map = map.set("x", ValueBox(Value{xSpin_->value()}));
-                map = map.set("y", ValueBox(Value{ySpin_->value()}));
-                map = map.set("z", ValueBox(Value{zSpin_->value()}));
-                emit valueChanged(Value{map});
+                map = map.set("x", ValueBox(ImmerValue{xSpin_->value()}));
+                map = map.set("y", ValueBox(ImmerValue{ySpin_->value()}));
+                map = map.set("z", ValueBox(ImmerValue{zSpin_->value()}));
+                emit valueChanged(ImmerValue{map});
             };
 
             connect(xSpin_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, emitVector);
@@ -294,7 +294,7 @@ private:
         layout->addWidget(widget_);
     }
 
-    void updateWidgetValue(const Value& val) {
+    void updateWidgetValue(const ImmerValue& val) {
         switch (meta_.widget_type) {
         case WidgetType::LineEdit: {
             if (auto* edit = qobject_cast<QLineEdit*>(widget_)) {
@@ -383,58 +383,58 @@ private:
         }
     }
 
-    Value getWidgetValue() const {
+    ImmerValue getWidgetValue() const {
         switch (meta_.widget_type) {
         case WidgetType::LineEdit: {
             if (auto* edit = qobject_cast<QLineEdit*>(widget_)) {
-                return Value{edit->text().toStdString()};
+                return ImmerValue{edit->text().toStdString()};
             }
             break;
         }
         case WidgetType::SpinBox: {
             if (auto* spin = qobject_cast<QSpinBox*>(widget_)) {
-                return Value{static_cast<int64_t>(spin->value())};
+                return ImmerValue{static_cast<int64_t>(spin->value())};
             }
             break;
         }
         case WidgetType::DoubleSpinBox: {
             if (auto* spin = qobject_cast<QDoubleSpinBox*>(widget_)) {
-                return Value{spin->value()};
+                return ImmerValue{spin->value()};
             }
             break;
         }
         case WidgetType::CheckBox: {
             if (auto* check = qobject_cast<QCheckBox*>(widget_)) {
-                return Value{check->isChecked()};
+                return ImmerValue{check->isChecked()};
             }
             break;
         }
         case WidgetType::Slider: {
             if (slider_) {
-                return Value{static_cast<int64_t>(slider_->value())};
+                return ImmerValue{static_cast<int64_t>(slider_->value())};
             }
             break;
         }
         case WidgetType::ComboBox: {
             if (auto* combo = qobject_cast<QComboBox*>(widget_)) {
-                return Value{combo->currentText().toStdString()};
+                return ImmerValue{combo->currentText().toStdString()};
             }
             break;
         }
         case WidgetType::Vector3Edit: {
             if (xSpin_ && ySpin_ && zSpin_) {
                 ValueMap map;
-                map = map.set("x", ValueBox(Value{xSpin_->value()}));
-                map = map.set("y", ValueBox(Value{ySpin_->value()}));
-                map = map.set("z", ValueBox(Value{zSpin_->value()}));
-                return Value{map};
+                map = map.set("x", ValueBox(ImmerValue{xSpin_->value()}));
+                map = map.set("y", ValueBox(ImmerValue{ySpin_->value()}));
+                map = map.set("z", ValueBox(ImmerValue{zSpin_->value()}));
+                return ImmerValue{map};
             }
             break;
         }
         default:
             break;
         }
-        return Value{};
+        return ImmerValue{};
     }
 
     PropertyMeta meta_;
@@ -474,7 +474,7 @@ public:
         setWidget(container);
     }
 
-    void setObject(const SceneObject* obj, std::function<void(const std::string&, Value)> setter) {
+    void setObject(const SceneObject* obj, std::function<void(const std::string&, ImmerValue)> setter) {
         clearProperties();
 
         if (!obj) {
@@ -515,29 +515,29 @@ public:
             if (auto* boxed_map = obj.data.get_if<BoxedValueMap>()) {
                 const ValueMap& map = boxed_map->get();
                 if (auto it = map.find(name); it) {
-                    widget->setValue(*it);  // ValueMap stores Value directly, not box<Value>
+                    widget->setValue(*it);  // ValueMap stores ImmerValue directly, not box<ImmerValue>
                 }
             }
         }
     }
 
 signals:
-    void propertyChanged(const QString& path, const Value& value);
+    void propertyChanged(const QString& path, const ImmerValue& value);
 
 private:
     PropertyWidget* createPropertyWidget(const PropertyMeta& meta, const SceneObject& obj,
-                                         std::function<void(const std::string&, Value)> setter) {
+                                         std::function<void(const std::string&, ImmerValue)> setter) {
         auto* widget = new PropertyWidget(meta, this);
 
         // Container Boxing: data is BoxedValueMap
         if (auto* boxed_map = obj.data.get_if<BoxedValueMap>()) {
             const ValueMap& map = boxed_map->get();
             if (auto it = map.find(meta.name); it) {
-                widget->setValue(*it);  // ValueMap stores Value directly, not box<Value>
+                widget->setValue(*it);  // ValueMap stores ImmerValue directly, not box<ImmerValue>
             }
         }
 
-        connect(widget, &PropertyWidget::valueChanged, this, [this, name = meta.name, setter](const Value& val) {
+        connect(widget, &PropertyWidget::valueChanged, this, [this, name = meta.name, setter](const ImmerValue& val) {
             setter(name, val);
             emit propertyChanged(QString::fromStdString(name), val);
         });
@@ -595,7 +595,7 @@ public:
             if (auto* boxed_map = obj.data.get_if<BoxedValueMap>()) {
                 const ValueMap& map = boxed_map->get();
                 if (auto it = map.find("name"); it) {
-                    // ValueMap now stores Value directly; strings are BoxedString
+                    // ValueMap now stores ImmerValue directly; strings are BoxedString
                     if (auto* boxed_str = it->get_if<BoxedString>()) {
                         name = QString::fromStdString(boxed_str->get());
                     }
@@ -758,7 +758,7 @@ private:
             if (!model.scene.selected_id.empty()) {
                 const SceneObject* obj_ptr = model.scene.objects.find(model.scene.selected_id);
                 if (obj_ptr != nullptr) {
-                    propertyPanel_->setObject(obj_ptr, [this](const std::string& path, Value val) {
+                    propertyPanel_->setObject(obj_ptr, [this](const std::string& path, ImmerValue val) {
                         store_.dispatch(actions::SetProperty{payloads::SetProperty{path, std::move(val)}});
                     });
                 } else {

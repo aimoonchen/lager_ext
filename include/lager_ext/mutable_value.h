@@ -12,7 +12,7 @@
 /// - Nested maps (robin_map for performance) and vectors
 /// - Path-based access and modification (compatible with existing Path system)
 ///
-/// ## Key Differences from Value (immutable)
+/// ## Key Differences from ImmerValue (immutable)
 /// - MutableValue allows in-place modification
 /// - Uses direct value storage in containers (better cache locality, fewer allocations)
 /// - Uses tsl::robin_map for faster map operations
@@ -124,19 +124,19 @@ using MutableValuePtr = std::unique_ptr<MutableValue>;
 // accessed less frequently than basic types in JSON-like structures.
 
 /// Boxed Mat3 type for MutableValue (36 bytes -> 8 bytes in variant)
-/// Named with Mutable prefix to avoid collision with Value's BoxedMat3 (immer::box)
+/// Named with Mutable prefix to avoid collision with ImmerValue's BoxedMat3 (immer::box)
 using MutableMat3Ptr = std::unique_ptr<Mat3>;
 
 /// Boxed Mat4x3 type for MutableValue (48 bytes -> 8 bytes in variant)
-/// Named with Mutable prefix to avoid collision with Value's BoxedMat4x3 (immer::box)
+/// Named with Mutable prefix to avoid collision with ImmerValue's BoxedMat4x3 (immer::box)
 using MutableMat4x3Ptr = std::unique_ptr<Mat4x3>;
 
 /// @brief Mutable dynamic value type supporting JSON-like structures
 ///
-/// This type provides a mutable alternative to the immutable Value type.
+/// This type provides a mutable alternative to the immutable ImmerValue type.
 /// It's designed for use cases where values need to be modified in-place,
 /// such as receiving data from C++ reflection or building data structures
-/// before converting to immutable Value.
+/// before converting to immutable ImmerValue.
 struct LAGER_EXT_API MutableValue {
     /// Variant holding all possible value types
     /// Note: Mat3, Mat4x3, Map, and Vector are boxed (stored via unique_ptr)
@@ -170,7 +170,7 @@ struct LAGER_EXT_API MutableValue {
     // Constructors
     // ============================================================
     // Note: Constructors are NOT explicit to allow implicit conversions,
-    // matching the API of Value class for convenient usage like:
+    // matching the API of ImmerValue class for convenient usage like:
     //   root.set("name", "John");  // const char* -> MutableValue
     //   root.set("age", 30);       // int -> MutableValue
 
@@ -214,7 +214,7 @@ struct LAGER_EXT_API MutableValue {
     MutableValue(const Mat4x3& v) : data(std::make_unique<Mat4x3>(v)) {}
 
     // ============================================================
-    // Factory Methods (consistent with Value class naming)
+    // Factory Methods (consistent with ImmerValue class naming)
     // ============================================================
 
     /// Create an empty map
@@ -315,7 +315,7 @@ struct LAGER_EXT_API MutableValue {
     [[nodiscard]] bool is_math_type() const { return is_vector_math() || is_matrix_math(); }
 
     // ============================================================
-    // Value Access
+    // ImmerValue Access
     // ============================================================
 
     /// Get value as specific type (throws if wrong type)
@@ -351,7 +351,7 @@ struct LAGER_EXT_API MutableValue {
     }
 
     // ============================================================
-    // Special Accessor Functions (matching Value API)
+    // Special Accessor Functions (matching ImmerValue API)
     // ============================================================
 
     /// Get as string (copy), or return default - lvalue version
@@ -378,7 +378,7 @@ struct LAGER_EXT_API MutableValue {
     }
 
     /// Get any numeric type as double (with automatic type conversion)
-    /// Matches Value::as_number() API for consistency
+    /// Matches ImmerValue::as_number() API for consistency
     [[nodiscard]] double as_number(double default_val = 0.0) const {
         if (auto* p = get_if<double>())
             return *p;
@@ -431,7 +431,7 @@ struct LAGER_EXT_API MutableValue {
     [[nodiscard]] bool contains(std::string_view key) const;
 
     /// Count occurrences of key (returns 0 or 1)
-    /// Matches Value::count() API for consistency
+    /// Matches ImmerValue::count() API for consistency
     [[nodiscard]] std::size_t count(std::string_view key) const;
 
     /// Erase map key (returns true if key existed)

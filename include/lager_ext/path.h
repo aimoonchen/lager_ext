@@ -2,7 +2,7 @@
 // Licensed under the MIT License. See LICENSE file in the project root.
 
 /// @file path.h
-/// @brief Core path types for navigating Value trees with zero-copy support.
+/// @brief Core path types for navigating ImmerValue trees with zero-copy support.
 ///
 /// This file provides two complementary path types:
 ///

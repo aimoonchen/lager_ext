@@ -38,7 +38,7 @@ namespace multi_store {
 struct ObjectState {
     std::string id;
     std::string type;
-    Value data; // Object properties as Value map
+    ImmerValue data; // Object properties as ImmerValue map
     std::size_t version = 0;
 
     bool operator==(const ObjectState& other) const {
@@ -51,15 +51,15 @@ namespace object_actions {
 
 struct SetProperty {
     std::string property_name;
-    Value new_value;
+    ImmerValue new_value;
 };
 
 struct SetProperties {
-    std::vector<std::pair<std::string, Value>> properties;
+    std::vector<std::pair<std::string, ImmerValue>> properties;
 };
 
 struct ReplaceData {
-    Value new_data;
+    ImmerValue new_data;
 };
 
 // Internal action for undo/redo - restores entire state
@@ -262,7 +262,7 @@ public:
     // ===== Object Management =====
 
     // Add a new object to the scene
-    void add_object(const std::string& id, const std::string& type, Value initial_data, bool undoable = true);
+    void add_object(const std::string& id, const std::string& type, ImmerValue initial_data, bool undoable = true);
 
     // Remove an object from the scene
     void remove_object(const std::string& id, bool undoable = true);
@@ -276,15 +276,15 @@ public:
     // ===== Property Editing =====
 
     // Set a single property on an object
-    void set_property(const std::string& object_id, const std::string& property_name, Value new_value,
+    void set_property(const std::string& object_id, const std::string& property_name, ImmerValue new_value,
                       bool undoable = true);
 
     // Set multiple properties at once (single undo operation)
-    void set_properties(const std::string& object_id, const std::vector<std::pair<std::string, Value>>& properties,
+    void set_properties(const std::string& object_id, const std::vector<std::pair<std::string, ImmerValue>>& properties,
                         bool undoable = true);
 
     // Batch edit across multiple objects (single undo operation)
-    void batch_edit(const std::vector<std::tuple<std::string, std::string, Value>>& edits, bool undoable = true);
+    void batch_edit(const std::vector<std::tuple<std::string, std::string, ImmerValue>>& edits, bool undoable = true);
 
     // ===== Selection =====
 

@@ -9,7 +9,7 @@
 /// - Process B (Engine): Maintains runtime scene objects, receives state updates
 ///
 /// Key features:
-/// 1. Scene objects are serialized to Value with UI metadata for Qt binding
+/// 1. Scene objects are serialized to ImmerValue with UI metadata for Qt binding
 /// 2. Editor uses lager cursors/lenses for property editing
 /// 3. State changes are published as diffs to the engine process
 /// 4. Supports redo/undo via lager's built-in mechanisms
@@ -90,12 +90,12 @@ struct SelectObject {
 // Modify a property of the selected object (user action - needs undo)
 struct SetProperty {
     std::string property_path; // e.g., "position.x" or just "name"
-    Value new_value;
+    ImmerValue new_value;
 };
 
 // Batch property update (user action - needs undo)
 struct SetProperties {
-    std::map<std::string, Value> updates; // path -> value
+    std::map<std::string, ImmerValue> updates; // path -> value
 };
 
 // Sync from engine - replaces entire state (system action - clears history)
@@ -226,13 +226,13 @@ public:
 
     // Apply changes from editor (diff or full state)
     void apply_diff(const DiffResult& diff);
-    void apply_full_state(const Value& state);
+    void apply_full_state(const ImmerValue& state);
 
-    // Get current engine state as Value
-    Value get_state_as_value() const;
+    // Get current engine state as ImmerValue
+    ImmerValue get_state_as_value() const;
 
     // Register callback for engine events
-    using EngineCallback = std::function<void(const std::string& event, const Value& data)>;
+    using EngineCallback = std::function<void(const std::string& event, const ImmerValue& data)>;
     void on_event(EngineCallback callback);
 
     // Print current state (for debugging)
@@ -271,11 +271,11 @@ public:
     [[nodiscard]] const SceneObject* get_selected_object() const;
 
     // Create a cursor for a property of the selected object
-    // Returns null Value if no object is selected or property doesn't exist
-    [[nodiscard]] Value get_property(const std::string& path) const;
+    // Returns null ImmerValue if no object is selected or property doesn't exist
+    [[nodiscard]] ImmerValue get_property(const std::string& path) const;
 
     // Set property value (shorthand for dispatch(SetProperty))
-    void set_property(const std::string& path, Value value);
+    void set_property(const std::string& path, ImmerValue value);
 
     // Undo/Redo
     [[nodiscard]] bool can_undo() const;
@@ -306,8 +306,8 @@ private:
 struct PropertyBinding {
     std::string property_path;
     PropertyMeta meta;
-    std::function<Value()> getter;
-    std::function<void(Value)> setter;
+    std::function<ImmerValue()> getter;
+    std::function<void(ImmerValue)> setter;
 };
 
 // Generate property bindings for the currently selected object

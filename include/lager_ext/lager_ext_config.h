@@ -167,7 +167,7 @@
 ///
 /// When enabled (default):
 /// - SharedBufferSPSC: Lock-free SPSC buffer for cross-process data transfer
-/// - SharedValue: Zero-copy Value type in shared memory
+/// - SharedValue: Zero-copy ImmerValue type in shared memory
 /// - SharedValueHandle: Convenient shared memory management
 ///
 /// Dependencies when enabled:

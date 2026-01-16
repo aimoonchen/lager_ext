@@ -1,5 +1,5 @@
 // lager_lens.cpp
-// Implementation of lager::lens<Value, Value> scheme
+// Implementation of lager::lens<ImmerValue, ImmerValue> scheme
 
 #include <lager_ext/lager_lens.h>
 #include <lager_ext/path_utils.h>
@@ -37,12 +37,12 @@ struct PathHash {
 // ============================================================
 // Simple LRU Cache for lens objects (single-threaded)
 // ============================================================
-template <typename Key, typename Value, typename Hash = std::hash<Key>>
+template <typename Key, typename ImmerValue, typename Hash = std::hash<Key>>
 class LRUCache {
 public:
     explicit LRUCache(std::size_t capacity) : capacity_(capacity) {}
 
-    const Value* get(const Key& key) {
+    const ImmerValue* get(const Key& key) {
         auto it = cache_map_.find(key);
         if (it == cache_map_.end()) {
             return nullptr;
@@ -52,7 +52,7 @@ public:
         return &it->second->second;
     }
 
-    void put(const Key& key, Value value) {
+    void put(const Key& key, ImmerValue value) {
         auto it = cache_map_.find(key);
         if (it != cache_map_.end()) {
             it->second->second = std::move(value);
@@ -97,7 +97,7 @@ public:
     Stats stats() const { return Stats{hits_, misses_, cache_map_.size(), capacity_}; }
 
 private:
-    using ListType = std::list<std::pair<Key, Value>>;
+    using ListType = std::list<std::pair<Key, ImmerValue>>;
     using MapType = std::unordered_map<Key, typename ListType::iterator, Hash>;
 
     std::size_t capacity_;
@@ -120,13 +120,13 @@ LagerValueLens build_path_lens_uncached(const Path& path) {
 
     // Single lens: capture path once, traverse directly
     return lager::lenses::getset(
-        [path](const Value& root) -> Value { return get_at_path(root, path); },
-        [path](Value root, Value new_val) -> Value { return set_at_path(root, path, std::move(new_val)); });
+        [path](const ImmerValue& root) -> ImmerValue { return get_at_path(root, path); },
+        [path](ImmerValue root, ImmerValue new_val) -> ImmerValue { return set_at_path(root, path, std::move(new_val)); });
 }
 
 } // anonymous namespace
 
-// Build lens from path using lager::lens<Value, Value>
+// Build lens from path using lager::lens<ImmerValue, ImmerValue>
 // Uses LRU cache for frequently accessed paths
 LagerValueLens lager_path_lens(const Path& path) {
     auto& cache = get_lens_cache();
@@ -188,13 +188,13 @@ std::string get_error_message(PathErrorCode code, const PathElement& elem, std::
     }
 }
 
-std::pair<Value, PathErrorCode> try_get_element(const Value& current, const PathElement& elem) {
+std::pair<ImmerValue, PathErrorCode> try_get_element(const ImmerValue& current, const PathElement& elem) {
     return std::visit(
-        [&current](const auto& key) -> std::pair<Value, PathErrorCode> {
+        [&current](const auto& key) -> std::pair<ImmerValue, PathErrorCode> {
             using T = std::decay_t<decltype(key)>;
 
             if (current.is_null()) {
-                return {Value{}, PathErrorCode::NullValue};
+                return {ImmerValue{}, PathErrorCode::NullValue};
             }
 
             if constexpr (std::is_same_v<T, std::string_view>) {
@@ -203,23 +203,23 @@ std::pair<Value, PathErrorCode> try_get_element(const Value& current, const Path
                     const auto& map = boxed_map->get();
                     // Convert string_view to string for map lookup
                     if (auto found = map.find(std::string{key}); found != nullptr) {
-                        // Container Boxing: map now stores Value directly
+                        // Container Boxing: map now stores ImmerValue directly
                         return {*found, PathErrorCode::Success};
                     }
-                    return {Value{}, PathErrorCode::KeyNotFound};
+                    return {ImmerValue{}, PathErrorCode::KeyNotFound};
                 }
-                return {Value{}, PathErrorCode::TypeMismatch};
+                return {ImmerValue{}, PathErrorCode::TypeMismatch};
             } else {
                 // Container Boxing: use BoxedValueVector
                 if (auto* boxed_vec = current.get_if<BoxedValueVector>()) {
                     const auto& vec = boxed_vec->get();
                     if (key < vec.size()) {
-                        // Container Boxing: vector now stores Value directly
+                        // Container Boxing: vector now stores ImmerValue directly
                         return {vec[key], PathErrorCode::Success};
                     }
-                    return {Value{}, PathErrorCode::IndexOutOfRange};
+                    return {ImmerValue{}, PathErrorCode::IndexOutOfRange};
                 }
-                return {Value{}, PathErrorCode::TypeMismatch};
+                return {ImmerValue{}, PathErrorCode::TypeMismatch};
             }
         },
         elem);
@@ -227,7 +227,7 @@ std::pair<Value, PathErrorCode> try_get_element(const Value& current, const Path
 
 } // anonymous namespace
 
-PathAccessResult get_at_path_safe(const Value& root, const Path& path) {
+PathAccessResult get_at_path_safe(const ImmerValue& root, const Path& path) {
     PathAccessResult result;
     result.value = root;
 
@@ -238,7 +238,7 @@ PathAccessResult get_at_path_safe(const Value& root, const Path& path) {
         return result;
     }
 
-    Value current = root;
+    ImmerValue current = root;
     for (std::size_t i = 0; i < path.size(); ++i) {
         const auto& elem = path[i];
         auto [next_val, error_code] = try_get_element(current, elem);
@@ -248,7 +248,7 @@ PathAccessResult get_at_path_safe(const Value& root, const Path& path) {
             result.error_code = error_code;
             result.error_message = get_error_message(error_code, elem, i);
             result.failed_at_index = i;
-            result.value = Value{};
+            result.value = ImmerValue{};
             return result;
         }
 
@@ -262,7 +262,7 @@ PathAccessResult get_at_path_safe(const Value& root, const Path& path) {
     return result;
 }
 
-PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new_val) {
+PathAccessResult set_at_path_safe(const ImmerValue& root, const Path& path, ImmerValue new_val) {
     PathAccessResult result;
 
     if (path.empty()) {
@@ -273,7 +273,7 @@ PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new
         return result;
     }
 
-    Value current = root;
+    ImmerValue current = root;
     Path parent_path;
 
     for (std::size_t i = 0; i + 1 < path.size(); ++i) {
@@ -328,11 +328,11 @@ PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new
 // PathLens implementation
 // ============================================================
 
-Value PathLens::get(const Value& root) const {
+ImmerValue PathLens::get(const ImmerValue& root) const {
     return get_at_path(root, path_);
 }
 
-Value PathLens::set(const Value& root, Value new_val) const {
+ImmerValue PathLens::set(const ImmerValue& root, ImmerValue new_val) const {
     return set_at_path(root, path_, std::move(new_val));
 }
 

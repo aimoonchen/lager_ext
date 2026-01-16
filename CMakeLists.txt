@@ -168,7 +168,8 @@ add_library(lager_ext::lager_ext ALIAS lager_ext)
 # C++ Standard (use target_compile_features for proper propagation)
 # ============================================================
 
-target_compile_features(lager_ext PUBLIC cxx_std_20)
+# C++23 required for std::move_only_function (performance optimization)
+target_compile_features(lager_ext PUBLIC cxx_std_23)
 
 # ============================================================
 # Include Directories

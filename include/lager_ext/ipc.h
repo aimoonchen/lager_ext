@@ -174,7 +174,7 @@ public:
     /// @return true if message was queued, false if queue is full
     /// @note This is non-blocking - returns immediately after queuing (like PostMessage)
     /// @note Large payloads (>232 bytes) require a shared memory pool
-    bool post(uint32_t msgId, const Value& data = {}, MessageDomain domain = MessageDomain::Global);
+    bool post(uint32_t msgId, const ImmerValue& data = {}, MessageDomain domain = MessageDomain::Global);
 
     /// Post raw bytes to the queue (producer only, no serialization, non-blocking)
     /// @param msgId Message type identifier
@@ -197,7 +197,7 @@ public:
     /// Received message structure with full metadata
     struct ReceivedMessage {
         uint32_t msgId;             ///< Message ID (event name hash or user-defined)
-        Value data;                 ///< Deserialized payload
+        ImmerValue data;                 ///< Deserialized payload
         uint64_t timestamp;         ///< Message timestamp
         MessageDomain domain;       ///< Message domain
         MessageFlags flags;         ///< Message flags
@@ -300,7 +300,7 @@ public:
 
     /// Post a message to the other endpoint (non-blocking, like PostMessage)
     /// @return true if message was queued
-    bool post(uint32_t msgId, const Value& data = {});
+    bool post(uint32_t msgId, const ImmerValue& data = {});
 
     /// Post raw binary data to the other endpoint (non-blocking, zero-copy)
     /// @param msgId Message type identifier
@@ -326,7 +326,7 @@ public:
     /// Synchronous send with reply (blocking, like SendMessage)
     /// Sends a message and waits for a reply with matching correlation
     /// @return Response value, or nullopt on timeout
-    std::optional<Value> send(uint32_t msgId, const Value& data,
+    std::optional<ImmerValue> send(uint32_t msgId, const ImmerValue& data,
                               std::chrono::milliseconds timeout = std::chrono::seconds(30));
 
     const std::string& name() const;

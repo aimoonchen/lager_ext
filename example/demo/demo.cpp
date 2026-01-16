@@ -14,19 +14,19 @@
 #include <iostream>
 namespace lager_ext {
 // ============================================================
-// Demo function for lager::lenses::at with Value
+// Demo function for lager::lenses::at with ImmerValue
 //
 // Note: No additional functions are needed here!
-// Value already implements the container interface (at, set, count, size)
+// ImmerValue already implements the container interface (at, set, count, size)
 // so lager::lenses::at works out of the box.
 // ============================================================
 void demo_at_lens() {
     using namespace lager::lenses;
 
-    std::cout << "\n=== Scheme 3: lager::lenses::at with Value Demo ===\n\n";
+    std::cout << "\n=== Scheme 3: lager::lenses::at with ImmerValue Demo ===\n\n";
 
     // Use common test data
-    Value data = create_sample_data();
+    ImmerValue data = create_sample_data();
 
     std::cout << "Data structure:\n";
     print_value(data, "", 1);
@@ -37,7 +37,7 @@ void demo_at_lens() {
     std::cout << "\n--- Test 1: Single-level at() ---\n";
 
     auto config_lens = at(std::string{"config"});
-    auto config_opt = lager::view(config_lens, data); // returns optional<Value>
+    auto config_opt = lager::view(config_lens, data); // returns optional<ImmerValue>
 
     if (config_opt.has_value()) {
         std::cout << "data.at(\"config\") = " << value_to_string(*config_opt) << "\n";
@@ -84,10 +84,10 @@ void demo_at_lens() {
     auto config_val = lager::view(at(std::string{"config"}), data);
     if (config_val.has_value()) {
         // Update version inside config
-        Value new_config = lager::set(at(std::string{"version"}), *config_val, std::make_optional(Value{3}));
+        ImmerValue new_config = lager::set(at(std::string{"version"}), *config_val, std::make_optional(ImmerValue{3}));
 
         // Update config in root
-        Value new_data = lager::set(at(std::string{"config"}), data, std::make_optional(new_config));
+        ImmerValue new_data = lager::set(at(std::string{"config"}), data, std::make_optional(new_config));
 
         // Verify
         auto verify = lager::view(at(std::string{"config"}), new_data);
@@ -115,10 +115,10 @@ void demo_at_lens() {
     // Summary
     // -------------------------------------------------------
     std::cout << "\n--- Summary ---\n";
-    std::cout << "By implementing at(), set(), count(), size() on Value:\n";
+    std::cout << "By implementing at(), set(), count(), size() on ImmerValue:\n";
     std::cout << "  1. Can use lager::lenses::at directly\n";
     std::cout << "  2. No need for custom Path, key_lens(), index_lens()\n";
-    std::cout << "  3. Returns optional<Value> for safe access\n";
+    std::cout << "  3. Returns optional<ImmerValue> for safe access\n";
     std::cout << "  4. Works with both string keys and numeric indices\n";
     std::cout << "\nTrade-offs:\n";
     std::cout << "  - Nested access requires chaining optionals\n";
@@ -127,10 +127,10 @@ void demo_at_lens() {
 }
 
 void demo_lager_lens() {
-    std::cout << "\n=== Scheme 2: lager::lens<Value, Value> Demo ===\n\n";
+    std::cout << "\n=== Scheme 2: lager::lens<ImmerValue, ImmerValue> Demo ===\n\n";
 
     // Use common test data
-    Value data = create_sample_data();
+    ImmerValue data = create_sample_data();
 
     std::cout << "Data structure:\n";
     print_value(data, "", 1);
@@ -145,7 +145,7 @@ void demo_lager_lens() {
 
     // Test lager::set
     std::cout << "\n--- Test 2: SET using lager::set ---\n";
-    Value updated = lager::set(lens, data, Value{std::string{"Alicia"}});
+    ImmerValue updated = lager::set(lens, data, ImmerValue{std::string{"Alicia"}});
     std::cout << "After lager::set(lens, data, \"Alicia\"):\n";
     std::cout << "New value: " << value_to_string(lager::view(lens, updated)) << "\n";
 
@@ -155,9 +155,9 @@ void demo_lager_lens() {
     auto age_lens = lager_path_lens(age_path);
 
     std::cout << "Original age: " << value_to_string(lager::view(age_lens, data)) << "\n";
-    Value incremented = lager::over(age_lens, data, [](Value v) {
+    ImmerValue incremented = lager::over(age_lens, data, [](ImmerValue v) {
         if (auto* n = v.get_if<int>()) {
-            return Value{*n + 5};
+            return ImmerValue{*n + 5};
         }
         return v;
     });
@@ -207,37 +207,37 @@ void demo_string_path() {
 
     // Build inner structures first using Container Boxing
     ValueVector alice_tags;
-    alice_tags = alice_tags.push_back(Value{"c++"});
-    alice_tags = alice_tags.push_back(Value{"rust"});
+    alice_tags = alice_tags.push_back(ImmerValue{"c++"});
+    alice_tags = alice_tags.push_back(ImmerValue{"rust"});
 
     ValueMap alice_profile;
-    alice_profile = alice_profile.set("city", Value{"Beijing"});
-    alice_profile = alice_profile.set("tags/skills", Value{BoxedValueVector{alice_tags}}); // key with '/'
+    alice_profile = alice_profile.set("city", ImmerValue{"Beijing"});
+    alice_profile = alice_profile.set("tags/skills", ImmerValue{BoxedValueVector{alice_tags}}); // key with '/'
 
     ValueMap alice;
-    alice = alice.set("name", Value{"Alice"});
-    alice = alice.set("profile", Value{BoxedValueMap{alice_profile}});
+    alice = alice.set("name", ImmerValue{"Alice"});
+    alice = alice.set("profile", ImmerValue{BoxedValueMap{alice_profile}});
 
     ValueMap bob_profile;
-    bob_profile = bob_profile.set("city", Value{"Shanghai"});
+    bob_profile = bob_profile.set("city", ImmerValue{"Shanghai"});
 
     ValueMap bob;
-    bob = bob.set("name", Value{"Bob"});
-    bob = bob.set("profile", Value{BoxedValueMap{bob_profile}});
+    bob = bob.set("name", ImmerValue{"Bob"});
+    bob = bob.set("profile", ImmerValue{BoxedValueMap{bob_profile}});
 
     ValueVector users;
-    users = users.push_back(Value{BoxedValueMap{alice}});
-    users = users.push_back(Value{BoxedValueMap{bob}});
+    users = users.push_back(ImmerValue{BoxedValueMap{alice}});
+    users = users.push_back(ImmerValue{BoxedValueMap{bob}});
 
     ValueMap config;
-    config = config.set("version", Value{1});
-    config = config.set("theme~mode", Value{"dark"}); // key with '~'
+    config = config.set("version", ImmerValue{1});
+    config = config.set("theme~mode", ImmerValue{"dark"}); // key with '~'
 
     ValueMap root;
-    root = root.set("users", Value{BoxedValueVector{users}});
-    root = root.set("config", Value{BoxedValueMap{config}});
+    root = root.set("users", ImmerValue{BoxedValueVector{users}});
+    root = root.set("config", ImmerValue{BoxedValueMap{config}});
 
-    Value data{BoxedValueMap{root}};
+    ImmerValue data{BoxedValueMap{root}};
 
     std::cout << "Data structure:\n";
     print_value(data, "", 1);
@@ -310,12 +310,12 @@ void demo_string_path() {
     std::cout << "\n--- Test 3: SET by String Path ---\n";
 
     // Change Alice's name
-    Value updated1 = path_lens("/users/0/name").set(data, Value{std::string{"Alicia"}});
+    ImmerValue updated1 = path_lens("/users/0/name").set(data, ImmerValue{std::string{"Alicia"}});
     std::cout << "  After set(\"/users/0/name\", \"Alicia\"):\n";
     std::cout << "    users[0].name = " << value_to_string(path_lens("/users/0/name").get(updated1)) << "\n";
 
     // Update config version
-    Value updated2 = path_lens("/config/version").set(data, Value{2});
+    ImmerValue updated2 = path_lens("/config/version").set(data, ImmerValue{2});
     std::cout << "  After set(\"/config/version\", 2):\n";
     std::cout << "    config.version = " << value_to_string(path_lens("/config/version").get(updated2)) << "\n";
 
@@ -323,9 +323,9 @@ void demo_string_path() {
     std::cout << "\n--- Test 4: OVER by String Path ---\n";
 
     // Increment version using PathLens::over
-    Value updated3 = path_lens("/config/version").over(data, [](Value v) {
+    ImmerValue updated3 = path_lens("/config/version").over(data, [](ImmerValue v) {
         if (auto* n = v.get_if<int>()) {
-            return Value{*n + 10};
+            return ImmerValue{*n + 10};
         }
         return v;
     });
@@ -341,13 +341,13 @@ void demo_string_path() {
     std::cout << "  lens = PathLens(\"/users/0/name\")\n";
     std::cout << "  lager::view(lens, data) = " << value_to_string(lager::view(name_lens, data)) << "\n";
 
-    auto after_set = lager::set(name_lens, data, Value{std::string{"Alice2"}});
+    auto after_set = lager::set(name_lens, data, ImmerValue{std::string{"Alice2"}});
     std::cout << "  lager::set(lens, data, \"Alice2\") -> " << value_to_string(lager::view(name_lens, after_set))
               << "\n";
 
-    auto after_over = lager::over(name_lens, data, [](Value v) {
+    auto after_over = lager::over(name_lens, data, [](ImmerValue v) {
         if (auto* s = v.get_if<BoxedString>()) {
-            return Value{s->get() + " (modified)"};
+            return ImmerValue{s->get() + " (modified)"};
         }
         return v;
     });
@@ -360,7 +360,7 @@ void demo_string_path() {
     std::cout << "  2. Escape sequences for special characters (~0 for ~, ~1 for /)\n";
     std::cout << "  3. PathLens: get(), set(), over() for direct access\n";
     std::cout << "  4. Full lager integration: PathLens works with lager::view/set/over\n";
-    std::cout << "  5. Immutable operations: all set/over return new Value\n";
+    std::cout << "  5. Immutable operations: all set/over return new ImmerValue\n";
     std::cout << "\n=== Demo End ===\n\n";
 }
 
@@ -371,17 +371,17 @@ void demo_immer_diff() {
     std::cout << "--- immer::vector comparison (manual) ---\n";
     std::cout << "Note: immer::diff does NOT support vector, must compare manually\n\n";
 
-    // Container Boxing: vector now stores Value directly
+    // Container Boxing: vector now stores ImmerValue directly
     ValueVector old_vec;
-    old_vec = old_vec.push_back(Value{std::string{"Alice"}});
-    old_vec = old_vec.push_back(Value{std::string{"Bob"}});
-    old_vec = old_vec.push_back(Value{std::string{"Charlie"}});
+    old_vec = old_vec.push_back(ImmerValue{std::string{"Alice"}});
+    old_vec = old_vec.push_back(ImmerValue{std::string{"Bob"}});
+    old_vec = old_vec.push_back(ImmerValue{std::string{"Charlie"}});
 
     ValueVector new_vec;
-    new_vec = new_vec.push_back(Value{std::string{"Alice"}});
-    new_vec = new_vec.push_back(Value{std::string{"Bobby"}});
-    new_vec = new_vec.push_back(Value{std::string{"Charlie"}});
-    new_vec = new_vec.push_back(Value{std::string{"David"}});
+    new_vec = new_vec.push_back(ImmerValue{std::string{"Alice"}});
+    new_vec = new_vec.push_back(ImmerValue{std::string{"Bobby"}});
+    new_vec = new_vec.push_back(ImmerValue{std::string{"Charlie"}});
+    new_vec = new_vec.push_back(ImmerValue{std::string{"David"}});
 
     std::cout << "Old: [Alice, Bob, Charlie]\n";
     std::cout << "New: [Alice, Bobby, Charlie, David]\n\n";
@@ -393,8 +393,8 @@ void demo_immer_diff() {
     size_t common_size = std::min(old_size, new_size);
 
     for (size_t i = 0; i < common_size; ++i) {
-        const Value& old_val = old_vec[i];
-        const Value& new_val = new_vec[i];
+        const ImmerValue& old_val = old_vec[i];
+        const ImmerValue& new_val = new_vec[i];
 
         // Container Boxing: strings are stored as BoxedString
         std::string old_str = old_val.as_string();
@@ -429,16 +429,16 @@ void demo_immer_diff() {
     // --- immer::map diff ---
     std::cout << "\n--- immer::map diff (using immer::diff) ---\n";
 
-    // Container Boxing: map now stores Value directly
+    // Container Boxing: map now stores ImmerValue directly
     ValueMap old_map;
-    old_map = old_map.set("name", Value{std::string{"Tom"}});
-    old_map = old_map.set("age", Value{25});
-    old_map = old_map.set("city", Value{std::string{"Beijing"}});
+    old_map = old_map.set("name", ImmerValue{std::string{"Tom"}});
+    old_map = old_map.set("age", ImmerValue{25});
+    old_map = old_map.set("city", ImmerValue{std::string{"Beijing"}});
 
     ValueMap new_map;
-    new_map = new_map.set("name", Value{std::string{"Tom"}});
-    new_map = new_map.set("age", Value{26});
-    new_map = new_map.set("email", Value{std::string{"tom@x.com"}});
+    new_map = new_map.set("name", ImmerValue{std::string{"Tom"}});
+    new_map = new_map.set("age", ImmerValue{26});
+    new_map = new_map.set("email", ImmerValue{std::string{"tom@x.com"}});
 
     std::cout << "Old: {name: Tom, age: 25, city: Beijing}\n";
     std::cout << "New: {name: Tom, age: 26, email: tom@x.com}\n\n";
@@ -449,7 +449,7 @@ void demo_immer_diff() {
         old_map, new_map, [](const auto& removed) { std::cout << "  [removed] key=" << removed.first << "\n"; },
         [](const auto& added) { std::cout << "  [added] key=" << added.first << "\n"; },
         [](const auto& old_kv, const auto& new_kv) {
-            // Container Boxing: compare Value addresses for identity check
+            // Container Boxing: compare ImmerValue addresses for identity check
             if (&old_kv.second.data == &new_kv.second.data) {
                 std::cout << "  [retained] key=" << old_kv.first << " (same pointer)\n";
             } else {
@@ -463,45 +463,45 @@ void demo_immer_diff() {
 void demo_recursive_diff_collector() {
     std::cout << "\n=== DiffEntryCollector Demo ===\n\n";
 
-    // Create old state - Container Boxing: maps now store Value directly
+    // Create old state - Container Boxing: maps now store ImmerValue directly
     ValueMap user1;
-    user1 = user1.set("name", Value{std::string{"Alice"}});
-    user1 = user1.set("age", Value{25});
+    user1 = user1.set("name", ImmerValue{std::string{"Alice"}});
+    user1 = user1.set("age", ImmerValue{25});
 
     ValueMap user2;
-    user2 = user2.set("name", Value{std::string{"Bob"}});
-    user2 = user2.set("age", Value{30});
+    user2 = user2.set("name", ImmerValue{std::string{"Bob"}});
+    user2 = user2.set("age", ImmerValue{30});
 
     ValueVector users_old;
-    users_old = users_old.push_back(Value{BoxedValueMap{user1}});
-    users_old = users_old.push_back(Value{BoxedValueMap{user2}});
+    users_old = users_old.push_back(ImmerValue{BoxedValueMap{user1}});
+    users_old = users_old.push_back(ImmerValue{BoxedValueMap{user2}});
 
     ValueMap old_root;
-    old_root = old_root.set("users", Value{BoxedValueVector{users_old}});
-    old_root = old_root.set("version", Value{1});
+    old_root = old_root.set("users", ImmerValue{BoxedValueVector{users_old}});
+    old_root = old_root.set("version", ImmerValue{1});
 
-    Value old_state{BoxedValueMap{old_root}};
+    ImmerValue old_state{BoxedValueMap{old_root}};
 
     // Create new state (with modifications)
     ValueMap user1_new;
-    user1_new = user1_new.set("name", Value{std::string{"Alice"}});
-    user1_new = user1_new.set("age", Value{26});                           // modified
-    user1_new = user1_new.set("email", Value{std::string{"alice@x.com"}}); // added
+    user1_new = user1_new.set("name", ImmerValue{std::string{"Alice"}});
+    user1_new = user1_new.set("age", ImmerValue{26});                           // modified
+    user1_new = user1_new.set("email", ImmerValue{std::string{"alice@x.com"}}); // added
 
     ValueMap user3;
-    user3 = user3.set("name", Value{std::string{"Charlie"}});
-    user3 = user3.set("age", Value{35});
+    user3 = user3.set("name", ImmerValue{std::string{"Charlie"}});
+    user3 = user3.set("age", ImmerValue{35});
 
     ValueVector users_new;
-    users_new = users_new.push_back(Value{BoxedValueMap{user1_new}});
-    users_new = users_new.push_back(Value{BoxedValueMap{user2}}); // unchanged (shared reference)
-    users_new = users_new.push_back(Value{BoxedValueMap{user3}}); // added
+    users_new = users_new.push_back(ImmerValue{BoxedValueMap{user1_new}});
+    users_new = users_new.push_back(ImmerValue{BoxedValueMap{user2}}); // unchanged (shared reference)
+    users_new = users_new.push_back(ImmerValue{BoxedValueMap{user3}}); // added
 
     ValueMap new_root;
-    new_root = new_root.set("users", Value{BoxedValueVector{users_new}});
-    new_root = new_root.set("version", Value{2}); // modified
+    new_root = new_root.set("users", ImmerValue{BoxedValueVector{users_new}});
+    new_root = new_root.set("version", ImmerValue{2}); // modified
 
-    Value new_state{BoxedValueMap{new_root}};
+    ImmerValue new_state{BoxedValueMap{new_root}};
 
     // Print states
     std::cout << "--- Old State ---\n";
@@ -551,7 +551,7 @@ void demo_shared_state() {
     }
 
     // Publish initial state
-    Value initial_state = create_sample_data();
+    ImmerValue initial_state = create_sample_data();
     std::cout << "\nPublishing initial state:\n";
     print_value(initial_state, "  ");
     publisher.publish(initial_state);
@@ -574,16 +574,16 @@ void demo_shared_state() {
     // Make a change and publish diff
     std::cout << "\n--- Modifying state (changing Alice's age to 26) ---\n";
 
-    Value modified_state = initial_state;
+    ImmerValue modified_state = initial_state;
     // Navigate: users[0].age - Container Boxing: use boxed access
     if (auto* boxed_vec = modified_state.at("users").get_if<BoxedValueVector>()) {
         const ValueVector& users_vec = boxed_vec->get();
         if (users_vec.size() > 0) {
-            Value alice = users_vec[0];
-            alice = alice.set("age", Value{26});
+            ImmerValue alice = users_vec[0];
+            alice = alice.set("age", ImmerValue{26});
             // Unbox-Modify-Rebox: create new vector and wrap in box
             auto new_vec = users_vec.set(0, alice);
-            modified_state = modified_state.set("users", Value{BoxedValueVector{new_vec}});
+            modified_state = modified_state.set("users", ImmerValue{BoxedValueVector{new_vec}});
         }
     }
 
@@ -707,7 +707,7 @@ void demo_editor_engine() {
             }
 
             // Show current value
-            Value current = binding.getter();
+            ImmerValue current = binding.getter();
             std::cout << " = " << value_to_string(current) << "\n";
         }
     }
@@ -715,7 +715,7 @@ void demo_editor_engine() {
     // ===== Step 5: Edit Property (simulating Qt UI interaction) =====
     std::cout << "\n=== Step 5: Edit Property (Qt UI Simulation) ===\n";
     std::cout << "Changing light intensity from 1.5 to 2.0...\n";
-    editor.set_property("intensity", Value{2.0});
+    editor.set_property("intensity", ImmerValue{2.0});
 
     selected = editor.get_selected_object();
     if (selected) {
@@ -726,7 +726,7 @@ void demo_editor_engine() {
     // ===== Step 6: Edit Another Property =====
     std::cout << "\n=== Step 6: Edit Another Property ===\n";
     std::cout << "Changing light color to #FF0000...\n";
-    editor.set_property("color", Value{std::string{"#FF0000"}});
+    editor.set_property("color", ImmerValue{std::string{"#FF0000"}});
 
     // ===== Step 7: Undo/Redo Demo =====
     std::cout << "\n=== Step 7: Undo/Redo Demo ===\n";
@@ -738,7 +738,7 @@ void demo_editor_engine() {
 
     selected = editor.get_selected_object();
     if (selected) {
-        Value color = editor.get_property("color");
+        ImmerValue color = editor.get_property("color");
         std::cout << "Color after undo: " << value_to_string(color) << "\n";
     }
 
@@ -747,7 +747,7 @@ void demo_editor_engine() {
 
     selected = editor.get_selected_object();
     if (selected) {
-        Value color = editor.get_property("color");
+        ImmerValue color = editor.get_property("color");
         std::cout << "Color after redo: " << value_to_string(color) << "\n";
     }
 
@@ -763,7 +763,7 @@ void demo_editor_engine() {
 
         auto bindings = generate_property_bindings(editor, *selected);
         for (const auto& binding : bindings) {
-            Value current = binding.getter();
+            ImmerValue current = binding.getter();
             std::cout << "  " << binding.meta.display_name << ": " << value_to_string(current) << "\n";
         }
     }
@@ -805,14 +805,14 @@ void demo_property_editing() {
 
     // Simulate UI editing - change position Y
     std::cout << "\nSimulating slider change: position.y -> 10.0\n";
-    editor.set_property("position.y", Value{10.0});
+    editor.set_property("position.y", ImmerValue{10.0});
 
     std::cout << "New position.y: " << value_to_string(editor.get_property("position.y")) << "\n";
 
     // Batch update - UserAction, will be recorded to undo history
     std::cout << "\nSimulating batch update (drag 3D gizmo):\n";
-    editor.dispatch(actions::SetProperties{payloads::SetProperties{std::map<std::string, Value>{
-        {"position.x", Value{5.0}}, {"position.y", Value{7.5}}, {"position.z", Value{-15.0}}}}});
+    editor.dispatch(actions::SetProperties{payloads::SetProperties{std::map<std::string, ImmerValue>{
+        {"position.x", ImmerValue{5.0}}, {"position.y", ImmerValue{7.5}}, {"position.z", ImmerValue{-15.0}}}}});
 
     std::cout << "New position: (" << value_to_string(editor.get_property("position.x")) << ", "
               << value_to_string(editor.get_property("position.y")) << ", "
@@ -842,13 +842,13 @@ void demo_undo_redo() {
     std::cout << "\n--- Making changes ---\n";
 
     std::cout << "Set intensity = 2.0\n";
-    editor.set_property("intensity", Value{2.0});
+    editor.set_property("intensity", ImmerValue{2.0});
 
     std::cout << "Set intensity = 3.0\n";
-    editor.set_property("intensity", Value{3.0});
+    editor.set_property("intensity", ImmerValue{3.0});
 
     std::cout << "Set intensity = 4.0\n";
-    editor.set_property("intensity", Value{4.0});
+    editor.set_property("intensity", ImmerValue{4.0});
 
     std::cout << "\nCurrent intensity: " << value_to_string(editor.get_property("intensity")) << "\n";
     std::cout << "Undo stack size: " << editor.get_model().undo_stack.size() << "\n";
@@ -909,7 +909,7 @@ void demo_action_categories() {
     SceneObject test_obj;
     test_obj.id = "loaded_obj_1";
     test_obj.type = "LoadedMesh";
-    test_obj.data = MapBuilder().set("name", Value{std::string{"Loaded Object"}}).finish();
+    test_obj.data = MapBuilder().set("name", ImmerValue{std::string{"Loaded Object"}}).finish();
 
     editor.dispatch(actions::LoadObjects{payloads::LoadObjects{{test_obj}}});
     print_undo_status();
@@ -923,18 +923,18 @@ void demo_action_categories() {
     editor.dispatch(actions::SelectObject{payloads::SelectObject{"light_sun"}});
 
     std::cout << "\n4. SetProperty (UserAction) - changing intensity to 5.0:\n";
-    editor.set_property("intensity", Value{5.0});
+    editor.set_property("intensity", ImmerValue{5.0});
     print_undo_status();
     std::cout << "   -> Undo stack increased by 1 (user edit is undoable)\n";
 
     std::cout << "\n5. SetProperty (UserAction) - changing intensity to 8.0:\n";
-    editor.set_property("intensity", Value{8.0});
+    editor.set_property("intensity", ImmerValue{8.0});
     print_undo_status();
     std::cout << "   -> Undo stack increased by 1 again\n";
 
     std::cout << "\n6. SetProperties (UserAction) - batch update:\n";
     editor.dispatch(actions::SetProperties{payloads::SetProperties{
-        std::map<std::string, Value>{{"color", Value{std::string{"#00FF00"}}}, {"enabled", Value{false}}}}});
+        std::map<std::string, ImmerValue>{{"color", ImmerValue{std::string{"#00FF00"}}}, {"enabled", ImmerValue{false}}}}});
     print_undo_status();
     std::cout << "   -> Undo stack increased by 1 (batch edit is one undoable unit)\n";
 
@@ -947,7 +947,7 @@ void demo_action_categories() {
     std::cout << "   -> Undo stack unchanged\n";
 
     std::cout << "\n8. SetProperty on new object (UserAction):\n";
-    editor.set_property("visible", Value{false});
+    editor.set_property("visible", ImmerValue{false});
     print_undo_status();
     std::cout << "   -> Undo stack increased by 1\n";
 
@@ -1063,31 +1063,31 @@ struct AppConfigPaths {
 // Helper: Create sample data
 // ============================================================
 
-static Value create_sample_state() {
+static ImmerValue create_sample_state() {
     // Create users using Builder API for O(n) construction
-    Value user0 = MapBuilder()
-                      .set("name", Value{"Alice"})
-                      .set("age", Value{30})
-                      .set("email", Value{"alice@example.com"})
+    ImmerValue user0 = MapBuilder()
+                      .set("name", ImmerValue{"Alice"})
+                      .set("age", ImmerValue{30})
+                      .set("email", ImmerValue{"alice@example.com"})
                       .finish();
 
-    Value user1 =
-        MapBuilder().set("name", Value{"Bob"}).set("age", Value{25}).set("email", Value{"bob@example.com"}).finish();
+    ImmerValue user1 =
+        MapBuilder().set("name", ImmerValue{"Bob"}).set("age", ImmerValue{25}).set("email", ImmerValue{"bob@example.com"}).finish();
 
-    Value user2 = MapBuilder()
-                      .set("name", Value{"Charlie"})
-                      .set("age", Value{35})
-                      .set("email", Value{"charlie@example.com"})
+    ImmerValue user2 = MapBuilder()
+                      .set("name", ImmerValue{"Charlie"})
+                      .set("age", ImmerValue{35})
+                      .set("email", ImmerValue{"charlie@example.com"})
                       .finish();
 
     // Create users array using Builder API
-    Value users = VectorBuilder().push_back(user0).push_back(user1).push_back(user2).finish();
+    ImmerValue users = VectorBuilder().push_back(user0).push_back(user1).push_back(user2).finish();
 
     // Create window config using Builder API
-    Value window = MapBuilder().set("width", Value{1920}).set("height", Value{1080}).finish();
+    ImmerValue window = MapBuilder().set("width", ImmerValue{1920}).set("height", ImmerValue{1080}).finish();
 
     // Create root state using Builder API
-    return MapBuilder().set("title", Value{"My Application"}).set("users", users).set("window", window).finish();
+    return MapBuilder().set("title", ImmerValue{"My Application"}).set("users", users).set("window", window).finish();
 }
 
 // ============================================================
@@ -1103,7 +1103,7 @@ void demo_static_path() {
     using namespace schema;
 
     // Create sample state
-    Value state = create_sample_state();
+    ImmerValue state = create_sample_state();
 
     std::cout << "Initial state:\n";
     print_value(state);
@@ -1139,13 +1139,13 @@ void demo_static_path() {
     std::cout << "--- Demo 2: Compile-time Immutable Updates ---\n\n";
 
     // Update title
-    Value state2 = TitlePath::set(state, Value{"Updated App Title"});
+    ImmerValue state2 = TitlePath::set(state, ImmerValue{"Updated App Title"});
     std::cout << "After TitlePath::set(state, \"Updated App Title\"):\n";
     std::cout << "  New title = " << value_to_string(TitlePath::get(state2)) << "\n";
     std::cout << "  Original title = " << value_to_string(TitlePath::get(state)) << "\n\n";
 
     // Update nested value
-    Value state3 = UserAgePath<0>::set(state, Value{31});
+    ImmerValue state3 = UserAgePath<0>::set(state, ImmerValue{31});
     std::cout << "After UserAgePath<0>::set(state, 31):\n";
     std::cout << "  New age = " << value_to_string(UserAgePath<0>::get(state3)) << "\n";
     std::cout << "  Original age = " << value_to_string(UserAgePath<0>::get(state)) << "\n\n";
@@ -1172,7 +1172,7 @@ void demo_static_path() {
 
     // Use it like a regular lens
     auto name1 = user0_name_lens.get(state);
-    auto state4 = user0_name_lens.set(state, Value{"Alicia"});
+    auto state4 = user0_name_lens.set(state, ImmerValue{"Alicia"});
     auto name2 = user0_name_lens.get(state4);
 
     std::cout << "user0_name_lens.get(state) = " << value_to_string(name1) << "\n";
@@ -1248,7 +1248,7 @@ void demo_static_path() {
     std::cout << "  UserNamePathJP::depth = " << UserNamePathJP::depth << "\n";
 
     // Set using JSON Pointer path
-    auto state5 = UserNamePathJP::set(state, Value{"Alice (via JSON Pointer)"});
+    auto state5 = UserNamePathJP::set(state, ImmerValue{"Alice (via JSON Pointer)"});
     std::cout << "  After set via JSON Pointer: " << value_to_string(UserNamePathJP::get(state5)) << "\n\n";
 #else
     std::cout << "--- Demo 8: JSON Pointer Syntax ---\n\n";
@@ -1325,7 +1325,7 @@ void demo_builder_path_ops() {
     builder1.set_at_path_vivify(make_path("config"sv, "window"sv, "height"sv), 1080);
     builder1.set_at_path_vivify(make_path("config"sv, "theme"sv), "dark");
 
-    Value result1 = builder1.finish();
+    ImmerValue result1 = builder1.finish();
     std::cout << "Result of set_at_path_vivify (creates intermediate nodes):\n";
     print_value(result1);
     std::cout << "\n";
@@ -1338,19 +1338,19 @@ void demo_builder_path_ops() {
     MapBuilder builder2(result1);
 
     // Update existing path with a function
-    builder2.update_at_path_vivify(make_path("users"sv, size_t(0), "age"sv), [](const Value& v) {
+    builder2.update_at_path_vivify(make_path("users"sv, size_t(0), "age"sv), [](const ImmerValue& v) {
         int current_age = v.as<int>(0);
-        return Value{current_age + 1}; // Birthday!
+        return ImmerValue{current_age + 1}; // Birthday!
     });
 
     // Update at path that doesn't fully exist - vivify creates it
-    builder2.update_at_path_vivify(make_path("stats"sv, "login_count"sv), [](const Value& v) {
+    builder2.update_at_path_vivify(make_path("stats"sv, "login_count"sv), [](const ImmerValue& v) {
         // v will be null since path doesn't exist, start from 0
         int count = v.as<int>(0);
-        return Value{count + 1};
+        return ImmerValue{count + 1};
     });
 
-    Value result2 = builder2.finish();
+    ImmerValue result2 = builder2.finish();
     std::cout << "Result of update_at_path_vivify:\n";
     print_value(result2);
     std::cout << "\n";
@@ -1374,7 +1374,7 @@ void demo_builder_path_ops() {
     builder3.set_at_path(make_path("nonexistent"sv, "key"sv), "value");
     std::cout << "set_at_path({\"nonexistent\", \"key\"}, \"value\") - FAILED (path doesn't exist)\n";
 
-    Value result3 = builder3.finish();
+    ImmerValue result3 = builder3.finish();
     std::cout << "\nResult of strict mode operations:\n";
     print_value(result3);
     std::cout << "\n";
@@ -1385,7 +1385,7 @@ void demo_builder_path_ops() {
     std::cout << "--- Demo 4: VectorBuilder Path Operations ---\n\n";
 
     // First, create a vector with some map elements
-    Value users_vec = VectorBuilder()
+    ImmerValue users_vec = VectorBuilder()
                           .push_back(MapBuilder().set("name", "User A").set("score", 100).finish())
                           .push_back(MapBuilder().set("name", "User B").set("score", 200).finish())
                           .push_back(MapBuilder().set("name", "User C").set("score", 300).finish())
@@ -1406,12 +1406,12 @@ void demo_builder_path_ops() {
     std::cout << "After set_at_path_vivify({1, \"rank\"}, \"Gold\"):\n";
 
     // Update with function
-    vec_builder.update_at_path(make_path(size_t(2), "score"sv), [](const Value& v) {
-        return Value{v.as<int>(0) * 2}; // Double the score
+    vec_builder.update_at_path(make_path(size_t(2), "score"sv), [](const ImmerValue& v) {
+        return ImmerValue{v.as<int>(0) * 2}; // Double the score
     });
     std::cout << "After update_at_path({2, \"score\"}, *2):\n";
 
-    Value result4 = vec_builder.finish();
+    ImmerValue result4 = vec_builder.finish();
     print_value(result4);
     std::cout << "\n";
 

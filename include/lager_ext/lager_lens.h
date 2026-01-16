@@ -1,4 +1,4 @@
-// lager_lens.h - Type-erased lenses using lager::lens<Value, Value>
+// lager_lens.h - Type-erased lenses using lager::lens<ImmerValue, ImmerValue>
 
 #pragma once
 
@@ -18,8 +18,8 @@ namespace lager_ext {
 
 // Forward declarations for path traversal functions (defined in path_utils.h)
 // These are used by ZoomedValue and PathLens for their get/set operations
-[[nodiscard]] LAGER_EXT_API Value get_at_path(const Value& root, PathView path);
-[[nodiscard]] LAGER_EXT_API Value set_at_path(const Value& root, PathView path, Value new_val);
+[[nodiscard]] LAGER_EXT_API ImmerValue get_at_path(const ImmerValue& root, PathView path);
+[[nodiscard]] LAGER_EXT_API ImmerValue set_at_path(const ImmerValue& root, PathView path, ImmerValue new_val);
 
 template <typename T>
 concept IndexLike = std::is_integral_v<std::decay_t<T>> && !StringLike<T>;
@@ -28,26 +28,26 @@ namespace detail {
 
 // Helper to detect if a type has .get() method
 template <typename L>
-concept HasGetMethod = requires(const L& lens, const Value& v) {
-    { lens.get(v) } -> std::convertible_to<Value>;
+concept HasGetMethod = requires(const L& lens, const ImmerValue& v) {
+    { lens.get(v) } -> std::convertible_to<ImmerValue>;
 };
 
 // Helper to detect if a type has .set() method
 template <typename L>
-concept HasSetMethod = requires(const L& lens, Value v, Value p) {
-    { lens.set(std::move(v), std::move(p)) } -> std::convertible_to<Value>;
+concept HasSetMethod = requires(const L& lens, ImmerValue v, ImmerValue p) {
+    { lens.set(std::move(v), std::move(p)) } -> std::convertible_to<ImmerValue>;
 };
 
 // Helper to detect if a type works with lager::view
 template <typename L>
-concept WorksWithLagerView = requires(const L& lens, const Value& v) {
-    { lager::view(lens, v) } -> std::convertible_to<Value>;
+concept WorksWithLagerView = requires(const L& lens, const ImmerValue& v) {
+    { lager::view(lens, v) } -> std::convertible_to<ImmerValue>;
 };
 
 // Helper to detect if a type works with lager::set
 template <typename L>
-concept WorksWithLagerSet = requires(const L& lens, Value v, Value p) {
-    { lager::set(lens, std::move(v), std::move(p)) } -> std::convertible_to<Value>;
+concept WorksWithLagerSet = requires(const L& lens, ImmerValue v, ImmerValue p) {
+    { lager::set(lens, std::move(v), std::move(p)) } -> std::convertible_to<ImmerValue>;
 };
 
 } // namespace detail
@@ -62,7 +62,7 @@ template <typename L>
 concept ValueLens = ValueGetter<L> && ValueSetter<L>;
 
 template <ValueGetter L>
-[[nodiscard]] Value lens_get(const L& lens, const Value& whole) {
+[[nodiscard]] ImmerValue lens_get(const L& lens, const ImmerValue& whole) {
     if constexpr (detail::HasGetMethod<L>) {
         return lens.get(whole);
     } else {
@@ -71,7 +71,7 @@ template <ValueGetter L>
 }
 
 template <ValueSetter L>
-[[nodiscard]] Value lens_set(const L& lens, Value whole, Value part) {
+[[nodiscard]] ImmerValue lens_set(const L& lens, ImmerValue whole, ImmerValue part) {
     if constexpr (detail::HasSetMethod<L>) {
         return lens.set(std::move(whole), std::move(part));
     } else {
@@ -80,12 +80,12 @@ template <ValueSetter L>
 }
 
 template <ValueLens L, typename Fn>
-[[nodiscard]] Value lens_over(const L& lens, Value whole, Fn&& fn) {
+[[nodiscard]] ImmerValue lens_over(const L& lens, ImmerValue whole, Fn&& fn) {
     if constexpr (requires { lens.over(whole, fn); }) {
         return lens.over(std::move(whole), std::forward<Fn>(fn));
     } else if constexpr (detail::HasGetMethod<L> && detail::HasSetMethod<L>) {
-        Value current = lens.get(whole);
-        Value updated = std::forward<Fn>(fn)(std::move(current));
+        ImmerValue current = lens.get(whole);
+        ImmerValue updated = std::forward<Fn>(fn)(std::move(current));
         return lens.set(std::move(whole), std::move(updated));
     } else {
         return lager::over(lens, std::move(whole), std::forward<Fn>(fn));
@@ -96,36 +96,36 @@ template <ValueLens L1, ValueLens L2>
 [[nodiscard]] auto lens_compose(L1&& outer, L2&& inner) {
     return lager::lenses::getset(
         // Getter: apply outer, then inner
-        [outer = std::forward<L1>(outer), inner = std::forward<L2>(inner)](const Value& whole) -> Value {
+        [outer = std::forward<L1>(outer), inner = std::forward<L2>(inner)](const ImmerValue& whole) -> ImmerValue {
             return lens_get(inner, lens_get(outer, whole));
         },
         // Setter: get outer part, set inner, then set outer
-        [outer, inner](Value whole, Value new_part) -> Value {
-            Value outer_part = lens_get(outer, whole);
-            Value new_outer = lens_set(inner, std::move(outer_part), std::move(new_part));
+        [outer, inner](ImmerValue whole, ImmerValue new_part) -> ImmerValue {
+            ImmerValue outer_part = lens_get(outer, whole);
+            ImmerValue new_outer = lens_set(inner, std::move(outer_part), std::move(new_part));
             return lens_set(outer, std::move(whole), std::move(new_outer));
         });
 }
 
-using LagerValueLens = lager::lens<Value, Value>;
+using LagerValueLens = lager::lens<ImmerValue, ImmerValue>;
 
 /// @brief Create a lens for accessing a map key
 [[nodiscard]] inline auto key_lens(std::string_view key) {
     return lager::lenses::getset(
         // Getter - Container Boxing: access boxed map, then find value directly
-        [key](const Value& obj) -> Value {
+        [key](const ImmerValue& obj) -> ImmerValue {
             if (auto* boxed_map = obj.get_if<BoxedValueMap>()) {
                 if (auto* found = boxed_map->get().find(key); found != nullptr) {
-                    return *found;  // Container Boxing: ValueMap stores Value directly
+                    return *found;  // Container Boxing: ValueMap stores ImmerValue directly
                 }
             }
-            return Value{};
+            return ImmerValue{};
         },
         // Setter (strict mode) - Container Boxing: unbox -> modify -> rebox
-        [key](Value obj, Value value) -> Value {
+        [key](ImmerValue obj, ImmerValue value) -> ImmerValue {
             if (auto* boxed_map = obj.get_if<BoxedValueMap>()) {
                 auto new_map = boxed_map->get().set(std::string{key}, std::move(value));
-                return Value{BoxedValueMap{std::move(new_map)}};
+                return ImmerValue{BoxedValueMap{std::move(new_map)}};
             }
             return obj;
         });
@@ -135,22 +135,22 @@ using LagerValueLens = lager::lens<Value, Value>;
 [[nodiscard]] inline auto index_lens(std::size_t index) {
     return lager::lenses::getset(
         // Getter - Container Boxing: access boxed vector, then get value directly
-        [index](const Value& obj) -> Value {
+        [index](const ImmerValue& obj) -> ImmerValue {
             if (auto* boxed_vec = obj.get_if<BoxedValueVector>()) {
                 const auto& vec = boxed_vec->get();
                 if (index < vec.size()) {
-                    return vec[index];  // Container Boxing: ValueVector stores Value directly
+                    return vec[index];  // Container Boxing: ValueVector stores ImmerValue directly
                 }
             }
-            return Value{};
+            return ImmerValue{};
         },
         // Setter (strict mode) - Container Boxing: unbox -> modify -> rebox
-        [index](Value obj, Value value) -> Value {
+        [index](ImmerValue obj, ImmerValue value) -> ImmerValue {
             if (auto* boxed_vec = obj.get_if<BoxedValueVector>()) {
                 const auto& vec = boxed_vec->get();
                 if (index < vec.size()) {
                     auto new_vec = vec.set(index, std::move(value));
-                    return Value{BoxedValueVector{std::move(new_vec)}};
+                    return ImmerValue{BoxedValueVector{std::move(new_vec)}};
                 }
             }
             return obj;
@@ -174,8 +174,8 @@ namespace lager_ext {
 ///
 /// @example
 /// auto lens = static_path_lens<"/users/0/name">();
-/// Value name = lager::view(lens, root);
-/// Value updated = lager::set(lens, root, Value{"Alice"});
+/// ImmerValue name = lager::view(lens, root);
+/// ImmerValue updated = lager::set(lens, root, ImmerValue{"Alice"});
 template <FixedString Ptr>
 [[nodiscard]] LagerValueLens static_path_lens() {
     using PathType = StaticPath<Ptr>;
@@ -216,8 +216,8 @@ LAGER_EXT_API void clear_lens_cache();
 //
 // Example:
 //   PathLens path = root / "users" / 0 / "name";
-//   Value name = lager::view(path, state);      // Direct use as lens
-//   Value updated = lager::set(path, state, Value{"Alice"});
+//   ImmerValue name = lager::view(path, state);      // Direct use as lens
+//   ImmerValue updated = lager::set(path, state, ImmerValue{"Alice"});
 // ============================================================
 class PathLens {
 public:
@@ -234,11 +234,11 @@ public:
     // ============================================================
     template <typename F>
     auto operator()(F&& f) const {
-        return [this, f = std::forward<F>(f)](const Value& whole) {
+        return [this, f = std::forward<F>(f)](const ImmerValue& whole) {
             // Get the part at this path
-            Value part = this->get(whole);
+            ImmerValue part = this->get(whole);
             // Apply the functor and get the setter
-            return f(std::move(part))([this, &whole](Value new_part) { return this->set(whole, std::move(new_part)); });
+            return f(std::move(part))([this, &whole](ImmerValue new_part) { return this->set(whole, std::move(new_part)); });
         };
     }
 
@@ -335,11 +335,11 @@ public:
     [[nodiscard]] LagerValueLens to_lens() const { return lager_path_lens(path_); }
 
     /// Direct get/set/over operations (more efficient than through to_lens())
-    [[nodiscard]] Value get(const Value& root) const;
-    [[nodiscard]] Value set(const Value& root, Value new_val) const;
+    [[nodiscard]] ImmerValue get(const ImmerValue& root) const;
+    [[nodiscard]] ImmerValue set(const ImmerValue& root, ImmerValue new_val) const;
 
     template <typename Fn>
-    [[nodiscard]] Value over(const Value& root, Fn&& fn) const {
+    [[nodiscard]] ImmerValue over(const ImmerValue& root, Fn&& fn) const {
         return set(root, std::forward<Fn>(fn)(get(root)));
     }
 
@@ -391,17 +391,17 @@ template <PathElementType... Elements>
 }
 
 template <PathElementType... Elements>
-[[nodiscard]] Value get_at(const Value& root, Elements&&... path_elements) {
+[[nodiscard]] ImmerValue get_at(const ImmerValue& root, Elements&&... path_elements) {
     return make_path(std::forward<Elements>(path_elements)...).get(root);
 }
 
 template <PathElementType... Elements>
-[[nodiscard]] Value set_at(const Value& root, Value new_val, Elements&&... path_elements) {
+[[nodiscard]] ImmerValue set_at(const ImmerValue& root, ImmerValue new_val, Elements&&... path_elements) {
     return make_path(std::forward<Elements>(path_elements)...).set(root, std::move(new_val));
 }
 
 template <typename Fn, PathElementType... Elements>
-[[nodiscard]] Value over_at(const Value& root, Fn&& fn, Elements&&... path_elements) {
+[[nodiscard]] ImmerValue over_at(const ImmerValue& root, Fn&& fn, Elements&&... path_elements) {
     return make_path(std::forward<Elements>(path_elements)...).over(root, std::forward<Fn>(fn));
 }
 
@@ -415,7 +415,7 @@ enum class PathErrorCode {
 };
 
 struct PathAccessResult {
-    Value value;          // The accessed value (or null on error)
+    ImmerValue value;          // The accessed value (or null on error)
     bool success = false; // Whether the access succeeded
     PathErrorCode error_code = PathErrorCode::Success;
     std::string error_message; // Human-readable error description
@@ -423,45 +423,45 @@ struct PathAccessResult {
     std::size_t failed_at_index = 0;
 
     explicit operator bool() const noexcept { return success; }
-    const Value& get() const {
+    const ImmerValue& get() const {
         if (!success) {
             throw std::runtime_error("Path access failed: " + error_message);
         }
         return value;
     }
-    Value get_or(Value default_val) const { return success ? value : std::move(default_val); }
+    ImmerValue get_or(ImmerValue default_val) const { return success ? value : std::move(default_val); }
 };
 
-[[nodiscard]] LAGER_EXT_API PathAccessResult get_at_path_safe(const Value& root, const Path& path);
-[[nodiscard]] LAGER_EXT_API PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new_val);
+[[nodiscard]] LAGER_EXT_API PathAccessResult get_at_path_safe(const ImmerValue& root, const Path& path);
+[[nodiscard]] LAGER_EXT_API PathAccessResult set_at_path_safe(const ImmerValue& root, const Path& path, ImmerValue new_val);
 
 // ============================================================
-// ZoomedValue - A focused view into a Value tree
+// ZoomedValue - A focused view into a ImmerValue tree
 //
 // Similar to lager's cursor.zoom() concept, ZoomedValue provides
-// a "zoomed-in" view of a Value at a specific path. Unlike cursor,
+// a "zoomed-in" view of a ImmerValue at a specific path. Unlike cursor,
 // ZoomedValue is a lightweight, stack-allocated object that doesn't
 // require a store.
 //
 // Key differences from lager cursor:
-// - No subscription/watch mechanism (Value is immutable, no store)
+// - No subscription/watch mechanism (ImmerValue is immutable, no store)
 // - Stack-allocated, zero-overhead abstraction
 // - set() returns new root, not modifying in place
 //
 // Example:
-//   Value state = /* ... */;
+//   ImmerValue state = /* ... */;
 //   ZoomedValue users = ZoomedValue(state) / "users";
 //   ZoomedValue first_user = users / 0;
-//   Value name = (first_user / "name").get();
-//   Value new_state = (first_user / "name").set(Value{"Alice"});
+//   ImmerValue name = (first_user / "name").get();
+//   ImmerValue new_state = (first_user / "name").set(ImmerValue{"Alice"});
 // ============================================================
 class ZoomedValue {
 public:
     /// Create a zoomed view at the root
-    explicit ZoomedValue(const Value& root) : root_(&root) {}
+    explicit ZoomedValue(const ImmerValue& root) : root_(&root) {}
 
     /// Create a zoomed view at a specific path
-    ZoomedValue(const Value& root, Path path) : root_(&root), path_(std::move(path)) {}
+    ZoomedValue(const ImmerValue& root, Path path) : root_(&root), path_(std::move(path)) {}
 
     // ============================================================
     // Navigation - Zoom further into the structure
@@ -545,26 +545,26 @@ public:
     // ============================================================
 
     /// Get the value at the current zoom path
-    [[nodiscard]] Value get() const { return get_at_path(*root_, path_); }
+    [[nodiscard]] ImmerValue get() const { return get_at_path(*root_, path_); }
 
     /// Set the value at the current zoom path (returns new root)
-    [[nodiscard]] Value set(Value new_val) const { return set_at_path(*root_, path_, std::move(new_val)); }
+    [[nodiscard]] ImmerValue set(ImmerValue new_val) const { return set_at_path(*root_, path_, std::move(new_val)); }
 
     /// Update the value using a function (returns new root)
     template <typename Fn>
-    [[nodiscard]] Value over(Fn&& fn) const {
+    [[nodiscard]] ImmerValue over(Fn&& fn) const {
         return set(std::forward<Fn>(fn)(get()));
     }
 
     /// Dereference operator - same as get()
-    [[nodiscard]] Value operator*() const { return get(); }
+    [[nodiscard]] ImmerValue operator*() const { return get(); }
 
     // ============================================================
     // Introspection
     // ============================================================
 
     /// Get the root value
-    [[nodiscard]] const Value& root() const noexcept { return *root_; }
+    [[nodiscard]] const ImmerValue& root() const noexcept { return *root_; }
 
     /// Get the current zoom path
     [[nodiscard]] const Path& path() const noexcept { return path_; }
@@ -589,26 +589,26 @@ public:
 
     /// Create a new ZoomedValue with updated root
     /// Useful after set() to continue working with the new state
-    [[nodiscard]] ZoomedValue with_root(const Value& new_root) const { return ZoomedValue{new_root, path_}; }
+    [[nodiscard]] ZoomedValue with_root(const ImmerValue& new_root) const { return ZoomedValue{new_root, path_}; }
 
 private:
-    const Value* root_ = nullptr;
+    const ImmerValue* root_ = nullptr;
     Path path_;
 };
 
 /// Create a ZoomedValue at root
-[[nodiscard]] inline ZoomedValue zoom(const Value& root) {
+[[nodiscard]] inline ZoomedValue zoom(const ImmerValue& root) {
     return ZoomedValue{root};
 }
 
 /// Create a ZoomedValue at a specific path
-[[nodiscard]] inline ZoomedValue zoom(const Value& root, const Path& path) {
+[[nodiscard]] inline ZoomedValue zoom(const ImmerValue& root, const Path& path) {
     return ZoomedValue{root, path};
 }
 
 /// Create a ZoomedValue using variadic path elements
 template <PathElementType... Elements>
-[[nodiscard]] ZoomedValue zoom(const Value& root, Elements&&... path_elements) {
+[[nodiscard]] ZoomedValue zoom(const ImmerValue& root, Elements&&... path_elements) {
     return ZoomedValue{root, make_path(std::forward<Elements>(path_elements)...).path()};
 }
 

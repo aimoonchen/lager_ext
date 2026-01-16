@@ -24,20 +24,20 @@ namespace delta_undo {
 namespace {
 
 // Get a property value from an object using dot-separated path
-// Uses Value's at() method which works for map-like containers
-Value get_value_at_path(const Value& data, const std::string& path) {
+// Uses ImmerValue's at() method which works for map-like containers
+ImmerValue get_value_at_path(const ImmerValue& data, const std::string& path) {
     if (path.empty())
         return data;
 
-    Value current = data;
+    ImmerValue current = data;
     std::istringstream stream(path);
     std::string segment;
 
     while (std::getline(stream, segment, '.')) {
-        // Use Value's at(key) method - returns null Value if not found
-        Value next = current.at(segment);
+        // Use ImmerValue's at(key) method - returns null ImmerValue if not found
+        ImmerValue next = current.at(segment);
         if (next.is_null()) {
-            return Value{}; // Path not found
+            return ImmerValue{}; // Path not found
         }
         current = next;
     }
@@ -45,8 +45,8 @@ Value get_value_at_path(const Value& data, const std::string& path) {
 }
 
 // Set a property value in an object using dot-separated path
-// Uses Value's set() method which handles map-like containers
-Value set_value_at_path(const Value& data, const std::string& path, const Value& new_value) {
+// Uses ImmerValue's set() method which handles map-like containers
+ImmerValue set_value_at_path(const ImmerValue& data, const std::string& path, const ImmerValue& new_value) {
     if (path.empty())
         return new_value;
 
@@ -58,20 +58,20 @@ Value set_value_at_path(const Value& data, const std::string& path, const Value&
     }
 
     // Recursive helper to build the new value tree
-    std::function<Value(const Value&, size_t)> set_recursive;
-    set_recursive = [&](const Value& current, size_t depth) -> Value {
+    std::function<ImmerValue(const ImmerValue&, size_t)> set_recursive;
+    set_recursive = [&](const ImmerValue& current, size_t depth) -> ImmerValue {
         if (depth >= segments.size())
             return new_value;
 
         const std::string& key = segments[depth];
 
         // Get child value (may be null if not exists)
-        Value child_value = current.at(key);
+        ImmerValue child_value = current.at(key);
 
         // Recursively set the value
-        Value new_child = set_recursive(child_value, depth + 1);
+        ImmerValue new_child = set_recursive(child_value, depth + 1);
 
-        // Use Value's set() method to create updated map
+        // Use ImmerValue's set() method to create updated map
         return current.set(key, new_child);
     };
 
@@ -85,7 +85,7 @@ Value set_value_at_path(const Value& data, const std::string& path, const Value&
 // ============================================================
 
 Delta DeltaFactory::create_set_property_delta(const std::string& object_id, const std::string& property_path,
-                                              const Value& old_value, const Value& new_value) {
+                                              const ImmerValue& old_value, const ImmerValue& new_value) {
     std::string desc = std::format("Set {}.{}", object_id, property_path);
 
     // Capture values by copy for the lambdas
@@ -117,8 +117,8 @@ Delta DeltaFactory::create_set_property_delta(const std::string& object_id, cons
 }
 
 Delta DeltaFactory::create_set_properties_delta(const std::string& object_id,
-                                                const std::map<std::string, Value>& old_values,
-                                                const std::map<std::string, Value>& new_values) {
+                                                const std::map<std::string, ImmerValue>& old_values,
+                                                const std::map<std::string, ImmerValue>& new_values) {
     std::string desc = std::format("Set {} properties on {}", new_values.size(), object_id);
 
     auto apply = [object_id, new_values](const SceneState& state) -> SceneState {
@@ -330,7 +330,7 @@ DeltaModel delta_update(DeltaModel model, DeltaAction action) {
                     return model;
 
                 // Get old value for creating the delta
-                Value old_value = get_value_at_path(obj_ptr->data, act.property_path);
+                ImmerValue old_value = get_value_at_path(obj_ptr->data, act.property_path);
 
                 // Create delta
                 Delta delta =
@@ -360,7 +360,7 @@ DeltaModel delta_update(DeltaModel model, DeltaAction action) {
                     return model;
 
                 // Get old values
-                std::map<std::string, Value> old_values;
+                std::map<std::string, ImmerValue> old_values;
                 for (const auto& [path, _] : act.updates) {
                     old_values[path] = get_value_at_path(obj_ptr->data, path);
                 }
@@ -581,18 +581,18 @@ const SceneObject* DeltaController::get_selected_object() const {
     return scene.objects.find(scene.selected_id);
 }
 
-Value DeltaController::get_property(const std::string& object_id, const std::string& path) const {
+ImmerValue DeltaController::get_property(const std::string& object_id, const std::string& path) const {
     auto obj = get_object(object_id);
     if (!obj)
-        return Value{};
+        return ImmerValue{};
     return get_value_at_path(obj->data, path);
 }
 
-void DeltaController::set_property(const std::string& object_id, const std::string& path, Value value) {
+void DeltaController::set_property(const std::string& object_id, const std::string& path, ImmerValue value) {
     dispatch(actions::SetProperty{object_id, path, std::move(value)});
 }
 
-void DeltaController::set_properties(const std::string& object_id, const std::map<std::string, Value>& updates) {
+void DeltaController::set_properties(const std::string& object_id, const std::map<std::string, ImmerValue>& updates) {
     dispatch(actions::SetProperties{object_id, updates});
 }
 
@@ -667,8 +667,8 @@ std::function<void()> DeltaController::watch(WatchCallback callback) {
 // Demo Functions
 // ============================================================
 
-// Helper to get double value from Value
-double get_double_value(const Value& v) {
+// Helper to get double value from ImmerValue
+double get_double_value(const ImmerValue& v) {
     if (auto* d = v.get_if<double>())
         return *d;
     if (auto* i = v.get_if<int>())
@@ -679,11 +679,11 @@ double get_double_value(const Value& v) {
 void demo_delta_undo_basic() {
     std::cout << "\n========== Delta Undo Basic Demo ==========\n";
 
-    // Create initial scene using Value::map factory
+    // Create initial scene using ImmerValue::map factory
     SceneState initial;
     initial.root_id = "root";
     initial.objects =
-        initial.objects.set("obj1", SceneObject{"obj1", "Transform", Value::map({{"x", 0.0}, {"y", 0.0}}), {}, {}});
+        initial.objects.set("obj1", SceneObject{"obj1", "Transform", ImmerValue::map({{"x", 0.0}, {"y", 0.0}}), {}, {}});
 
     DeltaController controller;
     controller.initialize(initial);
@@ -703,12 +703,12 @@ void demo_delta_undo_basic() {
 
     // User action 1: Set x = 10
     std::cout << "\n[User] Set x = 10\n";
-    controller.set_property("obj1", "x", Value(10.0));
+    controller.set_property("obj1", "x", ImmerValue(10.0));
     print_state();
 
     // User action 2: Set y = 20
     std::cout << "\n[User] Set y = 20\n";
-    controller.set_property("obj1", "y", Value(20.0));
+    controller.set_property("obj1", "y", ImmerValue(20.0));
     print_state();
 
     // Undo
@@ -736,7 +736,7 @@ void demo_system_persistence() {
     // Create initial scene with one object
     SceneState initial;
     initial.root_id = "root";
-    initial.objects = initial.objects.set("obj1", SceneObject{"obj1", "Transform", Value::map({{"x", 0.0}}), {}, {}});
+    initial.objects = initial.objects.set("obj1", SceneObject{"obj1", "Transform", ImmerValue::map({{"x", 0.0}}), {}, {}});
 
     DeltaController controller;
     controller.initialize(initial);
@@ -755,17 +755,17 @@ void demo_system_persistence() {
 
     // T1: User modifies obj1.x = 10 (recorded)
     std::cout << "\n[T1] User sets obj1.x = 10\n";
-    controller.set_property("obj1", "x", Value(10.0));
+    controller.set_property("obj1", "x", ImmerValue(10.0));
     print_state();
 
     // T2: System loads new object obj2 (NOT recorded - simulates lazy load)
     std::cout << "\n[T2] System loads obj2 (lazy load - NOT recorded)\n";
-    controller.dispatch(actions::LoadObjects{{SceneObject{"obj2", "Light", Value::map({{"x", 100.0}}), {}, {}}}});
+    controller.dispatch(actions::LoadObjects{{SceneObject{"obj2", "Light", ImmerValue::map({{"x", 100.0}}), {}, {}}}});
     print_state();
 
     // T3: User modifies obj1.x = 20 (recorded)
     std::cout << "\n[T3] User sets obj1.x = 20\n";
-    controller.set_property("obj1", "x", Value(20.0));
+    controller.set_property("obj1", "x", ImmerValue(20.0));
     print_state();
 
     // Now undo T3
@@ -792,7 +792,7 @@ void demo_transactions() {
 
     SceneState initial;
     initial.objects = initial.objects.set(
-        "obj1", SceneObject{"obj1", "Transform", Value::map({{"x", 0.0}, {"y", 0.0}, {"z", 0.0}}), {}, {}});
+        "obj1", SceneObject{"obj1", "Transform", ImmerValue::map({{"x", 0.0}, {"y", 0.0}, {"z", 0.0}}), {}, {}});
 
     DeltaController controller;
     controller.initialize(initial);
@@ -814,9 +814,9 @@ void demo_transactions() {
     // Transaction: Move object (changes x, y, z together)
     std::cout << "\n[Begin Transaction: 'Move object']\n";
     controller.begin_transaction("Move object");
-    controller.set_property("obj1", "x", Value(10.0));
-    controller.set_property("obj1", "y", Value(20.0));
-    controller.set_property("obj1", "z", Value(30.0));
+    controller.set_property("obj1", "x", ImmerValue(10.0));
+    controller.set_property("obj1", "y", ImmerValue(20.0));
+    controller.set_property("obj1", "z", ImmerValue(30.0));
     controller.end_transaction();
     std::cout << "[End Transaction]\n";
     print_state();
@@ -837,7 +837,7 @@ void demo_interleaved_operations() {
 
     SceneState initial;
     initial.objects = initial.objects.set(
-        "player", SceneObject{"player", "Character", Value::map({{"health", 100.0}, {"score", 0.0}}), {}, {}});
+        "player", SceneObject{"player", "Character", ImmerValue::map({{"health", 100.0}, {"score", 0.0}}), {}, {}});
 
     DeltaController controller;
     controller.initialize(initial);
@@ -847,12 +847,12 @@ void demo_interleaved_operations() {
         for (const auto& [id, obj] : controller.get_scene().objects) {
             std::cout << id << "{";
             // Print health if exists
-            Value health = obj.data.at("health");
+            ImmerValue health = obj.data.at("health");
             if (!health.is_null()) {
                 std::cout << "health=" << get_double_value(health);
             }
             // Print score if exists
-            Value score = obj.data.at("score");
+            ImmerValue score = obj.data.at("score");
             if (!score.is_null()) {
                 if (!health.is_null())
                     std::cout << ", ";
@@ -867,23 +867,23 @@ void demo_interleaved_operations() {
     print_state();
 
     std::cout << "\n[User] Player takes 20 damage (health = 80)\n";
-    controller.set_property("player", "health", Value(80.0));
+    controller.set_property("player", "health", ImmerValue(80.0));
     print_state();
 
     std::cout << "\n[System] Enemy spawns (lazy loaded)\n";
-    controller.dispatch(actions::LoadObjects{{SceneObject{"enemy1", "Enemy", Value::map({{"health", 50.0}}), {}, {}}}});
+    controller.dispatch(actions::LoadObjects{{SceneObject{"enemy1", "Enemy", ImmerValue::map({{"health", 50.0}}), {}, {}}}});
     print_state();
 
     std::cout << "\n[User] Player scores 100 points\n";
-    controller.set_property("player", "score", Value(100.0));
+    controller.set_property("player", "score", ImmerValue(100.0));
     print_state();
 
     std::cout << "\n[System] Another enemy spawns\n";
-    controller.dispatch(actions::LoadObjects{{SceneObject{"enemy2", "Enemy", Value::map({{"health", 75.0}}), {}, {}}}});
+    controller.dispatch(actions::LoadObjects{{SceneObject{"enemy2", "Enemy", ImmerValue::map({{"health", 75.0}}), {}, {}}}});
     print_state();
 
     std::cout << "\n[User] Player takes more damage (health = 50)\n";
-    controller.set_property("player", "health", Value(50.0));
+    controller.set_property("player", "health", ImmerValue(50.0));
     print_state();
 
     std::cout << "\n--- Now undoing all user actions ---\n";

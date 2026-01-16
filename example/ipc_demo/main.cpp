@@ -7,8 +7,8 @@
 /// This demo shows:
 /// 1. Unidirectional Channel (Producer -> Consumer)
 /// 2. Bidirectional ChannelPair (Request/Reply pattern)
-/// 3. Sending/receiving raw data and Value objects
-/// 4. SharedBufferSPSC - High-performance Value serialization transfer
+/// 3. Sending/receiving raw data and ImmerValue objects
+/// 4. SharedBufferSPSC - High-performance ImmerValue serialization transfer
 ///
 /// Usage:
 ///   ipc_demo                 # Run as client (spawns server automatically)
@@ -113,15 +113,15 @@ int runServer() {
     }
     std::cout << "[Server] Connected to ChannelPair!\n";
 
-    // Echo loop: receive Value messages and reply
+    // Echo loop: receive ImmerValue messages and reply
     int echoCount = 0;
     while (echoCount < 3) {
         auto msg = pair->tryReceive();
         if (msg) {
             std::cout << "[Server] Received request #" << msg->msgId << "\n";
 
-            // Build and send reply Value
-            Value reply = MapBuilder()
+            // Build and send reply ImmerValue
+            ImmerValue reply = MapBuilder()
                               .set("status", "ok")
                               .set("echo_id", static_cast<int64_t>(msg->msgId))
                               .set("message", "Reply from server")
@@ -137,28 +137,28 @@ int runServer() {
     }
 
     // =========================================
-    // Demo 3: Sending/Receiving complex Value objects
+    // Demo 3: Sending/Receiving complex ImmerValue objects
     // =========================================
-    std::cout << "\n[Server] Demo 3: Complex Value Object Transfer\n";
+    std::cout << "\n[Server] Demo 3: Complex ImmerValue Object Transfer\n";
 
-    // Receive Value from client
+    // Receive ImmerValue from client
     startTime = std::chrono::steady_clock::now();
 
     while (true) {
         auto msg = pair->tryReceive();
         if (msg) {
-            std::cout << "[Server] Received Value object (msgId=" << msg->msgId << "):\n";
+            std::cout << "[Server] Received ImmerValue object (msgId=" << msg->msgId << "):\n";
 
-            // Access Value data using at()
-            Value name = msg->data.at("name");
+            // Access ImmerValue data using at()
+            ImmerValue name = msg->data.at("name");
             if (!name.is_null()) {
                 std::cout << "  name: " << name.as_string() << "\n";
             }
-            Value age = msg->data.at("age");
+            ImmerValue age = msg->data.at("age");
             if (!age.is_null()) {
                 std::cout << "  age: " << age.as_number() << "\n";
             }
-            Value tags = msg->data.at("tags");
+            ImmerValue tags = msg->data.at("tags");
             if (!tags.is_null()) {
                 std::cout << "  tags: [";
                 // Container Boxing: use BoxedValueVector
@@ -168,7 +168,7 @@ int runServer() {
                     for (const auto& item : vec) {
                         if (!first)
                             std::cout << ", ";
-                        // ValueVector stores Value directly, not box<Value>
+                        // ValueVector stores ImmerValue directly, not box<ImmerValue>
                         std::cout << "\"" << item.as_string() << "\"";
                         first = false;
                     }
@@ -176,27 +176,27 @@ int runServer() {
                 std::cout << "]\n";
             }
 
-            // Send acknowledgment Value
+            // Send acknowledgment ImmerValue
             std::string originalName = name.is_null() ? "unknown" : name.as_string();
 
-            Value ack = MapBuilder().set("status", "received").set("original_name", originalName).finish();
+            ImmerValue ack = MapBuilder().set("status", "received").set("original_name", originalName).finish();
             pair->post(msg->msgId + 2000, ack);
-            std::cout << "[Server] Sent acknowledgment Value\n";
+            std::cout << "[Server] Sent acknowledgment ImmerValue\n";
             break;
         }
 
         auto elapsed = std::chrono::steady_clock::now() - startTime;
         if (std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() > 10) {
-            std::cerr << "[Server] Timeout waiting for Value\n";
+            std::cerr << "[Server] Timeout waiting for ImmerValue\n";
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     // =========================================
-    // Demo 4: SharedBufferSPSC - High-performance Value Transfer
+    // Demo 4: SharedBufferSPSC - High-performance ImmerValue Transfer
     // =========================================
-    std::cout << "\n[Server] Demo 4: SharedBufferSPSC Value Transfer\n";
+    std::cout << "\n[Server] Demo 4: SharedBufferSPSC ImmerValue Transfer\n";
 
     // Fixed-size message structure for SharedBufferSPSC
     struct ValueMessage {
@@ -223,7 +223,7 @@ int runServer() {
     }
 
     if (spscBuffer) {
-        std::cout << "[Server] SharedBufferSPSC opened, waiting for Value...\n";
+        std::cout << "[Server] SharedBufferSPSC opened, waiting for ImmerValue...\n";
 
         // Wait for data with version check
         startTime = std::chrono::steady_clock::now();
@@ -241,20 +241,20 @@ int runServer() {
             const auto& msg = spscBuffer->read();
             std::cout << "[Server] Received " << msg.size << " bytes via SharedBufferSPSC\n";
 
-            // Deserialize Value from the buffer
-            Value received = deserialize(msg.data, msg.size);
+            // Deserialize ImmerValue from the buffer
+            ImmerValue received = deserialize(msg.data, msg.size);
 
-            // Display received Value
-            std::cout << "[Server] Deserialized Value:\n";
-            Value title = received.at("title");
+            // Display received ImmerValue
+            std::cout << "[Server] Deserialized ImmerValue:\n";
+            ImmerValue title = received.at("title");
             if (!title.is_null()) {
                 std::cout << "  title: " << title.as_string() << "\n";
             }
-            Value count = received.at("count");
+            ImmerValue count = received.at("count");
             if (!count.is_null()) {
                 std::cout << "  count: " << count.as_number() << "\n";
             }
-            Value position = received.at("position");
+            ImmerValue position = received.at("position");
             if (!position.is_null()) {
                 if (auto* vec = position.get_if<Vec3>()) {
                     std::cout << "  position: [" << (*vec)[0] << ", " << (*vec)[1] << ", " << (*vec)[2] << "]\n";
@@ -325,8 +325,8 @@ int runClient() {
     const char* requestMsgs[] = {"Ping", "Hello Server", "How are you?"};
 
     for (int i = 0; i < 3; ++i) {
-        // Build request Value
-        Value request = MapBuilder().set("type", "request").set("content", requestMsgs[i]).finish();
+        // Build request ImmerValue
+        ImmerValue request = MapBuilder().set("type", "request").set("content", requestMsgs[i]).finish();
 
         std::cout << "[Client] Sending request #" << (i + 1) << ": \"" << requestMsgs[i] << "\"\n";
         pair->post(i + 1, request);
@@ -338,7 +338,7 @@ int runClient() {
             auto reply = pair->tryReceive();
             if (reply) {
                 std::cout << "[Client] Received reply #" << reply->msgId;
-                Value status = reply->data.at("status");
+                ImmerValue status = reply->data.at("status");
                 if (!status.is_null()) {
                     std::cout << " (status: " << status.as_string() << ")";
                 }
@@ -356,12 +356,12 @@ int runClient() {
     }
 
     // =========================================
-    // Demo 3: Sending/Receiving complex Value objects
+    // Demo 3: Sending/Receiving complex ImmerValue objects
     // =========================================
-    std::cout << "\n[Client] Demo 3: Complex Value Object Transfer\n";
+    std::cout << "\n[Client] Demo 3: Complex ImmerValue Object Transfer\n";
 
-    // Build a complex Value object using builder API
-    Value userData =
+    // Build a complex ImmerValue object using builder API
+    ImmerValue userData =
         MapBuilder()
             .set("name", "Alice")
             .set("age", 30)
@@ -369,7 +369,7 @@ int runClient() {
             .set("tags", VectorBuilder().push_back("developer").push_back("gamer").push_back("reader").finish())
             .finish();
 
-    std::cout << "[Client] Sending complex Value object...\n";
+    std::cout << "[Client] Sending complex ImmerValue object...\n";
     pair->post(100, userData);
 
     // Wait for acknowledgment
@@ -378,11 +378,11 @@ int runClient() {
         auto ack = pair->tryReceive();
         if (ack) {
             std::cout << "[Client] Received acknowledgment:\n";
-            Value status = ack->data.at("status");
+            ImmerValue status = ack->data.at("status");
             if (!status.is_null()) {
                 std::cout << "  status: " << status.as_string() << "\n";
             }
-            Value origName = ack->data.at("original_name");
+            ImmerValue origName = ack->data.at("original_name");
             if (!origName.is_null()) {
                 std::cout << "  original_name: " << origName.as_string() << "\n";
             }
@@ -398,9 +398,9 @@ int runClient() {
     }
 
     // =========================================
-    // Demo 4: SharedBufferSPSC - High-performance Value Transfer
+    // Demo 4: SharedBufferSPSC - High-performance ImmerValue Transfer
     // =========================================
-    std::cout << "\n[Client] Demo 4: SharedBufferSPSC Value Transfer\n";
+    std::cout << "\n[Client] Demo 4: SharedBufferSPSC ImmerValue Transfer\n";
 
     // Fixed-size message structure for SharedBufferSPSC
     struct ValueMessage {
@@ -418,8 +418,8 @@ int runClient() {
     } else {
         std::cout << "[Client] SharedBufferSPSC created.\n";
 
-        // Build a Value with various types including Vec3
-        Value gameState = MapBuilder()
+        // Build a ImmerValue with various types including Vec3
+        ImmerValue gameState = MapBuilder()
             .set("title", "Game State via SPSC")
             .set("count", 42)
             .set("position", Vec3{1.5f, 2.5f, 3.5f})
@@ -456,7 +456,7 @@ int spawnServerAndRunClient() {
     std::cout << "This demo shows basic IPC module usage:\n";
     std::cout << "  1. Unidirectional Channel (Producer -> Consumer)\n";
     std::cout << "  2. Bidirectional ChannelPair (Request/Reply)\n";
-    std::cout << "  3. Value object serialization over IPC\n\n";
+    std::cout << "  3. ImmerValue object serialization over IPC\n\n";
 
     // Get current executable path
     char exePath[MAX_PATH];
@@ -555,9 +555,9 @@ void test_spsc_basic_operations() {
     const auto& read1 = consumer->read();
     
     if (read1.position[0] == 1.0f && read1.fov == 60.0f && read1.frame_id == 1) {
-        std::cout << "âœ“ Basic read/write PASSED\n";
+        std::cout << "âœ?Basic read/write PASSED\n";
     } else {
-        std::cout << "âœ— Basic read/write FAILED\n";
+        std::cout << "âœ?Basic read/write FAILED\n";
     }
 }
 
@@ -580,9 +580,9 @@ void test_spsc_update_tracking() {
     bool got_update = consumer->try_read(out);
     
     if (got_update && out.frame_id == 100) {
-        std::cout << "âœ“ Update tracking PASSED\n";
+        std::cout << "âœ?Update tracking PASSED\n";
     } else {
-        std::cout << "âœ— Update tracking FAILED\n";
+        std::cout << "âœ?Update tracking FAILED\n";
     }
 }
 
@@ -609,7 +609,7 @@ void test_spsc_performance() {
     auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
     
     std::cout << "write() x " << ITERATIONS << ": " << (double)ns / ITERATIONS << " ns/op\n";
-    std::cout << "âœ“ Performance test completed\n";
+    std::cout << "âœ?Performance test completed\n";
 }
 
 void test_shared_buffer_once() {
@@ -636,9 +636,9 @@ void test_shared_buffer_once() {
     
     const auto& config = consumer->read();
     if (config.size == 42 && config.version == 1) {
-        std::cout << "âœ“ SharedBufferOnce PASSED\n";
+        std::cout << "âœ?SharedBufferOnce PASSED\n";
     } else {
-        std::cout << "âœ— SharedBufferOnce FAILED\n";
+        std::cout << "âœ?SharedBufferOnce FAILED\n";
     }
 }
 
@@ -652,7 +652,7 @@ void runSharedBufferTests() {
     test_spsc_performance();
     test_shared_buffer_once();
     
-    std::cout << "\nâœ“ All SharedBuffer tests completed!\n";
+    std::cout << "\nâœ?All SharedBuffer tests completed!\n";
 }
 
 //=============================================================================
@@ -685,7 +685,7 @@ void test_message_layout() {
     
     std::cout << "msg.msgId (hash of 'TestEvent') = " << msg.msgId << "\n";
     std::cout << "msg.domain = " << static_cast<int>(msg.domain) << " (Document)\n";
-    std::cout << "âœ“ Message layout test PASSED\n";
+    std::cout << "âœ?Message layout test PASSED\n";
 }
 
 void test_channel_with_domain() {
@@ -703,8 +703,8 @@ void test_channel_with_domain() {
         return;
     }
     
-    Value docData = Value::map({{"file", "test.txt"}, {"saved", true}});
-    Value propData = Value::map({{"name", "width"}, {"value", 100}});
+    ImmerValue docData = ImmerValue::map({{"file", "test.txt"}, {"saved", true}});
+    ImmerValue propData = ImmerValue::map({{"name", "width"}, {"value", 100}});
     
     bool sent1 = producer->post(fnv1a_hash32("DocSave"), docData, MessageDomain::Document);
     bool sent2 = producer->post(fnv1a_hash32("PropChange"), propData, MessageDomain::Property);
@@ -722,7 +722,7 @@ void test_channel_with_domain() {
         std::cout << "Received 2: domain=" << static_cast<int>(msg2->domain) << " (expected 2)\n";
     }
     
-    std::cout << "âœ“ Channel domain test PASSED\n";
+    std::cout << "âœ?Channel domain test PASSED\n";
 }
 
 void test_fnv1a_hash() {
@@ -736,9 +736,9 @@ void test_fnv1a_hash() {
     std::cout << "Runtime hash      = " << hash2 << "\n";
     
     if (hash1 == hash2) {
-        std::cout << "âœ“ Hash consistency PASSED\n";
+        std::cout << "âœ?Hash consistency PASSED\n";
     } else {
-        std::cout << "âœ— Hash mismatch FAILED\n";
+        std::cout << "âœ?Hash mismatch FAILED\n";
     }
 }
 
@@ -753,7 +753,7 @@ void test_message_flags() {
     std::cout << "has_flag(IsRequest): " << has_flag(flags, MessageFlags::IsRequest) << "\n";
     std::cout << "has_flag(IsResponse): " << has_flag(flags, MessageFlags::IsResponse) << "\n";
     
-    std::cout << "âœ“ MessageFlags test PASSED\n";
+    std::cout << "âœ?MessageFlags test PASSED\n";
 }
 
 void runDomainTests() {
@@ -766,7 +766,7 @@ void runDomainTests() {
     test_fnv1a_hash();
     test_message_flags();
     
-    std::cout << "\nâœ“ All domain tests completed!\n";
+    std::cout << "\nâœ?All domain tests completed!\n";
 }
 
 //=============================================================================

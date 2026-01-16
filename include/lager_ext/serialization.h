@@ -2,7 +2,7 @@
 // Licensed under the MIT License. See LICENSE file in the project root.
 
 /// @file serialization.h
-/// @brief Serialization utilities for Value type (Binary and JSON formats).
+/// @brief Serialization utilities for ImmerValue type (Binary and JSON formats).
 ///
 /// This file provides serialization and deserialization functions:
 /// - Binary format: Compact, efficient for storage and network transfer
@@ -13,13 +13,13 @@
 ///   #include <lager_ext/serialization.h>
 ///
 ///   // Binary serialization
-///   Value data = Value::map({{"key", "value"}});
+///   ImmerValue data = ImmerValue::map({{"key", "value"}});
 ///   ByteBuffer buffer = serialize(data);
-///   Value restored = deserialize(buffer);
+///   ImmerValue restored = deserialize(buffer);
 ///
 ///   // JSON serialization
 ///   std::string json = to_json(data, false);  // pretty-printed
-///   Value parsed = from_json(json);
+///   ImmerValue parsed = from_json(json);
 /// @endcode
 ///
 /// Binary Format Type Tags (1 byte):
@@ -58,48 +58,48 @@ namespace lager_ext {
 // ============================================================
 // Note: ByteBuffer is defined in value.h
 
-/// Serialize Value to binary buffer
-/// @param val The Value to serialize
+/// Serialize ImmerValue to binary buffer
+/// @param val The ImmerValue to serialize
 /// @return Byte buffer containing serialized data
-LAGER_EXT_API ByteBuffer serialize(const Value& val);
+LAGER_EXT_API ByteBuffer serialize(const ImmerValue& val);
 
-/// Deserialize Value from binary buffer
+/// Deserialize ImmerValue from binary buffer
 /// @param buffer The byte buffer to deserialize
-/// @return Reconstructed Value, or null Value on error
+/// @return Reconstructed ImmerValue, or null ImmerValue on error
 /// @throws std::runtime_error on invalid data format
-LAGER_EXT_API Value deserialize(const ByteBuffer& buffer);
+LAGER_EXT_API ImmerValue deserialize(const ByteBuffer& buffer);
 
 /// Deserialize from raw pointer and size
 /// @param data Pointer to serialized data
 /// @param size Size of serialized data in bytes
-/// @return Reconstructed Value
+/// @return Reconstructed ImmerValue
 /// @note Useful for memory-mapped data or network buffers
-LAGER_EXT_API Value deserialize(const uint8_t* data, std::size_t size);
+LAGER_EXT_API ImmerValue deserialize(const uint8_t* data, std::size_t size);
 
 // ============================================================
 // Serialization Utilities
 // ============================================================
 
 /// Get serialized size without actually serializing
-/// @param val The Value to measure
+/// @param val The ImmerValue to measure
 /// @return Number of bytes required for serialization
 /// @note Useful for pre-allocating buffers
-LAGER_EXT_API std::size_t serialized_size(const Value& val);
+LAGER_EXT_API std::size_t serialized_size(const ImmerValue& val);
 
 /// Serialize to pre-allocated buffer
-/// @param val The Value to serialize
+/// @param val The ImmerValue to serialize
 /// @param buffer Pointer to output buffer
 /// @param buffer_size Size of output buffer
 /// @return Number of bytes written
 /// @note Buffer must have at least serialized_size(val) bytes
-LAGER_EXT_API std::size_t serialize_to(const Value& val, uint8_t* buffer, std::size_t buffer_size);
+LAGER_EXT_API std::size_t serialize_to(const ImmerValue& val, uint8_t* buffer, std::size_t buffer_size);
 
 // ============================================================
 // JSON Serialization
 // ============================================================
 
-/// Convert Value to JSON string
-/// @param val The Value to convert
+/// Convert ImmerValue to JSON string
+/// @param val The ImmerValue to convert
 /// @param compact If true, produce minimal output; if false, pretty-print with indentation
 /// @return JSON string representation
 ///
@@ -110,12 +110,12 @@ LAGER_EXT_API std::size_t serialize_to(const Value& val, uint8_t* buffer, std::s
 /// Limitations:
 /// - Numbers are always double precision (int64 may lose precision)
 /// - Null, true, false are reserved keywords
-LAGER_EXT_API std::string to_json(const Value& val, bool compact = false);
+LAGER_EXT_API std::string to_json(const ImmerValue& val, bool compact = false);
 
-/// Parse JSON string to Value
+/// Parse JSON string to ImmerValue
 /// @param json_str The JSON string to parse
 /// @param error_out If provided, receives error message on failure
-/// @return Parsed Value, or null Value on parse error
-LAGER_EXT_API Value from_json(const std::string& json_str, std::string* error_out = nullptr);
+/// @return Parsed ImmerValue, or null ImmerValue on parse error
+LAGER_EXT_API ImmerValue from_json(const std::string& json_str, std::string* error_out = nullptr);
 
 } // namespace lager_ext

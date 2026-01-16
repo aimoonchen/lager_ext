@@ -13,12 +13,12 @@ namespace lager_ext {
 // DiffEntryCollector Implementation
 // ============================================================
 
-void DiffEntryCollector::diff(const Value& old_val, const Value& new_val, bool recursive) {
+void DiffEntryCollector::diff(const ImmerValue& old_val, const ImmerValue& new_val, bool recursive) {
     diffs_.clear();
     recursive_ = recursive;
 
     // Fast path: if both Values share the same variant storage, no changes
-    // This handles the case where the same Value object is compared to itself
+    // This handles the case where the same ImmerValue object is compared to itself
     if (&old_val.data == &new_val.data) {
         return;
     }
@@ -84,7 +84,7 @@ void DiffEntryCollector::print_diffs() const {
 // These methods use the path_stack_ member for zero-allocation path building
 // ============================================================
 
-void DiffEntryCollector::diff_value_optimized(const Value& old_val, const Value& new_val, std::size_t path_depth) {
+void DiffEntryCollector::diff_value_optimized(const ImmerValue& old_val, const ImmerValue& new_val, std::size_t path_depth) {
     const auto old_index = old_val.data.index();
     const auto new_index = new_val.data.index();
     if (old_index != new_index) [[unlikely]] {
@@ -147,21 +147,21 @@ void DiffEntryCollector::diff_map_optimized(const ValueMap& old_map, const Value
         path_stack_.resize(path_depth + 1);
     }
 
-    // Container Boxing: ValueMap now stores Value directly, not ValueBox
+    // Container Boxing: ValueMap now stores ImmerValue directly, not ValueBox
     auto map_differ = immer::make_differ(
         // added
-        [&](const std::pair<const std::string, Value>& added_kv) {
+        [&](const std::pair<const std::string, ImmerValue>& added_kv) {
             path_stack_[path_depth] = PathElement{added_kv.first};
             collect_added_optimized(added_kv.second, path_depth + 1);
         },
         // removed
-        [&](const std::pair<const std::string, Value>& removed_kv) {
+        [&](const std::pair<const std::string, ImmerValue>& removed_kv) {
             path_stack_[path_depth] = PathElement{removed_kv.first};
             collect_removed_optimized(removed_kv.second, path_depth + 1);
         },
         // changed (retained key)
-        [&](const std::pair<const std::string, Value>& old_kv,
-            const std::pair<const std::string, Value>& new_kv) {
+        [&](const std::pair<const std::string, ImmerValue>& old_kv,
+            const std::pair<const std::string, ImmerValue>& new_kv) {
             path_stack_[path_depth] = PathElement{old_kv.first};
             diff_value_optimized(old_kv.second, new_kv.second, path_depth + 1);
         });
@@ -180,10 +180,10 @@ void DiffEntryCollector::diff_vector_optimized(const ValueVector& old_vec, const
         path_stack_.resize(path_depth + 1);
     }
 
-    // Container Boxing: ValueVector now stores Value directly, not ValueBox
+    // Container Boxing: ValueVector now stores ImmerValue directly, not ValueBox
     for (size_t i = 0; i < common_size; ++i) {
-        const Value& old_val = old_vec[i];
-        const Value& new_val = new_vec[i];
+        const ImmerValue& old_val = old_vec[i];
+        const ImmerValue& new_val = new_vec[i];
 
         path_stack_[path_depth] = PathElement{i};
         diff_value_optimized(old_val, new_val, path_depth + 1);
@@ -202,7 +202,7 @@ void DiffEntryCollector::diff_vector_optimized(const ValueVector& old_vec, const
     }
 }
 
-void DiffEntryCollector::collect_entries_optimized(const Value& val, std::size_t path_depth, bool is_add) {
+void DiffEntryCollector::collect_entries_optimized(const ImmerValue& val, std::size_t path_depth, bool is_add) {
     // In shallow mode, just record the value at current path (no recursion)
     if (!recursive_) {
         Path current_path(current_path_view(path_depth));
@@ -224,7 +224,7 @@ void DiffEntryCollector::collect_entries_optimized(const Value& val, std::size_t
                 if (path_stack_.size() <= path_depth) {
                     path_stack_.resize(path_depth + 1);
                 }
-                // Container Boxing: map now stores Value directly
+                // Container Boxing: map now stores ImmerValue directly
                 for (const auto& [k, v] : arg.get()) {
                     path_stack_[path_depth] = PathElement{k};
                     collect_entries_optimized(v, path_depth + 1, is_add);
@@ -234,7 +234,7 @@ void DiffEntryCollector::collect_entries_optimized(const Value& val, std::size_t
                 if (path_stack_.size() <= path_depth) {
                     path_stack_.resize(path_depth + 1);
                 }
-                // Container Boxing: vector now stores Value directly
+                // Container Boxing: vector now stores ImmerValue directly
                 const auto& vec = arg.get();
                 for (size_t i = 0; i < vec.size(); ++i) {
                     path_stack_[path_depth] = PathElement{i};
@@ -250,27 +250,27 @@ void DiffEntryCollector::collect_entries_optimized(const Value& val, std::size_t
         val.data);
 }
 
-void DiffEntryCollector::collect_removed_optimized(const Value& val, std::size_t path_depth) {
+void DiffEntryCollector::collect_removed_optimized(const ImmerValue& val, std::size_t path_depth) {
     collect_entries_optimized(val, path_depth, false);
 }
 
-void DiffEntryCollector::collect_added_optimized(const Value& val, std::size_t path_depth) {
+void DiffEntryCollector::collect_added_optimized(const ImmerValue& val, std::size_t path_depth) {
     collect_entries_optimized(val, path_depth, true);
 }
 
-Value DiffEntryCollector::as_value_tree() const {
+ImmerValue DiffEntryCollector::as_value_tree() const {
     if (diffs_.empty()) {
-        return Value{}; // Empty tree for no changes
+        return ImmerValue{}; // Empty tree for no changes
     }
 
     // Build tree by inserting each diff entry's path
     // Leaf nodes store pointer to DiffEntry as uint64_t
-    Value tree = Value{ValueMap{}};
+    ImmerValue tree = ImmerValue{ValueMap{}};
 
     for (const auto& entry : diffs_) {
         // Encode pointer as uint64_t
         const uint64_t ptr_val = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&entry));
-        Value leaf{ptr_val};
+        ImmerValue leaf{ptr_val};
 
         // Insert at path
         if (entry.path.empty()) {
@@ -285,7 +285,7 @@ Value DiffEntryCollector::as_value_tree() const {
     return tree;
 }
 
-bool has_any_difference(const Value& old_val, const Value& new_val, bool recursive) {
+bool has_any_difference(const ImmerValue& old_val, const ImmerValue& new_val, bool recursive) {
     // Fast path: same object
     if (&old_val.data == &new_val.data) {
         return false;
@@ -295,7 +295,7 @@ bool has_any_difference(const Value& old_val, const Value& new_val, bool recursi
 
 namespace detail {
 
-bool values_differ(const Value& old_val, const Value& new_val, bool recursive) {
+bool values_differ(const ImmerValue& old_val, const ImmerValue& new_val, bool recursive) {
     // Fast path: different types
     const auto old_index = old_val.data.index();
     const auto new_index = new_val.data.index();
@@ -354,17 +354,17 @@ bool maps_differ(const ValueMap& old_map, const ValueMap& new_map, bool recursiv
     }
 
     // Use immer::diff with early exit
-    // Container Boxing: ValueMap now stores Value directly, not ValueBox
+    // Container Boxing: ValueMap now stores ImmerValue directly, not ValueBox
     bool found_difference = false;
 
     auto differ = immer::make_differ(
         // added - any addition means difference
-        [&](const std::pair<const std::string, Value>&) { found_difference = true; },
+        [&](const std::pair<const std::string, ImmerValue>&) { found_difference = true; },
         // removed - any removal means difference
-        [&](const std::pair<const std::string, Value>&) { found_difference = true; },
+        [&](const std::pair<const std::string, ImmerValue>&) { found_difference = true; },
         // retained - check if values differ
-        [&](const std::pair<const std::string, Value>& old_kv,
-            const std::pair<const std::string, Value>& new_kv) {
+        [&](const std::pair<const std::string, ImmerValue>& old_kv,
+            const std::pair<const std::string, ImmerValue>& new_kv) {
             if (found_difference)
                 return; // Already found, skip
 
@@ -387,11 +387,11 @@ bool vectors_differ(const ValueVector& old_vec, const ValueVector& new_vec, bool
         return true;
     }
 
-    // Container Boxing: ValueVector now stores Value directly, not ValueBox
+    // Container Boxing: ValueVector now stores ImmerValue directly, not ValueBox
     // Check each element (early exit on first difference)
     for (size_t i = 0; i < old_size; ++i) {
-        const Value& old_val = old_vec[i];
-        const Value& new_val = new_vec[i];
+        const ImmerValue& old_val = old_vec[i];
+        const ImmerValue& new_val = new_vec[i];
 
         // Recurse - early exit if different
         if (values_differ(old_val, new_val, recursive)) {
@@ -405,16 +405,16 @@ bool vectors_differ(const ValueVector& old_vec, const ValueVector& new_vec, bool
 } // namespace detail
 
 // ============================================================
-// DiffValueCollector - Single-pass diff to Value tree
+// DiffValueCollector - Single-pass diff to ImmerValue tree
 // ============================================================
 
 namespace {
 // Pre-cached diff type ValueBoxes to avoid repeated allocation
 // These are created once and shared across all diff operations
 inline const ValueBox& get_type_box(DiffEntry::Type type) {
-    static const ValueBox add_box{Value{static_cast<uint8_t>(DiffEntry::Type::Add)}};
-    static const ValueBox remove_box{Value{static_cast<uint8_t>(DiffEntry::Type::Remove)}};
-    static const ValueBox change_box{Value{static_cast<uint8_t>(DiffEntry::Type::Change)}};
+    static const ValueBox add_box{ImmerValue{static_cast<uint8_t>(DiffEntry::Type::Add)}};
+    static const ValueBox remove_box{ImmerValue{static_cast<uint8_t>(DiffEntry::Type::Remove)}};
+    static const ValueBox change_box{ImmerValue{static_cast<uint8_t>(DiffEntry::Type::Change)}};
 
     switch (type) {
     case DiffEntry::Type::Add:
@@ -449,7 +449,7 @@ inline const std::string& get_index_string(size_t i) {
 }
 } // namespace
 
-void DiffValueCollector::diff(const Value& old_val, const Value& new_val, bool recursive) {
+void DiffValueCollector::diff(const ImmerValue& old_val, const ImmerValue& new_val, bool recursive) {
     clear();
     recursive_ = recursive;
 
@@ -464,11 +464,11 @@ void DiffValueCollector::diff(const Value& old_val, const Value& new_val, bool r
 }
 
 void DiffValueCollector::clear() {
-    result_ = Value{};
+    result_ = ImmerValue{};
     has_changes_ = false;
 }
 
-Value DiffValueCollector::make_diff_node(DiffEntry::Type type, const ValueBox& val_box) {
+ImmerValue DiffValueCollector::make_diff_node(DiffEntry::Type type, const ValueBox& val_box) {
     // Use transient for better performance (in-place mutation)
     auto transient = ValueMap{}.transient();
 
@@ -485,33 +485,33 @@ Value DiffValueCollector::make_diff_node(DiffEntry::Type type, const ValueBox& v
         transient.set(diff_keys::OLD, val_box);
     }
 
-    return Value{transient.persistent()};
+    return ImmerValue{transient.persistent()};
 }
 
-Value DiffValueCollector::make_diff_node(DiffEntry::Type type, const ValueBox& old_box, const ValueBox& new_box) {
+ImmerValue DiffValueCollector::make_diff_node(DiffEntry::Type type, const ValueBox& old_box, const ValueBox& new_box) {
     // For Change type, we need both values - use transient for better performance
     if (type == DiffEntry::Type::Change) {
         auto transient = ValueMap{}.transient();
         transient.set(diff_keys::TYPE, get_type_box(type));
         transient.set(diff_keys::OLD, old_box);
         transient.set(diff_keys::NEW, new_box);
-        return Value{transient.persistent()};
+        return ImmerValue{transient.persistent()};
     }
 
     // For Add/Remove, delegate to single-value version using the meaningful value
     return make_diff_node(type, (type == DiffEntry::Type::Add) ? new_box : old_box);
 }
 
-// Convenience overloads for Value& (wraps into ValueBox)
-Value DiffValueCollector::make_diff_node(DiffEntry::Type type, const Value& val) {
+// Convenience overloads for ImmerValue& (wraps into ValueBox)
+ImmerValue DiffValueCollector::make_diff_node(DiffEntry::Type type, const ImmerValue& val) {
     return make_diff_node(type, ValueBox{val});
 }
 
-Value DiffValueCollector::make_diff_node(DiffEntry::Type type, const Value& old_val, const Value& new_val) {
+ImmerValue DiffValueCollector::make_diff_node(DiffEntry::Type type, const ImmerValue& old_val, const ImmerValue& new_val) {
     return make_diff_node(type, ValueBox{old_val}, ValueBox{new_val});
 }
 
-Value DiffValueCollector::diff_value_impl(const Value& old_val, const Value& new_val, bool& changed) {
+ImmerValue DiffValueCollector::diff_value_impl(const ImmerValue& old_val, const ImmerValue& new_val, bool& changed) {
     const auto old_index = old_val.data.index();
     const auto new_index = new_val.data.index();
 
@@ -523,7 +523,7 @@ Value DiffValueCollector::diff_value_impl(const Value& old_val, const Value& new
 
     // Container Boxing: variant now holds BoxedValueMap, BoxedValueVector, etc.
     return std::visit(
-        [&](const auto& old_arg) -> Value {
+        [&](const auto& old_arg) -> ImmerValue {
             using T = std::decay_t<decltype(old_arg)>;
 
             if constexpr (std::is_same_v<T, BoxedValueMap>) {
@@ -533,7 +533,7 @@ Value DiffValueCollector::diff_value_impl(const Value& old_val, const Value& new
                 // O(1) identity check
                 if (old_map.impl().root == new_map.impl().root && old_map.impl().size == new_map.impl().size)
                     [[likely]] {
-                    return Value{}; // No change
+                    return ImmerValue{}; // No change
                 }
                 // Shallow mode: report container change without recursing
                 if (!recursive_) {
@@ -548,7 +548,7 @@ Value DiffValueCollector::diff_value_impl(const Value& old_val, const Value& new
                 // O(1) identity check
                 if (old_vec.impl().root == new_vec.impl().root && old_vec.impl().tail == new_vec.impl().tail &&
                     old_vec.impl().size == new_vec.impl().size) [[likely]] {
-                    return Value{}; // No change
+                    return ImmerValue{}; // No change
                 }
                 // Shallow mode: report container change without recursing
                 if (!recursive_) {
@@ -557,7 +557,7 @@ Value DiffValueCollector::diff_value_impl(const Value& old_val, const Value& new
                 }
                 return diff_vector_impl(old_vec, new_vec, changed);
             } else if constexpr (std::is_same_v<T, std::monostate>) {
-                return Value{}; // Both null, no change
+                return ImmerValue{}; // Both null, no change
             } else {
                 // Primitive types: direct comparison
                 const auto& new_arg = std::get<T>(new_val.data);
@@ -565,7 +565,7 @@ Value DiffValueCollector::diff_value_impl(const Value& old_val, const Value& new
                     changed = true;
                     return make_diff_node(DiffEntry::Type::Change, old_val, new_val);
                 }
-                return Value{}; // No change
+                return ImmerValue{}; // No change
             }
         },
         old_val.data);
@@ -573,9 +573,9 @@ Value DiffValueCollector::diff_value_impl(const Value& old_val, const Value& new
 
 // ValueBox version for zero-copy when we already have boxes from container traversal
 // Note: With Container Boxing, this is primarily used for TableEntry which still uses ValueBox
-Value DiffValueCollector::diff_value_impl_box(const ValueBox& old_box, const ValueBox& new_box, bool& changed) {
-    const Value& old_val = *old_box;
-    const Value& new_val = *new_box;
+ImmerValue DiffValueCollector::diff_value_impl_box(const ValueBox& old_box, const ValueBox& new_box, bool& changed) {
+    const ImmerValue& old_val = *old_box;
+    const ImmerValue& new_val = *new_box;
 
     const auto old_index = old_val.data.index();
     const auto new_index = new_val.data.index();
@@ -588,7 +588,7 @@ Value DiffValueCollector::diff_value_impl_box(const ValueBox& old_box, const Val
 
     // Container Boxing: variant now holds BoxedValueMap, BoxedValueVector, etc.
     return std::visit(
-        [&](const auto& old_arg) -> Value {
+        [&](const auto& old_arg) -> ImmerValue {
             using T = std::decay_t<decltype(old_arg)>;
 
             if constexpr (std::is_same_v<T, BoxedValueMap>) {
@@ -597,7 +597,7 @@ Value DiffValueCollector::diff_value_impl_box(const ValueBox& old_box, const Val
                 const auto& new_map = new_boxed.get();
                 if (old_map.impl().root == new_map.impl().root && old_map.impl().size == new_map.impl().size)
                     [[likely]] {
-                    return Value{};
+                    return ImmerValue{};
                 }
                 if (!recursive_) {
                     changed = true;
@@ -610,7 +610,7 @@ Value DiffValueCollector::diff_value_impl_box(const ValueBox& old_box, const Val
                 const auto& new_vec = new_boxed.get();
                 if (old_vec.impl().root == new_vec.impl().root && old_vec.impl().tail == new_vec.impl().tail &&
                     old_vec.impl().size == new_vec.impl().size) [[likely]] {
-                    return Value{};
+                    return ImmerValue{};
                 }
                 if (!recursive_) {
                     changed = true;
@@ -618,47 +618,47 @@ Value DiffValueCollector::diff_value_impl_box(const ValueBox& old_box, const Val
                 }
                 return diff_vector_impl(old_vec, new_vec, changed);
             } else if constexpr (std::is_same_v<T, std::monostate>) {
-                return Value{};
+                return ImmerValue{};
             } else {
                 const auto& new_arg = std::get<T>(new_val.data);
                 if (old_arg != new_arg) {
                     changed = true;
                     return make_diff_node(DiffEntry::Type::Change, old_box, new_box);
                 }
-                return Value{};
+                return ImmerValue{};
             }
         },
         old_val.data);
 }
 
-Value DiffValueCollector::diff_map_impl(const ValueMap& old_map, const ValueMap& new_map, bool& changed) {
+ImmerValue DiffValueCollector::diff_map_impl(const ValueMap& old_map, const ValueMap& new_map, bool& changed) {
     // Use transient for O(n) batch updates instead of O(n log n) with chained .set()
     auto transient = ValueMap{}.transient();
     bool has_any_change = false;
 
-    // Container Boxing: ValueMap now stores Value directly, not ValueBox
+    // Container Boxing: ValueMap now stores ImmerValue directly, not ValueBox
     auto map_differ = immer::make_differ(
-        // added - Value stored directly in map
-        [&](const std::pair<const std::string, Value>& added_kv) {
+        // added - ImmerValue stored directly in map
+        [&](const std::pair<const std::string, ImmerValue>& added_kv) {
             has_any_change = true;
-            Value subtree = collect_entries(added_kv.second, DiffEntry::Type::Add);
+            ImmerValue subtree = collect_entries(added_kv.second, DiffEntry::Type::Add);
             transient.set(added_kv.first, std::move(subtree));
         },
-        // removed - Value stored directly in map
-        [&](const std::pair<const std::string, Value>& removed_kv) {
+        // removed - ImmerValue stored directly in map
+        [&](const std::pair<const std::string, ImmerValue>& removed_kv) {
             has_any_change = true;
-            Value subtree = collect_entries(removed_kv.second, DiffEntry::Type::Remove);
+            ImmerValue subtree = collect_entries(removed_kv.second, DiffEntry::Type::Remove);
             transient.set(removed_kv.first, std::move(subtree));
         },
         // changed (retained key)
-        [&](const std::pair<const std::string, Value>& old_kv,
-            const std::pair<const std::string, Value>& new_kv) {
+        [&](const std::pair<const std::string, ImmerValue>& old_kv,
+            const std::pair<const std::string, ImmerValue>& new_kv) {
             // Compare value data addresses for identity check
             if (&old_kv.second.data == &new_kv.second.data) [[likely]] {
                 return;
             }
             bool subtree_changed = false;
-            Value subtree = diff_value_impl(old_kv.second, new_kv.second, subtree_changed);
+            ImmerValue subtree = diff_value_impl(old_kv.second, new_kv.second, subtree_changed);
             if (subtree_changed) {
                 has_any_change = true;
                 transient.set(old_kv.first, std::move(subtree));
@@ -669,12 +669,12 @@ Value DiffValueCollector::diff_map_impl(const ValueMap& old_map, const ValueMap&
 
     if (has_any_change) {
         changed = true;
-        return Value{BoxedValueMap{transient.persistent()}};
+        return ImmerValue{BoxedValueMap{transient.persistent()}};
     }
-    return Value{};
+    return ImmerValue{};
 }
 
-Value DiffValueCollector::diff_vector_impl(const ValueVector& old_vec, const ValueVector& new_vec, bool& changed) {
+ImmerValue DiffValueCollector::diff_vector_impl(const ValueVector& old_vec, const ValueVector& new_vec, bool& changed) {
     const size_t old_size = old_vec.size();
     const size_t new_size = new_vec.size();
     const size_t common_size = std::min(old_size, new_size);
@@ -684,11 +684,11 @@ Value DiffValueCollector::diff_vector_impl(const ValueVector& old_vec, const Val
     auto transient = ValueMap{}.transient();
     bool has_any_change = false;
 
-    // Container Boxing: ValueVector now stores Value directly
+    // Container Boxing: ValueVector now stores ImmerValue directly
     // Compare common elements
     for (size_t i = 0; i < common_size; ++i) {
-        const Value& old_val = old_vec[i];
-        const Value& new_val = new_vec[i];
+        const ImmerValue& old_val = old_vec[i];
+        const ImmerValue& new_val = new_vec[i];
 
         // Compare value data addresses for identity check
         if (&old_val.data == &new_val.data) [[likely]] {
@@ -696,7 +696,7 @@ Value DiffValueCollector::diff_vector_impl(const ValueVector& old_vec, const Val
         }
 
         bool subtree_changed = false;
-        Value subtree = diff_value_impl(old_val, new_val, subtree_changed);
+        ImmerValue subtree = diff_value_impl(old_val, new_val, subtree_changed);
         if (subtree_changed) {
             has_any_change = true;
             transient.set(get_index_string(i), std::move(subtree));
@@ -706,25 +706,25 @@ Value DiffValueCollector::diff_vector_impl(const ValueVector& old_vec, const Val
     // Removed tail elements
     for (size_t i = common_size; i < old_size; ++i) {
         has_any_change = true;
-        Value subtree = collect_entries(old_vec[i], DiffEntry::Type::Remove);
+        ImmerValue subtree = collect_entries(old_vec[i], DiffEntry::Type::Remove);
         transient.set(get_index_string(i), std::move(subtree));
     }
 
     // Added tail elements
     for (size_t i = common_size; i < new_size; ++i) {
         has_any_change = true;
-        Value subtree = collect_entries(new_vec[i], DiffEntry::Type::Add);
+        ImmerValue subtree = collect_entries(new_vec[i], DiffEntry::Type::Add);
         transient.set(get_index_string(i), std::move(subtree));
     }
 
     if (has_any_change) {
         changed = true;
-        return Value{BoxedValueMap{transient.persistent()}};
+        return ImmerValue{BoxedValueMap{transient.persistent()}};
     }
-    return Value{};
+    return ImmerValue{};
 }
 
-Value DiffValueCollector::collect_entries(const Value& val, DiffEntry::Type type) {
+ImmerValue DiffValueCollector::collect_entries(const ImmerValue& val, DiffEntry::Type type) {
     // In shallow mode, just create a diff node for the entire value
     // Use single-value make_diff_node which stores val in the appropriate field
     if (!recursive_) {
@@ -734,46 +734,46 @@ Value DiffValueCollector::collect_entries(const Value& val, DiffEntry::Type type
     // Recursive mode: descend into containers
     // Container Boxing: variant now holds BoxedValueMap, BoxedValueVector, etc.
     return std::visit(
-        [&](const auto& arg) -> Value {
+        [&](const auto& arg) -> ImmerValue {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, BoxedValueMap>) {
                 // Use transient for O(n) batch updates
                 auto transient = ValueMap{}.transient();
-                // Container Boxing: map stores Value directly
+                // Container Boxing: map stores ImmerValue directly
                 for (const auto& [k, v] : arg.get()) {
-                    Value subtree = collect_entries(v, type);
+                    ImmerValue subtree = collect_entries(v, type);
                     transient.set(k, std::move(subtree));
                 }
-                return Value{BoxedValueMap{transient.persistent()}};
+                return ImmerValue{BoxedValueMap{transient.persistent()}};
             } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
                 // Use transient for O(n) batch updates
                 // Note: Vector diffs are stored as a map with string keys for indices
                 auto transient = ValueMap{}.transient();
-                // Container Boxing: vector stores Value directly
+                // Container Boxing: vector stores ImmerValue directly
                 const auto& vec = arg.get();
                 for (size_t i = 0; i < vec.size(); ++i) {
-                    Value subtree = collect_entries(vec[i], type);
+                    ImmerValue subtree = collect_entries(vec[i], type);
                     transient.set(get_index_string(i), std::move(subtree));
                 }
-                return Value{BoxedValueMap{transient.persistent()}};
+                return ImmerValue{BoxedValueMap{transient.persistent()}};
             } else if constexpr (!std::is_same_v<T, std::monostate>) {
                 // Leaf value: create diff node - use single-value version
                 return make_diff_node(type, val);
             } else {
-                return Value{}; // monostate - nothing to collect
+                return ImmerValue{}; // monostate - nothing to collect
             }
         },
         val.data);
 }
 
-bool DiffValueCollector::is_diff_node(const Value& val) {
+bool DiffValueCollector::is_diff_node(const ImmerValue& val) {
     if (auto* boxed_map = val.get_if<BoxedValueMap>()) {
         return boxed_map->get().count(diff_keys::TYPE) > 0;
     }
     return false;
 }
 
-DiffEntry::Type DiffValueCollector::get_diff_type(const Value& val) {
+DiffEntry::Type DiffValueCollector::get_diff_type(const ImmerValue& val) {
     if (auto* boxed_map = val.get_if<BoxedValueMap>()) {
         const auto& m = boxed_map->get();
         if (auto* type_val_ptr = m.find(diff_keys::TYPE)) {
@@ -787,24 +787,24 @@ DiffEntry::Type DiffValueCollector::get_diff_type(const Value& val) {
     return DiffEntry::Type::Add;
 }
 
-Value DiffValueCollector::get_old_value(const Value& val) {
+ImmerValue DiffValueCollector::get_old_value(const ImmerValue& val) {
     if (auto* boxed_map = val.get_if<BoxedValueMap>()) {
         const auto& m = boxed_map->get();
         if (auto* old_val_ptr = m.find(diff_keys::OLD)) {
             return *old_val_ptr;
         }
     }
-    return Value{};
+    return ImmerValue{};
 }
 
-Value DiffValueCollector::get_new_value(const Value& val) {
+ImmerValue DiffValueCollector::get_new_value(const ImmerValue& val) {
     if (auto* boxed_map = val.get_if<BoxedValueMap>()) {
         const auto& m = boxed_map->get();
         if (auto* new_val_ptr = m.find(diff_keys::NEW)) {
             return *new_val_ptr;
         }
     }
-    return Value{};
+    return ImmerValue{};
 }
 
 void DiffValueCollector::print() const {
@@ -816,7 +816,7 @@ void DiffValueCollector::print() const {
     print_value(result_, "  ");
 }
 
-Value diff_as_value(const Value& old_val, const Value& new_val, bool recursive) {
+ImmerValue diff_as_value(const ImmerValue& old_val, const ImmerValue& new_val, bool recursive) {
     // Use DiffValueCollector for better performance (single-pass)
     DiffValueCollector collector;
     collector.diff(old_val, new_val, recursive);
@@ -828,12 +828,12 @@ Value diff_as_value(const Value& old_val, const Value& new_val, bool recursive) 
 // ============================================================
 
 namespace {
-/// Recursively apply diff tree to a value, creating new Value with changes applied
+/// Recursively apply diff tree to a value, creating new ImmerValue with changes applied
 /// @param root Current value being modified
 /// @param diff_tree Current diff subtree to apply
 /// @param path Current path (for error reporting)
-/// @return New Value with diff applied
-Value apply_diff_recursive(const Value& root, const Value& diff_tree, const Path& path = {}) {
+/// @return New ImmerValue with diff applied
+ImmerValue apply_diff_recursive(const ImmerValue& root, const ImmerValue& diff_tree, const Path& path = {}) {
     // Check if this is a diff leaf node (contains _diff_type)
     if (DiffValueCollector::is_diff_node(diff_tree)) {
         // This is a leaf diff node - extract the operation and value
@@ -842,7 +842,7 @@ Value apply_diff_recursive(const Value& root, const Value& diff_tree, const Path
         switch (type) {
         case DiffEntry::Type::Add: {
             // For Add: return the new value from the diff node
-            Value new_val = DiffValueCollector::get_new_value(diff_tree);
+            ImmerValue new_val = DiffValueCollector::get_new_value(diff_tree);
             if (new_val.is_null()) {
                 throw std::runtime_error("apply_diff: Add operation missing _new value at path: " +
                                          path.to_dot_notation());
@@ -850,12 +850,12 @@ Value apply_diff_recursive(const Value& root, const Value& diff_tree, const Path
             return new_val;
         }
         case DiffEntry::Type::Remove: {
-            // For Remove: return a null Value (removal)
-            return Value{};
+            // For Remove: return a null ImmerValue (removal)
+            return ImmerValue{};
         }
         case DiffEntry::Type::Change: {
             // For Change: return the new value from the diff node
-            Value new_val = DiffValueCollector::get_new_value(diff_tree);
+            ImmerValue new_val = DiffValueCollector::get_new_value(diff_tree);
             if (new_val.is_null()) {
                 throw std::runtime_error("apply_diff: Change operation missing _new value at path: " +
                                          path.to_dot_notation());
@@ -876,51 +876,51 @@ Value apply_diff_recursive(const Value& root, const Value& diff_tree, const Path
             // Root is also a map - merge changes using transient for O(n) batch updates
             auto transient = root_map.transient();
 
-            // Container Boxing: ValueMap now stores Value directly
+            // Container Boxing: ValueMap now stores ImmerValue directly
             for (const auto& [key, diff_child] : diff_map) {
                 Path child_path = path;
                 child_path.push_back(key);
 
                 // Get the current value at this key (or null if not present)
-                Value current_val;
+                ImmerValue current_val;
                 if (auto* existing_val_ptr = root_map.find(key)) {
                     current_val = *existing_val_ptr;
                 } else {
-                    current_val = Value{}; // null for missing keys
+                    current_val = ImmerValue{}; // null for missing keys
                 }
 
                 // Recursively apply diff to this child
-                Value new_child = apply_diff_recursive(current_val, diff_child, child_path);
+                ImmerValue new_child = apply_diff_recursive(current_val, diff_child, child_path);
 
                 // Update or remove the key based on the result
                 if (new_child.is_null()) {
                     // Remove the key if the result is null
                     transient.erase(key);
                 } else {
-                    // Set the new value - Container Boxing: store Value directly
+                    // Set the new value - Container Boxing: store ImmerValue directly
                     transient.set(key, std::move(new_child));
                 }
             }
 
-            return Value{BoxedValueMap{transient.persistent()}};
+            return ImmerValue{BoxedValueMap{transient.persistent()}};
         } else if (root.is_null()) {
             // Root is null but we have changes to apply - create a new map using transient
             auto transient = ValueMap{}.transient();
 
-            // Container Boxing: ValueMap now stores Value directly
+            // Container Boxing: ValueMap now stores ImmerValue directly
             for (const auto& [key, diff_child] : diff_map) {
                 Path child_path = path;
                 child_path.push_back(key);
 
                 // Apply diff to null value (effectively adding new keys)
-                Value new_child = apply_diff_recursive(Value{}, diff_child, child_path);
+                ImmerValue new_child = apply_diff_recursive(ImmerValue{}, diff_child, child_path);
 
                 if (!new_child.is_null()) {
                     transient.set(key, std::move(new_child));
                 }
             }
 
-            return Value{BoxedValueMap{transient.persistent()}};
+            return ImmerValue{BoxedValueMap{transient.persistent()}};
         } else {
             // Check if this looks like a vector diff (all keys are numeric strings)
             bool all_numeric = true;
@@ -941,43 +941,43 @@ Value apply_diff_recursive(const Value& root, const Value& diff_tree, const Path
                     auto transient = root_vec.transient();
                     size_t current_size = root_vec.size();
 
-                    // Container Boxing: ValueVector now stores Value directly
+                    // Container Boxing: ValueVector now stores ImmerValue directly
                     for (const auto& [index_str, diff_child] : diff_map) {
                         size_t index = std::stoul(index_str);
                         Path child_path = path;
                         child_path.push_back(index);
 
                         // Get the current value at this index (or null if out of bounds)
-                        Value current_val;
+                        ImmerValue current_val;
                         if (index < current_size) {
                             current_val = root_vec[index];
                         } else {
-                            current_val = Value{}; // null for out-of-bounds indices
+                            current_val = ImmerValue{}; // null for out-of-bounds indices
                         }
 
                         // Recursively apply diff to this child
-                        Value new_child = apply_diff_recursive(current_val, diff_child, child_path);
+                        ImmerValue new_child = apply_diff_recursive(current_val, diff_child, child_path);
 
                         // Update the vector
                         if (!new_child.is_null()) {
                             // Extend vector if necessary
                             while (transient.size() <= index) {
-                                transient.push_back(Value{});
+                                transient.push_back(ImmerValue{});
                             }
                             transient.set(index, std::move(new_child));
                         } else if (index < transient.size()) {
                             // For removal, set it to null to preserve indices
-                            transient.set(index, Value{});
+                            transient.set(index, ImmerValue{});
                         }
                     }
 
-                    return Value{BoxedValueVector{transient.persistent()}};
+                    return ImmerValue{BoxedValueVector{transient.persistent()}};
                 } else if (root.is_null()) {
                     // Root is null but we have vector changes to apply
                     auto transient = ValueVector{}.transient();
 
                     // Collect all indices and sort them
-                    std::vector<std::pair<size_t, const Value*>> indexed_diffs;
+                    std::vector<std::pair<size_t, const ImmerValue*>> indexed_diffs;
                     for (const auto& [index_str, diff_child] : diff_map) {
                         size_t index = std::stoul(index_str);
                         indexed_diffs.emplace_back(index, &diff_child);
@@ -989,18 +989,18 @@ Value apply_diff_recursive(const Value& root, const Value& diff_tree, const Path
                         Path child_path = path;
                         child_path.push_back(index);
 
-                        Value new_child = apply_diff_recursive(Value{}, *diff_child, child_path);
+                        ImmerValue new_child = apply_diff_recursive(ImmerValue{}, *diff_child, child_path);
 
                         if (!new_child.is_null()) {
                             // Extend vector if necessary
                             while (transient.size() <= index) {
-                                transient.push_back(Value{});
+                                transient.push_back(ImmerValue{});
                             }
                             transient.set(index, std::move(new_child));
                         }
                     }
 
-                    return Value{BoxedValueVector{transient.persistent()}};
+                    return ImmerValue{BoxedValueVector{transient.persistent()}};
                 } else {
                     throw std::runtime_error("apply_diff: Type mismatch - diff expects vector but root "
                                              "is not a vector at path: " +
@@ -1018,7 +1018,7 @@ Value apply_diff_recursive(const Value& root, const Value& diff_tree, const Path
 }
 } // namespace
 
-Value apply_diff(const Value& root, const Value& diff_tree) {
+ImmerValue apply_diff(const ImmerValue& root, const ImmerValue& diff_tree) {
     // Handle empty diff
     if (diff_tree.is_null()) {
         return root; // No changes to apply

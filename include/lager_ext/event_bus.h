@@ -22,7 +22,7 @@
 ///   // Define events
 ///   LAGER_EXT_EVENT(DocumentSaved,
 ///       std::string path;
-///       Value content;
+///       ImmerValue content;
 ///   );
 ///
 ///   // Subscribe
@@ -218,26 +218,26 @@ public:
     // ========================================================================
 
     /// @brief Subscribe to a dynamic string event
-    template <std::invocable<const Value&> Handler>
+    template <std::invocable<const ImmerValue&> Handler>
     Connection subscribe(std::string_view event_name, Handler&& handler);
 
     /// @brief Subscribe to multiple dynamic string events
-    template <std::invocable<std::string_view, const Value&> Handler>
+    template <std::invocable<std::string_view, const ImmerValue&> Handler>
     Connection subscribe(std::initializer_list<std::string_view> event_names, Handler&& handler);
 
     /// @brief Subscribe with filter predicate
-    template <std::predicate<std::string_view> Filter, std::invocable<std::string_view, const Value&> Handler>
+    template <std::predicate<std::string_view> Filter, std::invocable<std::string_view, const ImmerValue&> Handler>
     Connection subscribe(Filter&& filter, Handler&& handler);
 
     /// @brief Publish a dynamic string event
-    void publish(std::string_view event_name, const Value& payload);
+    void publish(std::string_view event_name, const ImmerValue& payload);
     void publish(std::string_view event_name);
 
     // ========================================================================
     // Request/Response (Placeholder for IPC)
     // ========================================================================
 
-    std::optional<Value> request(std::string_view event_name, const Value& payload,
+    std::optional<ImmerValue> request(std::string_view event_name, const ImmerValue& payload,
                                  std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
 private:
@@ -261,7 +261,7 @@ namespace detail {
 /// - Single indirect call instead of vtable lookup
 /// - Larger SBO buffer (less heap allocation)
 /// - No copy overhead (callbacks are move-only anyway)
-using DynamicHandler = std::move_only_function<void(std::string_view, const Value&)>;
+using DynamicHandler = std::move_only_function<void(std::string_view, const ImmerValue&)>;
 using FilterFunc = std::move_only_function<bool(std::string_view)>;
 using GuardFunc = std::move_only_function<bool()>;
 
@@ -295,7 +295,7 @@ public:
                                GuardFunc guard = nullptr);
     Connection subscribe_filter(FilterFunc filter, DynamicHandler handler, GuardFunc guard = nullptr);
 
-    void publish(std::uint64_t hash, std::string_view event_name, const Value& payload);
+    void publish(std::uint64_t hash, std::string_view event_name, const ImmerValue& payload);
     void disconnect(Slot* slot);
 
 private:
@@ -418,7 +418,7 @@ template <Event Evt, std::invocable<const Evt&> Handler>
 Connection EventBus::subscribe(Handler&& handler) {
     constexpr std::uint64_t hash = detail::fnv1a_hash(Evt::event_name);
 
-    auto slot_handler = [h = std::forward<Handler>(handler)](std::string_view, const Value&) {
+    auto slot_handler = [h = std::forward<Handler>(handler)](std::string_view, const ImmerValue&) {
         if (const Evt* evt_ptr = detail::current_event_ptr<Evt>) {
             h(*evt_ptr);
         }
@@ -431,7 +431,7 @@ template <Event Evt, typename T, std::invocable<const Evt&> Handler>
 Connection EventBus::subscribe(std::weak_ptr<T> guard, Handler&& handler) {
     constexpr std::uint64_t hash = detail::fnv1a_hash(Evt::event_name);
 
-    auto slot_handler = [h = std::forward<Handler>(handler)](std::string_view, const Value&) {
+    auto slot_handler = [h = std::forward<Handler>(handler)](std::string_view, const ImmerValue&) {
         if (const Evt* evt_ptr = detail::current_event_ptr<Evt>) {
             h(*evt_ptr);
         }
@@ -446,33 +446,33 @@ template <Event Evt>
 void EventBus::publish(const Evt& evt) {
     constexpr std::uint64_t hash = detail::fnv1a_hash(Evt::event_name);
     detail::EventScope<Evt> scope(evt);
-    impl_->publish(hash, Evt::event_name, Value{});
+    impl_->publish(hash, Evt::event_name, ImmerValue{});
 }
 
-template <std::invocable<const Value&> Handler>
+template <std::invocable<const ImmerValue&> Handler>
 Connection EventBus::subscribe(std::string_view event_name, Handler&& handler) {
     const std::uint64_t hash = detail::fnv1a_hash(event_name);
 
-    auto slot_handler = [h = std::forward<Handler>(handler)](std::string_view, const Value& v) { h(v); };
+    auto slot_handler = [h = std::forward<Handler>(handler)](std::string_view, const ImmerValue& v) { h(v); };
 
     return impl_->subscribe_single(hash, std::move(slot_handler));
 }
 
-template <std::invocable<std::string_view, const Value&> Handler>
+template <std::invocable<std::string_view, const ImmerValue&> Handler>
 Connection EventBus::subscribe(std::initializer_list<std::string_view> event_names, Handler&& handler) {
     tsl::robin_set<std::uint64_t> hashes;
     for (auto name : event_names) {
         hashes.insert(detail::fnv1a_hash(name));
     }
 
-    auto slot_handler = [h = std::forward<Handler>(handler)](std::string_view name, const Value& v) { h(name, v); };
+    auto slot_handler = [h = std::forward<Handler>(handler)](std::string_view name, const ImmerValue& v) { h(name, v); };
 
     return impl_->subscribe_multi(std::move(hashes), std::move(slot_handler));
 }
 
-template <std::predicate<std::string_view> Filter, std::invocable<std::string_view, const Value&> Handler>
+template <std::predicate<std::string_view> Filter, std::invocable<std::string_view, const ImmerValue&> Handler>
 Connection EventBus::subscribe(Filter&& filter, Handler&& handler) {
-    auto slot_handler = [h = std::forward<Handler>(handler)](std::string_view name, const Value& v) { h(name, v); };
+    auto slot_handler = [h = std::forward<Handler>(handler)](std::string_view name, const ImmerValue& v) { h(name, v); };
 
     return impl_->subscribe_filter(std::forward<Filter>(filter), std::move(slot_handler));
 }

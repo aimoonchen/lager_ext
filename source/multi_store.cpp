@@ -26,20 +26,20 @@ ObjectState object_update(ObjectState state, ObjectAction action) {
                 auto* boxed_map = state.data.get_if<BoxedValueMap>();
                 if (!boxed_map) {
                     // Initialize as empty map if not a map
-                    state.data = Value{BoxedValueMap{ValueMap{}}};
+                    state.data = ImmerValue{BoxedValueMap{ValueMap{}}};
                     boxed_map = state.data.get_if<BoxedValueMap>();
                 }
 
                 // Set the property (Unbox-Modify-Rebox pattern)
                 auto new_map = boxed_map->get().set(act.property_name, act.new_value);
-                state.data = Value{BoxedValueMap{std::move(new_map)}};
+                state.data = ImmerValue{BoxedValueMap{std::move(new_map)}};
                 state.version++;
                 return state;
             } else if constexpr (std::is_same_v<T, object_actions::SetProperties>) {
                 // Container Boxing: Get current data as BoxedValueMap
                 auto* boxed_map = state.data.get_if<BoxedValueMap>();
                 if (!boxed_map) {
-                    state.data = Value{BoxedValueMap{ValueMap{}}};
+                    state.data = ImmerValue{BoxedValueMap{ValueMap{}}};
                     boxed_map = state.data.get_if<BoxedValueMap>();
                 }
 
@@ -48,7 +48,7 @@ ObjectState object_update(ObjectState state, ObjectAction action) {
                 for (const auto& [name, value] : act.properties) {
                     trans.set(name, value);
                 }
-                state.data = Value{BoxedValueMap{trans.persistent()}};
+                state.data = ImmerValue{BoxedValueMap{trans.persistent()}};
                 state.version++;
                 return state;
             } else if constexpr (std::is_same_v<T, object_actions::ReplaceData>) {
@@ -285,7 +285,7 @@ const SceneMetaState& MultiStoreController::get_scene_state() const {
     return scene_store_->get();
 }
 
-void MultiStoreController::add_object(const std::string& id, const std::string& type, Value initial_data,
+void MultiStoreController::add_object(const std::string& id, const std::string& type, ImmerValue initial_data,
                                       bool undoable) {
     if (registry_.exists(id)) {
         std::cerr << "[MultiStoreController] Object already exists: " << id << "\n";
@@ -379,7 +379,7 @@ std::vector<std::string> MultiStoreController::get_all_object_ids() const {
     return const_cast<StoreRegistry&>(registry_).all_ids();
 }
 
-void MultiStoreController::set_property(const std::string& object_id, const std::string& property_name, Value new_value,
+void MultiStoreController::set_property(const std::string& object_id, const std::string& property_name, ImmerValue new_value,
                                         bool undoable) {
     auto* store = registry_.get(object_id);
     if (!store) {
@@ -408,7 +408,7 @@ void MultiStoreController::set_property(const std::string& object_id, const std:
 }
 
 void MultiStoreController::set_properties(const std::string& object_id,
-                                          const std::vector<std::pair<std::string, Value>>& properties, bool undoable) {
+                                          const std::vector<std::pair<std::string, ImmerValue>>& properties, bool undoable) {
     auto* store = registry_.get(object_id);
     if (!store) {
         std::cerr << "[MultiStoreController] Object not found: " << object_id << "\n";
@@ -434,7 +434,7 @@ void MultiStoreController::set_properties(const std::string& object_id,
     }
 }
 
-void MultiStoreController::batch_edit(const std::vector<std::tuple<std::string, std::string, Value>>& edits,
+void MultiStoreController::batch_edit(const std::vector<std::tuple<std::string, std::string, ImmerValue>>& edits,
                                       bool undoable) {
     if (edits.empty())
         return;
@@ -444,7 +444,7 @@ void MultiStoreController::batch_edit(const std::vector<std::tuple<std::string, 
     }
 
     // Group edits by object
-    std::unordered_map<std::string, std::vector<std::pair<std::string, Value>>> grouped;
+    std::unordered_map<std::string, std::vector<std::pair<std::string, ImmerValue>>> grouped;
     for (const auto& [obj_id, prop, val] : edits) {
         grouped[obj_id].emplace_back(prop, val);
     }
@@ -528,22 +528,22 @@ void demo_multi_store_basic() {
     std::cout << "1. Adding objects...\n";
 
     ValueMap light_data;
-    light_data = light_data.set("name", Value{"Sun Light"});
-    light_data = light_data.set("intensity", Value{1.0});
-    light_data = light_data.set("color", Value{"#FFFFFF"});
-    controller.add_object("light_sun", "Light", Value{BoxedValueMap{light_data}});
+    light_data = light_data.set("name", ImmerValue{"Sun Light"});
+    light_data = light_data.set("intensity", ImmerValue{1.0});
+    light_data = light_data.set("color", ImmerValue{"#FFFFFF"});
+    controller.add_object("light_sun", "Light", ImmerValue{BoxedValueMap{light_data}});
 
     ValueMap camera_data;
-    camera_data = camera_data.set("name", Value{"Main Camera"});
-    camera_data = camera_data.set("fov", Value{60.0});
-    controller.add_object("camera_main", "Camera", Value{BoxedValueMap{camera_data}});
+    camera_data = camera_data.set("name", ImmerValue{"Main Camera"});
+    camera_data = camera_data.set("fov", ImmerValue{60.0});
+    controller.add_object("camera_main", "Camera", ImmerValue{BoxedValueMap{camera_data}});
 
     std::cout << "   Objects added: " << controller.object_count() << "\n";
     std::cout << "   Undo stack: " << controller.undo_count() << "\n\n";
 
     // Modify a property
     std::cout << "2. Modifying light intensity...\n";
-    controller.set_property("light_sun", "intensity", Value{2.5});
+    controller.set_property("light_sun", "intensity", ImmerValue{2.5});
 
     if (auto* obj = controller.get_object("light_sun")) {
         if (auto* boxed_map = obj->data.get_if<BoxedValueMap>()) {
@@ -587,11 +587,11 @@ void demo_multi_store_transactions() {
     // Create multiple objects
     for (int i = 0; i < 5; ++i) {
         ValueMap data;
-        data = data.set("name", Value{"Cube_" + std::to_string(i)});
-        data = data.set("x", Value{static_cast<double>(i * 10)});
-        data = data.set("y", Value{0.0});
-        data = data.set("z", Value{0.0});
-        controller.add_object("cube_" + std::to_string(i), "Mesh", Value{BoxedValueMap{data}}, false);
+        data = data.set("name", ImmerValue{"Cube_" + std::to_string(i)});
+        data = data.set("x", ImmerValue{static_cast<double>(i * 10)});
+        data = data.set("y", ImmerValue{0.0});
+        data = data.set("z", ImmerValue{0.0});
+        controller.add_object("cube_" + std::to_string(i), "Mesh", ImmerValue{BoxedValueMap{data}}, false);
     }
 
     std::cout << "Created " << controller.object_count() << " cubes\n";
@@ -600,10 +600,10 @@ void demo_multi_store_transactions() {
     // Batch edit using transaction
     std::cout << "1. Moving all cubes with a transaction (single undo operation)...\n";
 
-    std::vector<std::tuple<std::string, std::string, Value>> edits;
+    std::vector<std::tuple<std::string, std::string, ImmerValue>> edits;
     for (int i = 0; i < 5; ++i) {
         std::string id = "cube_" + std::to_string(i);
-        edits.emplace_back(id, "y", Value{100.0}); // Move all cubes up
+        edits.emplace_back(id, "y", ImmerValue{100.0}); // Move all cubes up
     }
 
     controller.batch_edit(edits);
@@ -650,25 +650,25 @@ void demo_multi_store_undo_redo() {
 
     // Create two objects
     ValueMap light_data;
-    light_data = light_data.set("intensity", Value{1.0});
-    controller.add_object("light", "Light", Value{BoxedValueMap{light_data}});
+    light_data = light_data.set("intensity", ImmerValue{1.0});
+    controller.add_object("light", "Light", ImmerValue{BoxedValueMap{light_data}});
 
     ValueMap mesh_data;
-    mesh_data = mesh_data.set("scale", Value{1.0});
-    controller.add_object("mesh", "Mesh", Value{BoxedValueMap{mesh_data}});
+    mesh_data = mesh_data.set("scale", ImmerValue{1.0});
+    controller.add_object("mesh", "Mesh", ImmerValue{BoxedValueMap{mesh_data}});
 
     std::cout << "Created 2 objects (2 undo operations)\n";
     std::cout << "Undo stack: " << controller.undo_count() << "\n\n";
 
     // Interleaved edits
     std::cout << "1. Interleaved edits on different objects...\n";
-    controller.set_property("light", "intensity", Value{2.0});
+    controller.set_property("light", "intensity", ImmerValue{2.0});
     std::cout << "   Edit 1: light.intensity = 2.0\n";
 
-    controller.set_property("mesh", "scale", Value{2.0});
+    controller.set_property("mesh", "scale", ImmerValue{2.0});
     std::cout << "   Edit 2: mesh.scale = 2.0\n";
 
-    controller.set_property("light", "intensity", Value{3.0});
+    controller.set_property("light", "intensity", ImmerValue{3.0});
     std::cout << "   Edit 3: light.intensity = 3.0\n";
 
     std::cout << "   Undo stack: " << controller.undo_count() << "\n\n";
@@ -739,13 +739,13 @@ void demo_multi_store_performance() {
 
     for (int i = 0; i < NUM_OBJECTS; ++i) {
         ValueMap data;
-        data = data.set("name", Value{"Object_" + std::to_string(i)});
-        data = data.set("x", Value{static_cast<double>(i)});
-        data = data.set("y", Value{0.0});
-        data = data.set("z", Value{0.0});
-        data = data.set("visible", Value{true});
+        data = data.set("name", ImmerValue{"Object_" + std::to_string(i)});
+        data = data.set("x", ImmerValue{static_cast<double>(i)});
+        data = data.set("y", ImmerValue{0.0});
+        data = data.set("z", ImmerValue{0.0});
+        data = data.set("visible", ImmerValue{true});
         // Create without recording undo (simulating initial load)
-        controller.add_object("obj_" + std::to_string(i), "Mesh", Value{BoxedValueMap{data}}, false);
+        controller.add_object("obj_" + std::to_string(i), "Mesh", ImmerValue{BoxedValueMap{data}}, false);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -760,7 +760,7 @@ void demo_multi_store_performance() {
     for (int i = 0; i < NUM_EDITS; ++i) {
         int obj_idx = i % NUM_OBJECTS;
         std::string obj_id = "obj_" + std::to_string(obj_idx);
-        controller.set_property(obj_id, "x", Value{static_cast<double>(i * 10)});
+        controller.set_property(obj_id, "x", ImmerValue{static_cast<double>(i * 10)});
     }
 
     end = std::chrono::high_resolution_clock::now();

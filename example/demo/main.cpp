@@ -34,9 +34,9 @@ struct Redo {};
 using Action = std::variant<AddItem, UpdateItem, Undo, Redo>;
 
 struct AppState {
-    Value data;
-    immer::vector<Value> history;
-    immer::vector<Value> future;
+    ImmerValue data;
+    immer::vector<ImmerValue> history;
+    immer::vector<ImmerValue> future;
 };
 
 // ============================================================
@@ -46,16 +46,16 @@ struct AppState {
 AppState create_initial_state() {
     // Container Boxing: build structures using raw containers, then wrap in box
     ValueMap item1;
-    item1 = item1.set("title", Value{"Task 1"});
-    item1 = item1.set("done", Value{false});
+    item1 = item1.set("title", ImmerValue{"Task 1"});
+    item1 = item1.set("done", ImmerValue{false});
 
     ValueVector items;
-    items = items.push_back(Value{BoxedValueMap{item1}});
+    items = items.push_back(ImmerValue{BoxedValueMap{item1}});
 
     ValueMap root;
-    root = root.set("items", Value{BoxedValueVector{items}});
+    root = root.set("items", ImmerValue{BoxedValueVector{items}});
 
-    return AppState{.data = Value{BoxedValueMap{root}}, .history = immer::vector<Value>{}, .future = immer::vector<Value>{}};
+    return AppState{.data = ImmerValue{BoxedValueMap{root}}, .history = immer::vector<ImmerValue>{}, .future = immer::vector<ImmerValue>{}};
 }
 
 // ============================================================
@@ -96,7 +96,7 @@ AppState reducer(AppState state, Action action) {
             } else if constexpr (std::is_same_v<T, AddItem>) {
                 auto new_state = state;
                 new_state.history = new_state.history.push_back(state.data);
-                new_state.future = immer::vector<Value>{};
+                new_state.future = immer::vector<ImmerValue>{};
 
                 Path items_path{"/items"};
                 auto items_lens = lager_path_lens(items_path);
@@ -106,13 +106,13 @@ AppState reducer(AppState state, Action action) {
                 if (auto* boxed_vec = current_items.get_if<BoxedValueVector>()) {
                     // Create new item using Container Boxing
                     ValueMap item_map;
-                    item_map = item_map.set("title", Value{act.text});
-                    item_map = item_map.set("done", Value{false});
-                    auto new_item = Value{BoxedValueMap{item_map}};
+                    item_map = item_map.set("title", ImmerValue{act.text});
+                    item_map = item_map.set("done", ImmerValue{false});
+                    auto new_item = ImmerValue{BoxedValueMap{item_map}};
                     
                     // Unbox -> modify -> rebox
                     auto new_vec = boxed_vec->get().push_back(std::move(new_item));
-                    new_state.data = lager::set(items_lens, new_state.data, Value{BoxedValueVector{new_vec}});
+                    new_state.data = lager::set(items_lens, new_state.data, ImmerValue{BoxedValueVector{new_vec}});
                 }
 
                 return new_state;
@@ -120,10 +120,10 @@ AppState reducer(AppState state, Action action) {
             } else if constexpr (std::is_same_v<T, UpdateItem>) {
                 auto new_state = state;
                 new_state.history = new_state.history.push_back(state.data);
-                new_state.future = immer::vector<Value>{};
+                new_state.future = immer::vector<ImmerValue>{};
 
                 auto lens = lager_path_lens(act.path);
-                auto new_value = Value{act.new_value};
+                auto new_value = ImmerValue{act.new_value};
                 new_state.data = lager::set(lens, new_state.data, std::move(new_value));
 
                 return new_state;
@@ -169,7 +169,7 @@ int main() {
         std::cout << "U. Undo\n";
         std::cout << "R. Redo\n";
         std::cout << "\n=== Scheme Demos ===\n";
-        std::cout << "L. Scheme 1: lager::lens<Value, Value>\n";
+        std::cout << "L. Scheme 1: lager::lens<ImmerValue, ImmerValue>\n";
         std::cout << "A. Scheme 2: lager::lenses::at\n";
         std::cout << "J. Scheme 3: String Path API\n";
         std::cout << "S. Scheme 4: Static Path (compile-time)\n";

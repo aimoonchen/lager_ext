@@ -2,7 +2,7 @@
 // Demonstrates SharedValue cross-process zero-copy transfer
 //
 // This demo shows:
-// 1. How process B creates shared memory and writes Value
+// 1. How process B creates shared memory and writes ImmerValue
 // 2. How process A opens shared memory and deep copies to local
 // 3. Performance comparison: shared memory vs serialization
 
@@ -65,28 +65,28 @@ std::string generate_uuid_like_id(size_t index) {
     return std::string(buf);
 }
 
-// Helper: create a single realistic scene object (Value version)
+// Helper: create a single realistic scene object (ImmerValue version)
 // Structure based on D:\scene_object_map.json
 //
 // OPTIMIZED: Uses Builder API for O(n) construction instead of O(n log n)
-// This demonstrates the recommended pattern for building complex Value structures.
-Value create_scene_object(size_t index) {
+// This demonstrates the recommended pattern for building complex ImmerValue structures.
+ImmerValue create_scene_object(size_t index) {
     std::string id = generate_uuid_like_id(index);
 
     // Build techParam (Vec3) - reused in multiple places
-    Value techParam = VectorBuilder().push_back(0.0).push_back(0.0).push_back(0.0).finish();
+    ImmerValue techParam = VectorBuilder().push_back(0.0).push_back(0.0).push_back(0.0).finish();
 
     // Build techParam2 (Vec4)
-    Value techParam2 = VectorBuilder().push_back(0.0).push_back(0.0).push_back(0.0).push_back(0.0).finish();
+    ImmerValue techParam2 = VectorBuilder().push_back(0.0).push_back(0.0).push_back(0.0).push_back(0.0).finish();
 
     // Build tintColor (Vec4) - all 1.0
-    Value tintColor = VectorBuilder().push_back(1.0).push_back(1.0).push_back(1.0).push_back(1.0).finish();
+    ImmerValue tintColor = VectorBuilder().push_back(1.0).push_back(1.0).push_back(1.0).push_back(1.0).finish();
 
     // Build LightmapScale/Offset (Vec4)
-    Value lmScale = VectorBuilder().push_back(0.76).push_back(0.71).push_back(0.51).push_back(1.0).finish();
+    ImmerValue lmScale = VectorBuilder().push_back(0.76).push_back(0.71).push_back(0.51).push_back(1.0).finish();
 
     // Build SyncModel sub-component
-    Value syncModel = MapBuilder()
+    ImmerValue syncModel = MapBuilder()
                           .set("GroupID", static_cast<int64_t>(0))
                           .set("NeedBake", true)
                           .set("NeedGenLitmap", true)
@@ -99,7 +99,7 @@ Value create_scene_object(size_t index) {
                           .finish();
 
     // Build ModelComponent
-    Value modelComp = MapBuilder()
+    ImmerValue modelComp = MapBuilder()
                           .set("CustomRenderSet", static_cast<int64_t>(0))
                           .set("CustomStencil", static_cast<int64_t>(0))
                           .set("IsCastDynamicShadow", true)
@@ -114,10 +114,10 @@ Value create_scene_object(size_t index) {
                           .finish();
 
     // Build Primitives array
-    Value primitives = VectorBuilder().push_back(modelComp).finish();
+    ImmerValue primitives = VectorBuilder().push_back(modelComp).finish();
 
     // Build RigidBody
-    Value rigidBody = MapBuilder()
+    ImmerValue rigidBody = MapBuilder()
                           .set("ComponentType", "PhysicsStaticSceneBody")
                           .set("EnableContactNotify", false)
                           .set("Unwalkable", false)
@@ -126,17 +126,17 @@ Value create_scene_object(size_t index) {
                           .finish();
 
     // Build RigidBodies array
-    Value rigidBodies = VectorBuilder().push_back(rigidBody).finish();
+    ImmerValue rigidBodies = VectorBuilder().push_back(rigidBody).finish();
 
     // Build Appearance component
-    Value appearance =
+    ImmerValue appearance =
         MapBuilder().set("DepthOffset", static_cast<int64_t>(0)).set("[Type]", "IAppearanceComponent").finish();
 
     // Build Tag component
-    Value tag = MapBuilder().set("TagString", "").set("[Type]", "TagComponent").finish();
+    ImmerValue tag = MapBuilder().set("TagString", "").set("[Type]", "TagComponent").finish();
 
     // Build PropertyData - complex nested structure
-    Value propertyData = MapBuilder()
+    ImmerValue propertyData = MapBuilder()
                              .set("GenerateOccluder", false)
                              .set("DeleteOccluder", false)
                              .set("IsVisible", true)
@@ -168,7 +168,7 @@ Value create_scene_object(size_t index) {
                              .finish();
 
     // Build PropertyPaths array
-    Value propertyPaths = VectorBuilder()
+    ImmerValue propertyPaths = VectorBuilder()
                               .push_back("PropertyData")
                               .push_back("PropertyData/Primitives/0")
                               .push_back("PropertyData/Primitives/0/SyncModel")
@@ -176,26 +176,26 @@ Value create_scene_object(size_t index) {
                               .finish();
 
     // Build Components array
-    Value components =
+    ImmerValue components =
         VectorBuilder()
             .push_back(MapBuilder().set("DisplayName", "[ModelComponent]").set("Icon", "Comp_Model").finish())
             .finish();
 
     // Build position (Vec3)
-    Value position = VectorBuilder()
+    ImmerValue position = VectorBuilder()
                          .push_back(static_cast<double>(index % 1000))
                          .push_back(0.06)
                          .push_back(static_cast<double>((index / 1000) % 1000))
                          .finish();
 
     // Build scale (Vec3)
-    Value scale = VectorBuilder().push_back(1.0).push_back(1.0).push_back(1.0).finish();
+    ImmerValue scale = VectorBuilder().push_back(1.0).push_back(1.0).push_back(1.0).finish();
 
     // Build euler (Vec3)
-    Value euler = VectorBuilder().push_back(0.0).push_back(static_cast<double>(index % 360)).push_back(0.0).finish();
+    ImmerValue euler = VectorBuilder().push_back(0.0).push_back(static_cast<double>(index % 360)).push_back(0.0).finish();
 
     // Build property sub-object
-    Value property = MapBuilder().set("name", "IEntity").finish();
+    ImmerValue property = MapBuilder().set("name", "IEntity").finish();
 
     // Build the final scene object using Builder API - O(n) construction!
     return MapBuilder()
@@ -223,11 +223,11 @@ Value create_scene_object(size_t index) {
         .finish();
 }
 
-// Generate large-scale test data using real scene object structure - Value version
+// Generate large-scale test data using real scene object structure - ImmerValue version
 //
 // OPTIMIZED: Uses Builder API for O(n) construction instead of O(n log n)
-Value generate_large_scene(size_t object_count) {
-    std::cout << "Generating scene with " << object_count << " objects (Value - Builder API)...\n";
+ImmerValue generate_large_scene(size_t object_count) {
+    std::cout << "Generating scene with " << object_count << " objects (ImmerValue - Builder API)...\n";
     std::cout << "Using real scene_object_map.json structure with O(n) construction\n";
 
     Timer timer;
@@ -238,7 +238,7 @@ Value generate_large_scene(size_t object_count) {
 
     for (size_t i = 0; i < object_count; ++i) {
         std::string key = generate_uuid_like_id(i); // UUID-like key
-        Value obj = create_scene_object(i);         // Now returns Value
+        ImmerValue obj = create_scene_object(i);         // Now returns ImmerValue
         objects_builder.set(key, obj);
 
         if ((i + 1) % 10000 == 0) {
@@ -331,11 +331,11 @@ void demo_single_process() {
     std::cout << "Demo: Single Process Simulation\n";
     std::cout << std::string(60, '=') << "\n\n";
 
-    // Generate test data (using Value type)
+    // Generate test data (using ImmerValue type)
     constexpr size_t OBJECT_COUNT = 1000; // 1000 objects for quick test
-    Value original = generate_large_scene(OBJECT_COUNT);
+    ImmerValue original = generate_large_scene(OBJECT_COUNT);
 
-    std::cout << "\nOriginal Value created.\n";
+    std::cout << "\nOriginal ImmerValue created.\n";
     std::cout << "Scene objects count: " << original.at("scene_object_map").size() << "\n";
 
     // Method 1: Serialization/Deserialization
@@ -348,7 +348,7 @@ void demo_single_process() {
         double serialize_time = timer.elapsed_ms();
 
         timer.start();
-        Value deserialized = deserialize(buffer);
+        ImmerValue deserialized = deserialize(buffer);
         double deserialize_time = timer.elapsed_ms();
 
         std::cout << "Serialized size: " << buffer.size() << " bytes (" << std::fixed << std::setprecision(2)
@@ -390,7 +390,7 @@ void demo_single_process() {
 
         // Simulate process A: deep copy from shared memory
         timer.start();
-        Value copied = deep_copy_to_local(shared);
+        ImmerValue copied = deep_copy_to_local(shared);
         double copy_time = timer.elapsed_ms();
 
         std::cout << "Deep copy to local time: " << copy_time << " ms\n";
@@ -458,11 +458,11 @@ void demo_publisher(size_t object_count) {
     std::cout << "Direct build time: " << std::fixed << std::setprecision(2) << build_time << " ms\n";
     std::cout << "Memory used: " << header->heap_used << " bytes (" << (header->heap_used / 1024.0 / 1024.0)
               << " MB)\n";
-    std::cout << "Value stored at offset: " << header->value_offset << "\n";
+    std::cout << "ImmerValue stored at offset: " << header->value_offset << "\n";
 
     // Comparison: how long would serialization take?
     std::cout << "\n--- Comparison: What if using serialization? ---\n";
-    Value local_scene = generate_large_scene(object_count);
+    ImmerValue local_scene = generate_large_scene(object_count);
     timer.start();
     ByteBuffer buffer = serialize(local_scene);
     double ser_time = timer.elapsed_ms();
@@ -519,7 +519,7 @@ void demo_subscriber() {
         return;
     }
 
-    // Get shared Value (zero-copy read-only access)
+    // Get shared ImmerValue (zero-copy read-only access)
     const SharedValue* shared = handle.shared_value();
     if (!shared) {
         std::cerr << "Failed to get SharedValue pointer!\n";
@@ -531,7 +531,7 @@ void demo_subscriber() {
     // Measure deep copy performance
     Timer timer;
     timer.start();
-    Value local = handle.copy_to_local();
+    ImmerValue local = handle.copy_to_local();
     double copy_time = timer.elapsed_ms();
 
     std::cout << "Deep copy to local completed in " << std::fixed << std::setprecision(2) << copy_time << " ms\n";
@@ -542,7 +542,7 @@ void demo_subscriber() {
     if (auto* boxed_map = local.get_if<BoxedValueMap>()) {
         const ValueMap& map = boxed_map->get();
         if (auto it = map.find("name"); it) {
-            // ValueMap stores Value directly; strings are BoxedString
+            // ValueMap stores ImmerValue directly; strings are BoxedString
             if (auto* boxed_name = it->get_if<BoxedString>()) {
                 std::cout << "Scene name: " << boxed_name->get() << "\n";
             }
@@ -588,10 +588,10 @@ size_t traverse_shared_value(const SharedValue& sv) {
     return count;
 }
 
-size_t traverse_value(const Value& v) {
+size_t traverse_value(const ImmerValue& v) {
     size_t count = 1;
 
-    // Container Boxing: ValueMap/ValueVector now store Value directly, not box<Value>
+    // Container Boxing: ValueMap/ValueVector now store ImmerValue directly, not box<ImmerValue>
     // But they are wrapped in BoxedValueMap/BoxedValueVector
     if (auto* boxed_map = v.get_if<BoxedValueMap>()) {
         const ValueMap& map = boxed_map->get();
@@ -625,9 +625,9 @@ void performance_comparison() {
     std::cout << std::string(100, '=') << "\n\n";
 
     std::cout << "Methods compared:\n";
-    std::cout << "  1. Binary Serialization: Value -> serialize -> deserialize -> Value (custom "
+    std::cout << "  1. Binary Serialization: ImmerValue -> serialize -> deserialize -> ImmerValue (custom "
                  "binary)\n";
-    std::cout << "  2. SharedMem (2-copy): Value -> deep_copy_to_shared -> deep_copy_to_local\n";
+    std::cout << "  2. SharedMem (2-copy): ImmerValue -> deep_copy_to_shared -> deep_copy_to_local\n";
     std::cout << "  3. SharedMem (1-copy): SharedValue (direct) -> deep_copy_to_local\n";
     std::cout << "  4. SharedMem (ZERO-COPY): SharedValue (direct) -> direct read (no copy!)\n";
     std::cout << "\n";
@@ -645,8 +645,8 @@ void performance_comparison() {
     //==========================================================================
     std::cout << "=== Method 1: Serialization ===\n";
     {
-        // Generate local Value
-        Value data = generate_large_scene(OBJECT_COUNT);
+        // Generate local ImmerValue
+        ImmerValue data = generate_large_scene(OBJECT_COUNT);
 
         // Serialize
         timer.start();
@@ -656,7 +656,7 @@ void performance_comparison() {
 
         // Deserialize
         timer.start();
-        Value deser = deserialize(buffer);
+        ImmerValue deser = deserialize(buffer);
         deserialize_time = timer.elapsed_ms();
 
         std::cout << "  Serialize:   " << std::fixed << std::setprecision(2) << serialize_time << " ms\n";
@@ -670,8 +670,8 @@ void performance_comparison() {
     //==========================================================================
     std::cout << "=== Method 2: SharedMem (2-copy) ===\n";
     {
-        // Generate local Value first (before creating shared memory)
-        Value data = generate_large_scene(OBJECT_COUNT);
+        // Generate local ImmerValue first (before creating shared memory)
+        ImmerValue data = generate_large_scene(OBJECT_COUNT);
 
         // Create shared memory
         shared_memory::SharedMemoryRegion region;
@@ -687,11 +687,11 @@ void performance_comparison() {
         deep_copy_to_shared_time = timer.elapsed_ms();
 
         // Release local data immediately to free memory before copy back
-        data = Value{};
+        data = ImmerValue{};
 
         // Deep copy back to local
         timer.start();
-        Value local = deep_copy_to_local(shared);
+        ImmerValue local = deep_copy_to_local(shared);
         deep_copy_to_local_time_m2 = timer.elapsed_ms();
 
         shared_memory_used_m2 = region.header()->heap_used;
@@ -726,7 +726,7 @@ void performance_comparison() {
 
         // Deep copy back to local (the only operation Editor process needs to do)
         timer.start();
-        Value local = deep_copy_to_local(shared_direct);
+        ImmerValue local = deep_copy_to_local(shared_direct);
         deep_copy_to_local_time_m3 = timer.elapsed_ms();
 
         shared_memory_used_m3 = region.header()->heap_used;
@@ -1052,13 +1052,13 @@ void shared_vs_fast_shared_comparison() {
         SharedValue shared = generate_large_scene_shared(OBJECT_COUNT);
 
         timer.start();
-        Value local = deep_copy_to_local(shared);
+        ImmerValue local = deep_copy_to_local(shared);
         shared_copy_time = timer.elapsed_ms();
 
         shared_memory::set_current_shared_region(nullptr);
         region.close();
 
-        std::cout << "  SharedValue -> Value: " << shared_copy_time << " ms\n";
+        std::cout << "  SharedValue -> ImmerValue: " << shared_copy_time << " ms\n";
     }
 
     // FastSharedValue deep copy
@@ -1073,13 +1073,13 @@ void shared_vs_fast_shared_comparison() {
         FastSharedValue fast_shared = generate_large_scene_fast_shared(OBJECT_COUNT);
 
         timer.start();
-        Value local = fast_deep_copy_to_local(fast_shared);
+        ImmerValue local = fast_deep_copy_to_local(fast_shared);
         fast_shared_copy_time = timer.elapsed_ms();
 
         shared_memory::set_current_shared_region(nullptr);
         region.close();
 
-        std::cout << "  FastSharedValue -> Value: " << fast_shared_copy_time << " ms\n";
+        std::cout << "  FastSharedValue -> ImmerValue: " << fast_shared_copy_time << " ms\n";
     }
 
     std::cout << "\n--- Deep Copy Results ---\n";
@@ -1093,18 +1093,18 @@ void shared_vs_fast_shared_comparison() {
     //==========================================================================
     std::cout << "=== Phase 4: Deep Copy TO Shared Memory (Key Difference!) ===\n\n";
     std::cout << "This phase compares:\n";
-    std::cout << "  - deep_copy_to_shared():      Value -> SharedValue (O(n log n), no transient)\n";
-    std::cout << "  - fast_deep_copy_to_shared(): Value -> FastSharedValue (O(n), uses transient)\n\n";
+    std::cout << "  - deep_copy_to_shared():      ImmerValue -> SharedValue (O(n log n), no transient)\n";
+    std::cout << "  - fast_deep_copy_to_shared(): ImmerValue -> FastSharedValue (O(n), uses transient)\n\n";
 
     double to_shared_time = 0;
     double to_fast_shared_time = 0;
     size_t to_shared_memory = 0;
     size_t to_fast_shared_memory = 0;
 
-    // First, generate a local Value to copy from
-    std::cout << "Generating local Value for copy test...\n";
-    Value local_data = generate_large_scene(OBJECT_COUNT);
-    std::cout << "Local Value generated.\n\n";
+    // First, generate a local ImmerValue to copy from
+    std::cout << "Generating local ImmerValue for copy test...\n";
+    ImmerValue local_data = generate_large_scene(OBJECT_COUNT);
+    std::cout << "Local ImmerValue generated.\n\n";
 
     // Test deep_copy_to_shared (O(n log n) - no transient)
     std::cout << "--- deep_copy_to_shared (O(n log n)) ---\n";
@@ -1193,7 +1193,7 @@ void shared_vs_fast_shared_comparison() {
     std::cout << "Recommendations:\n";
     std::cout << "  - Use FastSharedValue when building large data structures (>10000 elements)\n";
     std::cout << "  - Use SharedValue for small data or when you need the simplest API\n";
-    std::cout << "  - Both can be deep-copied to local Value for editing\n";
+    std::cout << "  - Both can be deep-copied to local ImmerValue for editing\n";
     std::cout << "  - Both support zero-copy read-only access\n";
 }
 

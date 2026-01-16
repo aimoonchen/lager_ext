@@ -10,17 +10,17 @@
 /// Architecture:
 /// @code
 ///   Process A                              Process B
-///   ┌─────────────────┐                    ┌─────────────────┐
-///   │  EventBus       │                    │  EventBus       │
-///   │  (local events) │                    │  (local events) │
-///   └────────┬────────┘                    └────────▲────────┘
-///            │                                      │
-///            ▼                                      │
-///   ┌─────────────────┐                    ┌────────┴────────┐
-///   │  RemoteBus      │ ================== │  RemoteBus      │
-///   │  (serialize)    │   Shared Memory    │  (deserialize)  │
-///   │                 │   + Pool (>240B)   │                 │
-///   └─────────────────┘                    └─────────────────┘
+///   ┌─────────────────�?                   ┌─────────────────�?
+///   �? EventBus       �?                   �? EventBus       �?
+///   �? (local events) �?                   �? (local events) �?
+///   └────────┬────────�?                   └────────▲────────�?
+///            �?                                     �?
+///            �?                                     �?
+///   ┌─────────────────�?                   ┌────────┴────────�?
+///   �? RemoteBus      �?================== �? RemoteBus      �?
+///   �? (serialize)    �?  Shared Memory    �? (deserialize)  �?
+///   �?                �?  + Pool (>240B)   �?                �?
+///   └─────────────────�?                   └─────────────────�?
 /// @endcode
 ///
 /// New Features:
@@ -36,7 +36,7 @@
 ///       std::string doc_id;
 ///       std::string path;
 ///   ,
-///       return Value::map({{"doc_id", evt.doc_id}, {"path", evt.path}});
+///       return ImmerValue::map({{"doc_id", evt.doc_id}, {"path", evt.path}});
 ///   ,
 ///       return DocumentSaved{
 ///           .doc_id = v.at("doc_id").as<std::string>(),
@@ -117,10 +117,10 @@ concept IpcEvent = Event<T> && IpcEventTrait<T>::is_ipc_event;
         static constexpr bool is_ipc_event = true;                        \
         static constexpr lager_ext::ipc::MessageDomain domain =           \
             lager_ext::ipc::MessageDomain::Global;                        \
-        static lager_ext::Value serialize(const Name& evt) {              \
+        static lager_ext::ImmerValue serialize(const Name& evt) {              \
             SerializeBody                                                 \
         }                                                                 \
-        static Name deserialize(const lager_ext::Value& v) {              \
+        static Name deserialize(const lager_ext::ImmerValue& v) {              \
             DeserializeBody                                               \
         }                                                                 \
     }
@@ -138,10 +138,10 @@ concept IpcEvent = Event<T> && IpcEventTrait<T>::is_ipc_event;
         static constexpr bool is_ipc_event = true;                        \
         static constexpr lager_ext::ipc::MessageDomain domain =           \
             lager_ext::ipc::MessageDomain::Domain;                        \
-        static lager_ext::Value serialize(const Name& evt) {              \
+        static lager_ext::ImmerValue serialize(const Name& evt) {              \
             SerializeBody                                                 \
         }                                                                 \
-        static Name deserialize(const lager_ext::Value& v) {              \
+        static Name deserialize(const lager_ext::ImmerValue& v) {              \
             DeserializeBody                                               \
         }                                                                 \
     }
@@ -202,10 +202,10 @@ public:
     }
 
     /// @brief Post dynamic event to remote (non-blocking)
-    bool post_remote(std::string_view event_name, const Value& payload);
+    bool post_remote(std::string_view event_name, const ImmerValue& payload);
 
     /// @brief Post dynamic event to both local and remote (non-blocking)
-    bool broadcast(std::string_view event_name, const Value& payload);
+    bool broadcast(std::string_view event_name, const ImmerValue& payload);
 
     // ========================================================================
     // Blocking Operations (like SendMessage)
@@ -216,12 +216,12 @@ public:
     /// @param payload Request payload
     /// @param timeout Maximum time to wait for response
     /// @return Response value, or nullopt on timeout
-    std::optional<Value> send(std::string_view event_name, const Value& payload,
+    std::optional<ImmerValue> send(std::string_view event_name, const ImmerValue& payload,
                               std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
     /// @brief Register a handler for incoming requests
-    template <std::invocable<const Value&> Handler>
-        requires std::convertible_to<std::invoke_result_t<Handler, const Value&>, Value>
+    template <std::invocable<const ImmerValue&> Handler>
+        requires std::convertible_to<std::invoke_result_t<Handler, const ImmerValue&>, ImmerValue>
     Connection on_request(std::string_view event_name, Handler&& handler) {
         return on_request_impl(event_name, std::forward<Handler>(handler));
     }
@@ -233,13 +233,13 @@ public:
     /// @brief Subscribe to remote typed event
     template <IpcEvent Evt, std::invocable<const Evt&> Handler>
     Connection subscribe_remote(Handler&& handler) {
-        return subscribe_remote_impl(Evt::event_name, [h = std::forward<Handler>(handler)](const Value& v) {
+        return subscribe_remote_impl(Evt::event_name, [h = std::forward<Handler>(handler)](const ImmerValue& v) {
             h(IpcEventTrait<Evt>::deserialize(v));
         });
     }
 
     /// @brief Subscribe to remote dynamic event
-    template <std::invocable<const Value&> Handler>
+    template <std::invocable<const ImmerValue&> Handler>
     Connection subscribe_remote(std::string_view event_name, Handler&& handler) {
         return subscribe_remote_impl(event_name, std::forward<Handler>(handler));
     }
@@ -273,11 +273,11 @@ public:
     /// Example:
     /// @code
     ///   remote.subscribe_domain(MessageDomain::Document, 
-    ///       [](const DomainEnvelope& env, const Value& data) {
+    ///       [](const DomainEnvelope& env, const ImmerValue& data) {
     ///           std::cout << "Document event ID: " << env.msgId << "\n";
     ///       });
     /// @endcode
-    template <std::invocable<const DomainEnvelope&, const Value&> Handler>
+    template <std::invocable<const DomainEnvelope&, const ImmerValue&> Handler>
     Connection subscribe_domain(MessageDomain domain, Handler&& handler) {
         return subscribe_domain_impl(domain, std::forward<Handler>(handler));
     }
@@ -304,10 +304,10 @@ public:
     [[nodiscard]] const std::string& last_error() const;
 
 private:
-    Connection subscribe_remote_impl(std::string_view event_name, std::move_only_function<void(const Value&)> handler);
-    Connection on_request_impl(std::string_view event_name, std::move_only_function<Value(const Value&)> handler);
+    Connection subscribe_remote_impl(std::string_view event_name, std::move_only_function<void(const ImmerValue&) const> handler);
+    Connection on_request_impl(std::string_view event_name, std::move_only_function<ImmerValue(const ImmerValue&)> handler);
     Connection subscribe_domain_impl(MessageDomain domain, 
-                                     std::move_only_function<void(const DomainEnvelope&, const Value&)> handler);
+                                     std::move_only_function<void(const DomainEnvelope&, const ImmerValue&) const> handler);
     EventBus& bus_ref();
 
     class Impl;

@@ -15,14 +15,14 @@ namespace lager_ext {
 namespace {
 
 /// Recursive helper for set_at_path
-Value set_at_path_recursive(const Value& root, PathView path, std::size_t path_index, Value new_val) {
+ImmerValue set_at_path_recursive(const ImmerValue& root, PathView path, std::size_t path_index, ImmerValue new_val) {
     if (path_index >= path.size()) {
         return new_val; // Base case: replace current node
     }
 
     const auto& elem = path[path_index];
-    Value current_child = detail::get_at_path_element(root, elem);
-    Value new_child = set_at_path_recursive(current_child, path, path_index + 1, std::move(new_val));
+    ImmerValue current_child = detail::get_at_path_element(root, elem);
+    ImmerValue new_child = set_at_path_recursive(current_child, path, path_index + 1, std::move(new_val));
     return detail::set_at_path_element(root, elem, std::move(new_child));
 }
 
@@ -32,8 +32,8 @@ Value set_at_path_recursive(const Value& root, PathView path, std::size_t path_i
 // Public API Implementation
 // ============================================================
 
-Value get_at_path(const Value& root, PathView path) {
-    Value current = root;
+ImmerValue get_at_path(const ImmerValue& root, PathView path) {
+    ImmerValue current = root;
     for (const auto& elem : path) {
         current = detail::get_at_path_element(current, elem);
         if (current.is_null()) [[unlikely]] {
@@ -43,7 +43,7 @@ Value get_at_path(const Value& root, PathView path) {
     return current;
 }
 
-Value set_at_path(const Value& root, PathView path, Value new_val) {
+ImmerValue set_at_path(const ImmerValue& root, PathView path, ImmerValue new_val) {
     if (path.empty()) {
         return new_val;
     }
@@ -57,19 +57,19 @@ Value set_at_path(const Value& root, PathView path, Value new_val) {
 namespace {
 
 /// Set value at a single path element with auto-vivification
-Value set_at_path_element_vivify(const Value& current, const PathElement& elem, Value new_val) {
+ImmerValue set_at_path_element_vivify(const ImmerValue& current, const PathElement& elem, ImmerValue new_val) {
     if (auto* key = std::get_if<std::string_view>(&elem)) {
         // For string keys: auto-create map if null
         std::string key_str{*key};
         // Container Boxing: use BoxedValueMap
         if (auto* boxed_map = current.get_if<BoxedValueMap>()) {
             auto new_map = boxed_map->get().set(key_str, std::move(new_val));
-            return Value{BoxedValueMap{std::move(new_map)}};
+            return ImmerValue{BoxedValueMap{std::move(new_map)}};
         }
         if (current.is_null()) {
             // Auto-vivification: create new map
             auto new_map = ValueMap{}.set(key_str, std::move(new_val));
-            return Value{BoxedValueMap{std::move(new_map)}};
+            return ImmerValue{BoxedValueMap{std::move(new_map)}};
         }
         // Not a map and not null - cannot vivify
         return current;
@@ -82,54 +82,54 @@ Value set_at_path_element_vivify(const Value& current, const PathElement& elem, 
             const auto& v = boxed_vec->get();
             if (idx < v.size()) {
                 auto new_vec = v.set(idx, std::move(new_val));
-                return Value{BoxedValueVector{std::move(new_vec)}};
+                return ImmerValue{BoxedValueVector{std::move(new_vec)}};
             }
             auto trans = v.transient();
             while (trans.size() <= idx) {
-                trans.push_back(Value{});
+                trans.push_back(ImmerValue{});
             }
             trans.set(idx, std::move(new_val));
-            return Value{BoxedValueVector{trans.persistent()}};
+            return ImmerValue{BoxedValueVector{trans.persistent()}};
         }
         if (current.is_null()) {
             auto trans = ValueVector{}.transient();
             for (std::size_t i = 0; i < idx; ++i) {
-                trans.push_back(Value{});
+                trans.push_back(ImmerValue{});
             }
             trans.push_back(std::move(new_val));
-            return Value{BoxedValueVector{trans.persistent()}};
+            return ImmerValue{BoxedValueVector{trans.persistent()}};
         }
         return current;
     }
 }
 
 /// Recursive helper for set_at_path_vivify
-Value set_at_path_recursive_vivify(const Value& root, PathView path, std::size_t path_index, Value new_val) {
+ImmerValue set_at_path_recursive_vivify(const ImmerValue& root, PathView path, std::size_t path_index, ImmerValue new_val) {
     if (path_index >= path.size()) {
         return new_val;
     }
 
     const auto& elem = path[path_index];
-    Value current_child = detail::get_at_path_element(root, elem);
+    ImmerValue current_child = detail::get_at_path_element(root, elem);
 
     // If child is null and we have more path elements, prepare for vivification
     // Container Boxing: wrap in immer::box
     if (current_child.is_null() && path_index + 1 < path.size()) {
         const auto& next_elem = path[path_index + 1];
         if (std::holds_alternative<std::string_view>(next_elem)) {
-            current_child = Value{BoxedValueMap{ValueMap{}}};
+            current_child = ImmerValue{BoxedValueMap{ValueMap{}}};
         } else {
-            current_child = Value{BoxedValueVector{ValueVector{}}};
+            current_child = ImmerValue{BoxedValueVector{ValueVector{}}};
         }
     }
 
-    Value new_child = set_at_path_recursive_vivify(current_child, path, path_index + 1, std::move(new_val));
+    ImmerValue new_child = set_at_path_recursive_vivify(current_child, path, path_index + 1, std::move(new_val));
     return set_at_path_element_vivify(root, elem, std::move(new_child));
 }
 
 } // anonymous namespace
 
-Value set_at_path_vivify(const Value& root, PathView path, Value new_val) {
+ImmerValue set_at_path_vivify(const ImmerValue& root, PathView path, ImmerValue new_val) {
     if (path.empty()) {
         return new_val;
     }
@@ -140,9 +140,9 @@ Value set_at_path_vivify(const Value& root, PathView path, Value new_val) {
 // Path Erasure Implementation
 // ============================================================
 
-Value erase_at_path(const Value& root, PathView path) {
+ImmerValue erase_at_path(const ImmerValue& root, PathView path) {
     if (path.empty()) {
-        return Value{}; // Erase entire root
+        return ImmerValue{}; // Erase entire root
     }
 
     // If last element is a string key, we can erase from map
@@ -151,7 +151,7 @@ Value erase_at_path(const Value& root, PathView path) {
             return detail::erase_key_from_map(root, *key);
         }
         // For index, set to null (cannot truly remove without reindexing)
-        return set_at_path(root, path, Value{});
+        return set_at_path(root, path, ImmerValue{});
     }
 
     // Navigate to parent and erase from there
@@ -163,21 +163,21 @@ Value erase_at_path(const Value& root, PathView path) {
     const auto& last = path.back();
 
     if (auto* key = std::get_if<std::string_view>(&last)) {
-        Value parent = get_at_path(root, parent_path);
-        Value new_parent = detail::erase_key_from_map(parent, *key);
+        ImmerValue parent = get_at_path(root, parent_path);
+        ImmerValue new_parent = detail::erase_key_from_map(parent, *key);
         return set_at_path(root, parent_path, new_parent);
     }
 
     // For index removal, set to null
-    return set_at_path(root, path, Value{});
+    return set_at_path(root, path, ImmerValue{});
 }
 
 // ============================================================
 // Path Validation Implementation
 // ============================================================
 
-bool is_valid_path(const Value& root, PathView path) {
-    Value current = root;
+bool is_valid_path(const ImmerValue& root, PathView path) {
+    ImmerValue current = root;
     for (const auto& elem : path) {
         if (!detail::can_access_element(current, elem)) {
             return false;
@@ -187,8 +187,8 @@ bool is_valid_path(const Value& root, PathView path) {
     return true;
 }
 
-std::size_t valid_path_depth(const Value& root, PathView path) {
-    Value current = root;
+std::size_t valid_path_depth(const ImmerValue& root, PathView path) {
+    ImmerValue current = root;
     std::size_t depth = 0;
     for (const auto& elem : path) {
         if (!detail::can_access_element(current, elem)) {

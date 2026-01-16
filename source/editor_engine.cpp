@@ -268,7 +268,7 @@ struct EngineSimulator::Impl {
     SceneState scene;
     std::vector<EngineCallback> callbacks;
 
-    void fire_event(const std::string& event, const Value& data) {
+    void fire_event(const std::string& event, const ImmerValue& data) {
         for (auto& cb : callbacks) {
             if (cb) {
                 cb(event, data);
@@ -347,11 +347,11 @@ void EngineSimulator::initialize_sample_scene() {
     root.children = {"camera_main", "light_sun", "cube_1"};
 
     // Create root data using Builder API for O(n) construction
-    Value position = MapBuilder().set("x", Value{0.0}).set("y", Value{0.0}).set("z", Value{0.0}).finish();
+    ImmerValue position = MapBuilder().set("x", ImmerValue{0.0}).set("y", ImmerValue{0.0}).set("z", ImmerValue{0.0}).finish();
 
-    Value rotation = MapBuilder().set("x", Value{0.0}).set("y", Value{0.0}).set("z", Value{0.0}).finish();
+    ImmerValue rotation = MapBuilder().set("x", ImmerValue{0.0}).set("y", ImmerValue{0.0}).set("z", ImmerValue{0.0}).finish();
 
-    Value scale = MapBuilder().set("x", Value{1.0}).set("y", Value{1.0}).set("z", Value{1.0}).finish();
+    ImmerValue scale = MapBuilder().set("x", ImmerValue{1.0}).set("y", ImmerValue{1.0}).set("z", ImmerValue{1.0}).finish();
 
     root.data = MapBuilder().set("position", position).set("rotation", rotation).set("scale", scale).finish();
 
@@ -362,11 +362,11 @@ void EngineSimulator::initialize_sample_scene() {
     light.meta = light_meta;
 
     light.data = MapBuilder()
-                     .set("name", Value{std::string{"Sun Light"}})
-                     .set("type", Value{std::string{"Directional"}})
-                     .set("color", Value{std::string{"#FFFFCC"}})
-                     .set("intensity", Value{1.5})
-                     .set("enabled", Value{true})
+                     .set("name", ImmerValue{std::string{"Sun Light"}})
+                     .set("type", ImmerValue{std::string{"Directional"}})
+                     .set("color", ImmerValue{std::string{"#FFFFCC"}})
+                     .set("intensity", ImmerValue{1.5})
+                     .set("enabled", ImmerValue{true})
                      .finish();
 
     // ===== Create Mesh object using Builder API =====
@@ -376,11 +376,11 @@ void EngineSimulator::initialize_sample_scene() {
     cube.meta = mesh_meta;
 
     cube.data = MapBuilder()
-                    .set("name", Value{std::string{"Main Cube"}})
-                    .set("mesh_path", Value{std::string{"/meshes/cube.fbx"}})
-                    .set("material", Value{std::string{"default_material"}})
-                    .set("visible", Value{true})
-                    .set("cast_shadows", Value{true})
+                    .set("name", ImmerValue{std::string{"Main Cube"}})
+                    .set("mesh_path", ImmerValue{std::string{"/meshes/cube.fbx"}})
+                    .set("material", ImmerValue{std::string{"default_material"}})
+                    .set("visible", ImmerValue{true})
+                    .set("cast_shadows", ImmerValue{true})
                     .finish();
 
     // ===== Create Camera object using Builder API =====
@@ -389,11 +389,11 @@ void EngineSimulator::initialize_sample_scene() {
     camera.type = "Transform";
     camera.meta = transform_meta;
 
-    Value cam_position = MapBuilder().set("x", Value{0.0}).set("y", Value{5.0}).set("z", Value{-10.0}).finish();
+    ImmerValue cam_position = MapBuilder().set("x", ImmerValue{0.0}).set("y", ImmerValue{5.0}).set("z", ImmerValue{-10.0}).finish();
 
-    Value cam_rotation = MapBuilder().set("x", Value{15.0}).set("y", Value{0.0}).set("z", Value{0.0}).finish();
+    ImmerValue cam_rotation = MapBuilder().set("x", ImmerValue{15.0}).set("y", ImmerValue{0.0}).set("z", ImmerValue{0.0}).finish();
 
-    Value cam_scale = MapBuilder().set("x", Value{1.0}).set("y", Value{1.0}).set("z", Value{1.0}).finish();
+    ImmerValue cam_scale = MapBuilder().set("x", ImmerValue{1.0}).set("y", ImmerValue{1.0}).set("z", ImmerValue{1.0}).finish();
 
     camera.data =
         MapBuilder().set("position", cam_position).set("rotation", cam_rotation).set("scale", cam_scale).finish();
@@ -427,27 +427,27 @@ void EngineSimulator::apply_diff(const DiffResult& diff) {
         std::cout << "  Modified: " << mod.path.to_dot_notation() << " = " << value_to_string(mod.new_value) << "\n";
     }
 
-    impl_->fire_event("diff_applied", Value{});
+    impl_->fire_event("diff_applied", ImmerValue{});
 }
 
-void EngineSimulator::apply_full_state(const Value& state) {
+void EngineSimulator::apply_full_state(const ImmerValue& state) {
     std::cout << "[Engine] Applying full state update\n";
     impl_->fire_event("state_updated", state);
 }
 
-Value EngineSimulator::get_state_as_value() const {
-    // Container Boxing: Convert scene to Value with BoxedValueMap
+ImmerValue EngineSimulator::get_state_as_value() const {
+    // Container Boxing: Convert scene to ImmerValue with BoxedValueMap
     ValueMap objects_map;
     for (const auto& [id, obj] : impl_->scene.objects) {
         objects_map = objects_map.set(id, obj.data);
     }
 
     ValueMap scene_value;
-    scene_value = scene_value.set("objects", Value{BoxedValueMap{objects_map}});
-    scene_value = scene_value.set("root_id", Value{impl_->scene.root_id});
-    scene_value = scene_value.set("version", Value{static_cast<int>(impl_->scene.version)});
+    scene_value = scene_value.set("objects", ImmerValue{BoxedValueMap{objects_map}});
+    scene_value = scene_value.set("root_id", ImmerValue{impl_->scene.root_id});
+    scene_value = scene_value.set("version", ImmerValue{static_cast<int>(impl_->scene.version)});
 
-    return Value{BoxedValueMap{scene_value}};
+    return ImmerValue{BoxedValueMap{scene_value}};
 }
 
 void EngineSimulator::on_event(EngineCallback callback) {
@@ -475,7 +475,7 @@ struct EditorController::Impl {
     EditorModel model;
     EditorEffects effects;
     std::vector<WatchCallback> watchers;
-    Value previous_state_value; // For diff calculation
+    ImmerValue previous_state_value; // For diff calculation
 
     void notify_watchers() {
         for (auto& watcher : watchers) {
@@ -489,8 +489,8 @@ struct EditorController::Impl {
         if (!model.dirty)
             return;
 
-        // Get current state as Value for diff
-        Value current_state_value = scene_to_value(model.scene);
+        // Get current state as ImmerValue for diff
+        ImmerValue current_state_value = scene_to_value(model.scene);
 
         // Calculate diff
         if (effects.on_state_changed) {
@@ -504,7 +504,7 @@ struct EditorController::Impl {
         model.dirty = false;
     }
 
-    static Value scene_to_value(const SceneState& scene) {
+    static ImmerValue scene_to_value(const SceneState& scene) {
         // Container Boxing: wrap maps in BoxedValueMap
         ValueMap objects_map;
         for (const auto& [id, obj] : scene.objects) {
@@ -512,11 +512,11 @@ struct EditorController::Impl {
         }
 
         ValueMap scene_map;
-        scene_map = scene_map.set("objects", Value{BoxedValueMap{objects_map}});
-        scene_map = scene_map.set("selected_id", Value{scene.selected_id});
-        scene_map = scene_map.set("version", Value{static_cast<int>(scene.version)});
+        scene_map = scene_map.set("objects", ImmerValue{BoxedValueMap{objects_map}});
+        scene_map = scene_map.set("selected_id", ImmerValue{scene.selected_id});
+        scene_map = scene_map.set("version", ImmerValue{static_cast<int>(scene.version)});
 
-        return Value{BoxedValueMap{scene_map}};
+        return ImmerValue{BoxedValueMap{scene_map}};
     }
 };
 
@@ -565,16 +565,16 @@ const SceneObject* EditorController::get_selected_object() const {
     return impl_->model.scene.objects.find(impl_->model.scene.selected_id);
 }
 
-Value EditorController::get_property(const std::string& path) const {
+ImmerValue EditorController::get_property(const std::string& path) const {
     const SceneObject* obj = get_selected_object();
     if (!obj)
-        return Value{}; // null Value indicates no object selected
+        return ImmerValue{}; // null ImmerValue indicates no object selected
 
     Path parsed_path = parse_property_path(path);
     return get_at_path(obj->data, parsed_path);
 }
 
-void EditorController::set_property(const std::string& path, Value value) {
+void EditorController::set_property(const std::string& path, ImmerValue value) {
     // SetProperty is a UserAction - will be recorded to undo history
     dispatch(actions::SetProperty{payloads::SetProperty{path, std::move(value)}});
 }
@@ -630,10 +630,10 @@ std::vector<PropertyBinding> generate_property_bindings(EditorController& contro
 
         // Create getter closure
         std::string path = prop.name;
-        binding.getter = [&controller, path]() -> Value { return controller.get_property(path); };
+        binding.getter = [&controller, path]() -> ImmerValue { return controller.get_property(path); };
 
         // Create setter closure
-        binding.setter = [&controller, path](Value value) { controller.set_property(path, std::move(value)); };
+        binding.setter = [&controller, path](ImmerValue value) { controller.set_property(path, std::move(value)); };
 
         bindings.push_back(std::move(binding));
     }

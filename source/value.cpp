@@ -1,4 +1,4 @@
-// value.cpp - Value type utilities and serialization
+// value.cpp - ImmerValue type utilities and serialization
 
 #include <lager_ext/builders.h>
 #include <lager_ext/serialization.h>
@@ -35,7 +35,7 @@ std::string format_float_array(const std::array<float, N>& arr, const char* name
 
 } // anonymous namespace
 
-std::string value_to_string(const Value& val) {
+std::string value_to_string(const ImmerValue& val) {
     return std::visit(
         [](const auto& arg) -> std::string {
             using T = std::decay_t<decltype(arg)>;
@@ -70,11 +70,11 @@ std::string value_to_string(const Value& val) {
                 return format_float_array(arg, "vec3");
             } else if constexpr (std::is_same_v<T, Vec4>) {
                 return format_float_array(arg, "vec4");
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat3>) {
                 return format_float_array(arg.get(), "mat3");
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4x3>) {
                 return format_float_array(arg.get(), "mat4x3");
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4>) {
                 return format_float_array(arg.get(), "mat4");
             } else if constexpr (std::is_same_v<T, BoxedValueMap>) {
                 // Container Boxing: unbox to get size
@@ -92,7 +92,7 @@ std::string value_to_string(const Value& val) {
         val.data);
 }
 
-void print_value(const Value& val, const std::string& prefix, std::size_t depth) {
+void print_value(const ImmerValue& val, const std::string& prefix, std::size_t depth) {
     std::visit(
         [&](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
@@ -117,32 +117,32 @@ void print_value(const Value& val, const std::string& prefix, std::size_t depth)
                 std::cout << std::string(depth * 2, ' ') << prefix << format_float_array(arg, "vec3") << "\n";
             } else if constexpr (std::is_same_v<T, Vec4>) {
                 std::cout << std::string(depth * 2, ' ') << prefix << format_float_array(arg, "vec4") << "\n";
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat3>) {
                 std::cout << std::string(depth * 2, ' ') << prefix << format_float_array(arg.get(), "mat3") << "\n";
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4x3>) {
                 std::cout << std::string(depth * 2, ' ') << prefix << format_float_array(arg.get(), "mat4x3") << "\n";
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4>) {
                 std::cout << std::string(depth * 2, ' ') << prefix << format_float_array(arg.get(), "mat4") << "\n";
             } else if constexpr (std::is_same_v<T, BoxedValueMap>) {
                 // Container Boxing: unbox the map and iterate
                 const ValueMap& m = arg.get();
                 for (const auto& [k, v] : m) {
                     std::cout << std::string(depth * 2, ' ') << prefix << k << ":\n";
-                    print_value(v, "", depth + 1);  // v is Value directly, no dereference
+                    print_value(v, "", depth + 1);  // v is ImmerValue directly, no dereference
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
                 // Container Boxing: unbox the vector and iterate
                 const ValueVector& vec = arg.get();
                 for (std::size_t i = 0; i < vec.size(); ++i) {
                     std::cout << std::string(depth * 2, ' ') << prefix << "[" << i << "]:\n";
-                    print_value(vec[i], "", depth + 1);  // vec[i] is Value directly, no dereference
+                    print_value(vec[i], "", depth + 1);  // vec[i] is ImmerValue directly, no dereference
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueArray>) {
                 // Container Boxing: unbox the array and iterate
                 const ValueArray& arr = arg.get();
                 for (std::size_t i = 0; i < arr.size(); ++i) {
                     std::cout << std::string(depth * 2, ' ') << prefix << "(" << i << "):\n";
-                    print_value(arr[i], "", depth + 1);  // arr[i] is Value directly, no dereference
+                    print_value(arr[i], "", depth + 1);  // arr[i] is ImmerValue directly, no dereference
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueTable>) {
                 // Container Boxing: unbox the table and iterate
@@ -160,18 +160,18 @@ void print_value(const Value& val, const std::string& prefix, std::size_t depth)
 
 // to_dot_notation() is implemented in path_types.cpp as PathView::to_dot_notation()
 
-Value create_sample_data() {
+ImmerValue create_sample_data() {
     // Create user 1 using Builder API for O(n) construction
-    Value user1 = MapBuilder().set("name", Value{std::string{"Alice"}}).set("age", Value{25}).finish();
+    ImmerValue user1 = MapBuilder().set("name", ImmerValue{std::string{"Alice"}}).set("age", ImmerValue{25}).finish();
 
     // Create user 2 using Builder API
-    Value user2 = MapBuilder().set("name", Value{std::string{"Bob"}}).set("age", Value{30}).finish();
+    ImmerValue user2 = MapBuilder().set("name", ImmerValue{std::string{"Bob"}}).set("age", ImmerValue{30}).finish();
 
     // Create users array using Builder API
-    Value users = VectorBuilder().push_back(user1).push_back(user2).finish();
+    ImmerValue users = VectorBuilder().push_back(user1).push_back(user2).finish();
 
     // Create config using Builder API
-    Value config = MapBuilder().set("version", Value{1}).set("theme", Value{std::string{"dark"}}).finish();
+    ImmerValue config = MapBuilder().set("version", ImmerValue{1}).set("theme", ImmerValue{std::string{"dark"}}).finish();
 
     // Create root using Builder API
     return MapBuilder().set("users", users).set("config", config).finish();
@@ -405,10 +405,10 @@ public:
 };
 
 // Forward declarations
-void serialize_value(ByteWriter& w, const Value& val);
-Value deserialize_value(ByteReader& r);
+void serialize_value(ByteWriter& w, const ImmerValue& val);
+ImmerValue deserialize_value(ByteReader& r);
 
-void serialize_value(ByteWriter& w, const Value& val) {
+void serialize_value(ByteWriter& w, const ImmerValue& val) {
     std::visit(
         [&w](const auto& arg) {
             using T = std::decay_t<decltype(arg)>;
@@ -461,7 +461,7 @@ void serialize_value(ByteWriter& w, const Value& val) {
                 w.write_u32(static_cast<uint32_t>(m.size()));
                 for (const auto& [k, v] : m) {
                     w.write_string(k);
-                    serialize_value(w, v);  // v is Value directly, no dereference
+                    serialize_value(w, v);  // v is ImmerValue directly, no dereference
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
                 // Container Boxing: unbox and serialize
@@ -469,7 +469,7 @@ void serialize_value(ByteWriter& w, const Value& val) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Vector));
                 w.write_u32(static_cast<uint32_t>(vec.size()));
                 for (const auto& v : vec) {
-                    serialize_value(w, v);  // v is Value directly, no dereference
+                    serialize_value(w, v);  // v is ImmerValue directly, no dereference
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueArray>) {
                 // Container Boxing: unbox and serialize
@@ -477,7 +477,7 @@ void serialize_value(ByteWriter& w, const Value& val) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Array));
                 w.write_u32(static_cast<uint32_t>(arr.size()));
                 for (std::size_t i = 0; i < arr.size(); ++i) {
-                    serialize_value(w, arr[i]);  // arr[i] is Value directly, no dereference
+                    serialize_value(w, arr[i]);  // arr[i] is ImmerValue directly, no dereference
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueTable>) {
                 // Container Boxing: unbox and serialize
@@ -497,13 +497,13 @@ void serialize_value(ByteWriter& w, const Value& val) {
             } else if constexpr (std::is_same_v<T, Vec4>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Vec4));
                 w.write_float_array(arg);
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat3>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Mat3));
                 w.write_float_array(arg.get());
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4x3>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Mat4x3));
                 w.write_float_array(arg.get());
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Mat4));
                 w.write_float_array(arg.get());
             }
@@ -511,56 +511,56 @@ void serialize_value(ByteWriter& w, const Value& val) {
         val.data);
 }
 
-Value deserialize_value(ByteReader& r) {
+ImmerValue deserialize_value(ByteReader& r) {
     TypeTag tag = static_cast<TypeTag>(r.read_u8());
 
     switch (tag) {
     case TypeTag::Null:
-        return Value{};
+        return ImmerValue{};
 
     // Integer types
     case TypeTag::Int8:
-        return Value{static_cast<int8_t>(r.read_u8())};
+        return ImmerValue{static_cast<int8_t>(r.read_u8())};
 
     case TypeTag::Int16: {
         uint8_t lo = r.read_u8();
         uint8_t hi = r.read_u8();
-        return Value{static_cast<int16_t>(lo | (hi << 8))};
+        return ImmerValue{static_cast<int16_t>(lo | (hi << 8))};
     }
 
     case TypeTag::Int32:
-        return Value{r.read_i32()};
+        return ImmerValue{r.read_i32()};
 
     case TypeTag::Int64:
-        return Value{r.read_i64()};
+        return ImmerValue{r.read_i64()};
 
     case TypeTag::UInt8:
-        return Value{r.read_u8()};
+        return ImmerValue{r.read_u8()};
 
     case TypeTag::UInt16: {
         uint8_t lo = r.read_u8();
         uint8_t hi = r.read_u8();
-        return Value{static_cast<uint16_t>(lo | (hi << 8))};
+        return ImmerValue{static_cast<uint16_t>(lo | (hi << 8))};
     }
 
     case TypeTag::UInt32:
-        return Value{r.read_u32()};
+        return ImmerValue{r.read_u32()};
 
     case TypeTag::UInt64:
-        return Value{static_cast<uint64_t>(r.read_i64())};
+        return ImmerValue{static_cast<uint64_t>(r.read_i64())};
 
     // Floating-point types
     case TypeTag::Float:
-        return Value{r.read_f32()};
+        return ImmerValue{r.read_f32()};
 
     case TypeTag::Double:
-        return Value{r.read_f64()};
+        return ImmerValue{r.read_f64()};
 
     case TypeTag::Bool:
-        return Value{r.read_u8() != 0};
+        return ImmerValue{r.read_u8() != 0};
 
     case TypeTag::String:
-        return Value{r.read_string()};
+        return ImmerValue{r.read_string()};
 
     // Container types - Container Boxing: wrap in immer::box
     case TypeTag::Map: {
@@ -568,22 +568,22 @@ Value deserialize_value(ByteReader& r) {
         auto transient = ValueMap{}.transient();
         for (uint32_t i = 0; i < count; ++i) {
             std::string key = r.read_string();
-            Value val = deserialize_value(r);
-            // Container Boxing: map now stores Value directly
+            ImmerValue val = deserialize_value(r);
+            // Container Boxing: map now stores ImmerValue directly
             transient.set(std::move(key), std::move(val));
         }
-        return Value{BoxedValueMap{transient.persistent()}};
+        return ImmerValue{BoxedValueMap{transient.persistent()}};
     }
 
     case TypeTag::Vector: {
         uint32_t count = r.read_u32();
         auto transient = ValueVector{}.transient();
         for (uint32_t i = 0; i < count; ++i) {
-            Value val = deserialize_value(r);
-            // Container Boxing: vector now stores Value directly
+            ImmerValue val = deserialize_value(r);
+            // Container Boxing: vector now stores ImmerValue directly
             transient.push_back(std::move(val));
         }
-        return Value{BoxedValueVector{transient.persistent()}};
+        return ImmerValue{BoxedValueVector{transient.persistent()}};
     }
 
     case TypeTag::Array: {
@@ -591,14 +591,14 @@ Value deserialize_value(ByteReader& r) {
         // Note: immer::array's transient may not work with custom MemoryPolicy,
         // so we use std::vector + range constructor for O(n) construction.
         uint32_t count = r.read_u32();
-        std::vector<Value> temp;
+        std::vector<ImmerValue> temp;
         temp.reserve(count);
         for (uint32_t i = 0; i < count; ++i) {
-            Value val = deserialize_value(r);
+            ImmerValue val = deserialize_value(r);
             temp.emplace_back(std::move(val));
         }
         // Construct immer::array using move iterators for efficiency
-        return Value{BoxedValueArray{ValueArray(std::make_move_iterator(temp.begin()), std::make_move_iterator(temp.end()))}};
+        return ImmerValue{BoxedValueArray{ValueArray(std::make_move_iterator(temp.begin()), std::make_move_iterator(temp.end()))}};
     }
 
     case TypeTag::Table: {
@@ -606,38 +606,38 @@ Value deserialize_value(ByteReader& r) {
         auto transient = ValueTable{}.transient();
         for (uint32_t i = 0; i < count; ++i) {
             std::string id = r.read_string();
-            Value val = deserialize_value(r);
-            // Container Boxing: TableEntry now stores Value directly
+            ImmerValue val = deserialize_value(r);
+            // Container Boxing: TableEntry now stores ImmerValue directly
             transient.insert(TableEntry{std::move(id), std::move(val)});
         }
-        return Value{BoxedValueTable{transient.persistent()}};
+        return ImmerValue{BoxedValueTable{transient.persistent()}};
     }
 
     // Math types
     case TypeTag::Vec2:
-        return Value{r.read_float_array<2>()};
+        return ImmerValue{r.read_float_array<2>()};
 
     case TypeTag::Vec3:
-        return Value{r.read_float_array<3>()};
+        return ImmerValue{r.read_float_array<3>()};
 
     case TypeTag::Vec4:
-        return Value{r.read_float_array<4>()};
+        return ImmerValue{r.read_float_array<4>()};
 
     case TypeTag::Mat3:
-        return Value{Value::boxed_mat3{r.read_float_array<9>()}};
+        return ImmerValue{ImmerValue::boxed_mat3{r.read_float_array<9>()}};
 
     case TypeTag::Mat4x3:
-        return Value{Value::boxed_mat4x3{r.read_float_array<12>()}};
+        return ImmerValue{ImmerValue::boxed_mat4x3{r.read_float_array<12>()}};
 
     case TypeTag::Mat4:
-        return Value{Value::boxed_mat4{r.read_float_array<16>()}};
+        return ImmerValue{ImmerValue::boxed_mat4{r.read_float_array<16>()}};
 
     default:
         throw std::runtime_error("Unknown type tag: " + std::to_string(static_cast<int>(tag)));
     }
 }
 
-std::size_t calc_serialized_size(const Value& val) {
+std::size_t calc_serialized_size(const ImmerValue& val) {
     std::size_t size = 1; // type tag
 
     std::visit(
@@ -669,19 +669,19 @@ std::size_t calc_serialized_size(const Value& val) {
                 size += 4; // count
                 for (const auto& [k, v] : m) {
                     size += 4 + k.size(); // key string
-                    size += calc_serialized_size(v);  // v is Value directly
+                    size += calc_serialized_size(v);  // v is ImmerValue directly
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
                 const ValueVector& vec = arg.get();
                 size += 4; // count
                 for (const auto& v : vec) {
-                    size += calc_serialized_size(v);  // v is Value directly
+                    size += calc_serialized_size(v);  // v is ImmerValue directly
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueArray>) {
                 const ValueArray& arr = arg.get();
                 size += 4; // count
                 for (std::size_t i = 0; i < arr.size(); ++i) {
-                    size += calc_serialized_size(arr[i]);  // arr[i] is Value directly
+                    size += calc_serialized_size(arr[i]);  // arr[i] is ImmerValue directly
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueTable>) {
                 const ValueTable& tbl = arg.get();
@@ -696,11 +696,11 @@ std::size_t calc_serialized_size(const Value& val) {
                 size += 3 * sizeof(float); // 3 floats
             } else if constexpr (std::is_same_v<T, Vec4>) {
                 size += 4 * sizeof(float); // 4 floats
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat3>) {
                 size += 9 * sizeof(float); // 9 floats
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4x3>) {
                 size += 12 * sizeof(float); // 12 floats
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4>) {
                 size += 16 * sizeof(float); // 16 floats
             }
         },
@@ -711,26 +711,26 @@ std::size_t calc_serialized_size(const Value& val) {
 
 } // anonymous namespace
 
-ByteBuffer serialize(const Value& val) {
+ByteBuffer serialize(const ImmerValue& val) {
     ByteWriter w;
     w.buffer.reserve(calc_serialized_size(val));
     serialize_value(w, val);
     return std::move(w.buffer);
 }
 
-Value deserialize(const ByteBuffer& buffer) {
+ImmerValue deserialize(const ByteBuffer& buffer) {
     return deserialize(buffer.data(), buffer.size());
 }
 
-Value deserialize(const uint8_t* data, std::size_t size) {
+ImmerValue deserialize(const uint8_t* data, std::size_t size) {
     if (size == 0) {
-        return Value{};
+        return ImmerValue{};
     }
     ByteReader r(data, size);
     return deserialize_value(r);
 }
 
-std::size_t serialized_size(const Value& val) {
+std::size_t serialized_size(const ImmerValue& val) {
     return calc_serialized_size(val);
 }
 
@@ -825,9 +825,9 @@ public:
     }
 };
 
-void serialize_value_direct(DirectByteWriter& w, const Value& val);
+void serialize_value_direct(DirectByteWriter& w, const ImmerValue& val);
 
-void serialize_value_direct(DirectByteWriter& w, const Value& val) {
+void serialize_value_direct(DirectByteWriter& w, const ImmerValue& val) {
     std::visit(
         [&w](const auto& arg) {
             using T = std::decay_t<decltype(arg)>;
@@ -880,21 +880,21 @@ void serialize_value_direct(DirectByteWriter& w, const Value& val) {
                 w.write_u32(static_cast<uint32_t>(m.size()));
                 for (const auto& [k, v] : m) {
                     w.write_string(k);
-                    serialize_value_direct(w, v);  // v is Value directly
+                    serialize_value_direct(w, v);  // v is ImmerValue directly
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
                 const ValueVector& vec = arg.get();
                 w.write_u8(static_cast<uint8_t>(TypeTag::Vector));
                 w.write_u32(static_cast<uint32_t>(vec.size()));
                 for (const auto& v : vec) {
-                    serialize_value_direct(w, v);  // v is Value directly
+                    serialize_value_direct(w, v);  // v is ImmerValue directly
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueArray>) {
                 const ValueArray& arr = arg.get();
                 w.write_u8(static_cast<uint8_t>(TypeTag::Array));
                 w.write_u32(static_cast<uint32_t>(arr.size()));
                 for (std::size_t i = 0; i < arr.size(); ++i) {
-                    serialize_value_direct(w, arr[i]);  // arr[i] is Value directly
+                    serialize_value_direct(w, arr[i]);  // arr[i] is ImmerValue directly
                 }
             } else if constexpr (std::is_same_v<T, BoxedValueTable>) {
                 const ValueTable& tbl = arg.get();
@@ -913,13 +913,13 @@ void serialize_value_direct(DirectByteWriter& w, const Value& val) {
             } else if constexpr (std::is_same_v<T, Vec4>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Vec4));
                 w.write_float_array(arg);
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat3>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Mat3));
                 w.write_float_array(arg.get());
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4x3>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Mat4x3));
                 w.write_float_array(arg.get());
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Mat4));
                 w.write_float_array(arg.get());
             }
@@ -928,7 +928,7 @@ void serialize_value_direct(DirectByteWriter& w, const Value& val) {
 }
 } // anonymous namespace
 
-std::size_t serialize_to(const Value& val, uint8_t* buffer, std::size_t buffer_size) {
+std::size_t serialize_to(const ImmerValue& val, uint8_t* buffer, std::size_t buffer_size) {
     std::size_t required = calc_serialized_size(val);
     if (required > buffer_size) {
         throw std::runtime_error("Buffer too small: need " + std::to_string(required) + " bytes, got " +
@@ -990,7 +990,7 @@ std::string json_escape_string(const std::string& s) {
 }
 
 // Forward declaration
-void to_json_impl(const Value& val, std::ostringstream& oss, bool compact, int indent_level);
+void to_json_impl(const ImmerValue& val, std::ostringstream& oss, bool compact, int indent_level);
 
 // Write float array as JSON array
 template <std::size_t N>
@@ -1004,7 +1004,7 @@ void write_float_array_json(const std::array<float, N>& arr, std::ostringstream&
     oss << "]";
 }
 
-void to_json_impl(const Value& val, std::ostringstream& oss, bool compact, int indent_level) {
+void to_json_impl(const ImmerValue& val, std::ostringstream& oss, bool compact, int indent_level) {
     const std::string indent = compact ? "" : std::string(indent_level * 2, ' ');
     const std::string child_indent = compact ? "" : std::string((indent_level + 1) * 2, ' ');
     const std::string newline = compact ? "" : "\n";
@@ -1039,11 +1039,11 @@ void to_json_impl(const Value& val, std::ostringstream& oss, bool compact, int i
                 write_float_array_json(arg, oss);
             } else if constexpr (std::is_same_v<T, Vec4>) {
                 write_float_array_json(arg, oss);
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat3>) {
                 write_float_array_json(arg.get(), oss);
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4x3>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4x3>) {
                 write_float_array_json(arg.get(), oss);
-            } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
+            } else if constexpr (std::is_same_v<T, ImmerValue::boxed_mat4>) {
                 write_float_array_json(arg.get(), oss);
             } else if constexpr (std::is_same_v<T, BoxedValueMap>) {
                 // Container Boxing: unbox the map
@@ -1058,7 +1058,7 @@ void to_json_impl(const Value& val, std::ostringstream& oss, bool compact, int i
                             oss << "," << newline;
                         first = false;
                         oss << child_indent << "\"" << json_escape_string(k) << "\":" << space_after_colon;
-                        to_json_impl(v, oss, compact, indent_level + 1);  // v is Value directly
+                        to_json_impl(v, oss, compact, indent_level + 1);  // v is ImmerValue directly
                     }
                     oss << newline << indent << "}";
                 }
@@ -1074,7 +1074,7 @@ void to_json_impl(const Value& val, std::ostringstream& oss, bool compact, int i
                             oss << "," << newline;
                         first = false;
                         oss << child_indent;
-                        to_json_impl(v, oss, compact, indent_level + 1);  // v is Value directly
+                        to_json_impl(v, oss, compact, indent_level + 1);  // v is ImmerValue directly
                     }
                     oss << newline << indent << "]";
                 }
@@ -1088,7 +1088,7 @@ void to_json_impl(const Value& val, std::ostringstream& oss, bool compact, int i
                         if (i > 0)
                             oss << "," << newline;
                         oss << child_indent;
-                        to_json_impl(arr[i], oss, compact, indent_level + 1);  // arr[i] is Value directly
+                        to_json_impl(arr[i], oss, compact, indent_level + 1);  // arr[i] is ImmerValue directly
                     }
                     oss << newline << indent << "]";
                 }
@@ -1121,19 +1121,19 @@ class JsonParser {
 public:
     JsonParser(const std::string& json) : json_(json), pos_(0) {}
 
-    Value parse(std::string* error_out) {
+    ImmerValue parse(std::string* error_out) {
         try {
             skip_whitespace();
             if (pos_ >= json_.size()) {
                 if (error_out)
                     *error_out = "Empty JSON input";
-                return Value{};
+                return ImmerValue{};
             }
             return parse_value();
         } catch (const std::exception& e) {
             if (error_out)
                 *error_out = e.what();
-            return Value{};
+            return ImmerValue{};
         }
     }
 
@@ -1158,7 +1158,7 @@ private:
         }
     }
 
-    Value parse_value() {
+    ImmerValue parse_value() {
         skip_whitespace();
         char c = peek();
 
@@ -1179,13 +1179,13 @@ private:
                                  std::to_string(pos_));
     }
 
-    Value parse_object() {
+    ImmerValue parse_object() {
         expect('{');
         skip_whitespace();
 
         if (peek() == '}') {
             consume();
-            return Value{BoxedValueMap{ValueMap{}}};
+            return ImmerValue{BoxedValueMap{ValueMap{}}};
         }
 
         auto transient = ValueMap{}.transient();
@@ -1194,8 +1194,8 @@ private:
             skip_whitespace();
             std::string key = parse_string_raw();
             expect(':');
-            Value val = parse_value();
-            // Container Boxing: map now stores Value directly
+            ImmerValue val = parse_value();
+            // Container Boxing: map now stores ImmerValue directly
             transient.set(std::move(key), std::move(val));
 
             skip_whitespace();
@@ -1210,23 +1210,23 @@ private:
             consume();
         }
 
-        return Value{BoxedValueMap{transient.persistent()}};
+        return ImmerValue{BoxedValueMap{transient.persistent()}};
     }
 
-    Value parse_array() {
+    ImmerValue parse_array() {
         expect('[');
         skip_whitespace();
 
         if (peek() == ']') {
             consume();
-            return Value{BoxedValueVector{ValueVector{}}};
+            return ImmerValue{BoxedValueVector{ValueVector{}}};
         }
 
         auto transient = ValueVector{}.transient();
 
         while (true) {
-            Value val = parse_value();
-            // Container Boxing: vector now stores Value directly
+            ImmerValue val = parse_value();
+            // Container Boxing: vector now stores ImmerValue directly
             transient.push_back(std::move(val));
 
             skip_whitespace();
@@ -1241,7 +1241,7 @@ private:
             consume();
         }
 
-        return Value{BoxedValueVector{transient.persistent()}};
+        return ImmerValue{BoxedValueVector{transient.persistent()}};
     }
 
     std::string parse_string_raw() {
@@ -1314,9 +1314,9 @@ private:
         throw std::runtime_error("Unterminated string");
     }
 
-    Value parse_string() { return Value{parse_string_raw()}; }
+    ImmerValue parse_string() { return ImmerValue{parse_string_raw()}; }
 
-    Value parse_number() {
+    ImmerValue parse_number() {
         std::size_t start = pos_;
         bool has_decimal = false;
         bool has_exponent = false;
@@ -1344,37 +1344,37 @@ private:
         std::string num_str = json_.substr(start, pos_ - start);
 
         if (has_decimal || has_exponent) {
-            return Value{std::stod(num_str)};
+            return ImmerValue{std::stod(num_str)};
         } else {
             try {
                 int64_t val = std::stoll(num_str);
                 // Use int if it fits, otherwise int64_t
                 if (val >= INT_MIN && val <= INT_MAX) {
-                    return Value{static_cast<int>(val)};
+                    return ImmerValue{static_cast<int>(val)};
                 }
-                return Value{val};
+                return ImmerValue{val};
             } catch (...) {
-                return Value{std::stod(num_str)};
+                return ImmerValue{std::stod(num_str)};
             }
         }
     }
 
-    Value parse_bool() {
+    ImmerValue parse_bool() {
         if (json_.compare(pos_, 4, "true") == 0) {
             pos_ += 4;
-            return Value{true};
+            return ImmerValue{true};
         }
         if (json_.compare(pos_, 5, "false") == 0) {
             pos_ += 5;
-            return Value{false};
+            return ImmerValue{false};
         }
         throw std::runtime_error("Expected 'true' or 'false' at position " + std::to_string(pos_));
     }
 
-    Value parse_null() {
+    ImmerValue parse_null() {
         if (json_.compare(pos_, 4, "null") == 0) {
             pos_ += 4;
-            return Value{};
+            return ImmerValue{};
         }
         throw std::runtime_error("Expected 'null' at position " + std::to_string(pos_));
     }
@@ -1382,13 +1382,13 @@ private:
 
 } // anonymous namespace
 
-std::string to_json(const Value& val, bool compact) {
+std::string to_json(const ImmerValue& val, bool compact) {
     std::ostringstream oss;
     to_json_impl(val, oss, compact, 0);
     return oss.str();
 }
 
-Value from_json(const std::string& json_str, std::string* error_out) {
+ImmerValue from_json(const std::string& json_str, std::string* error_out) {
     JsonParser parser(json_str);
     return parser.parse(error_out);
 }
