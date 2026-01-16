@@ -39,8 +39,9 @@ std::string value_to_string(const Value& val) {
     return std::visit(
         [](const auto& arg) -> std::string {
             using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, std::string>) {
-                return "\"" + arg + "\"";
+            // Container Boxing: strings are now BoxedString
+            if constexpr (std::is_same_v<T, BoxedString>) {
+                return "\"" + arg.get() + "\"";
             } else if constexpr (std::is_same_v<T, bool>) {
                 return arg ? "true" : "false";
             } else if constexpr (std::is_same_v<T, int8_t>) {
@@ -75,14 +76,15 @@ std::string value_to_string(const Value& val) {
                 return format_float_array(arg.get(), "mat4x3");
             } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
                 return format_float_array(arg.get(), "mat4");
-            } else if constexpr (std::is_same_v<T, ValueMap>) {
-                return "{map:" + std::to_string(arg.size()) + "}";
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
-                return "[vector:" + std::to_string(arg.size()) + "]";
-            } else if constexpr (std::is_same_v<T, ValueArray>) {
-                return "[array:" + std::to_string(arg.size()) + "]";
-            } else if constexpr (std::is_same_v<T, ValueTable>) {
-                return "<table:" + std::to_string(arg.size()) + ">";
+            } else if constexpr (std::is_same_v<T, BoxedValueMap>) {
+                // Container Boxing: unbox to get size
+                return "{map:" + std::to_string(arg.get().size()) + "}";
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
+                return "[vector:" + std::to_string(arg.get().size()) + "]";
+            } else if constexpr (std::is_same_v<T, BoxedValueArray>) {
+                return "[array:" + std::to_string(arg.get().size()) + "]";
+            } else if constexpr (std::is_same_v<T, BoxedValueTable>) {
+                return "<table:" + std::to_string(arg.get().size()) + ">";
             } else {
                 return "null";
             }
@@ -95,8 +97,9 @@ void print_value(const Value& val, const std::string& prefix, std::size_t depth)
         [&](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
 
-            if constexpr (std::is_same_v<T, std::string>) {
-                std::cout << std::string(depth * 2, ' ') << prefix << arg << "\n";
+            // Container Boxing: strings are now BoxedString
+            if constexpr (std::is_same_v<T, BoxedString>) {
+                std::cout << std::string(depth * 2, ' ') << prefix << arg.get() << "\n";
             } else if constexpr (std::is_same_v<T, bool>) {
                 std::cout << std::string(depth * 2, ' ') << prefix << (arg ? "true" : "false") << "\n";
             } else if constexpr (std::is_same_v<T, int8_t>) {
@@ -120,25 +123,33 @@ void print_value(const Value& val, const std::string& prefix, std::size_t depth)
                 std::cout << std::string(depth * 2, ' ') << prefix << format_float_array(arg.get(), "mat4x3") << "\n";
             } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
                 std::cout << std::string(depth * 2, ' ') << prefix << format_float_array(arg.get(), "mat4") << "\n";
-            } else if constexpr (std::is_same_v<T, ValueMap>) {
-                for (const auto& [k, v] : arg) {
+            } else if constexpr (std::is_same_v<T, BoxedValueMap>) {
+                // Container Boxing: unbox the map and iterate
+                const ValueMap& m = arg.get();
+                for (const auto& [k, v] : m) {
                     std::cout << std::string(depth * 2, ' ') << prefix << k << ":\n";
-                    print_value(*v, "", depth + 1);
+                    print_value(v, "", depth + 1);  // v is Value directly, no dereference
                 }
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
-                for (std::size_t i = 0; i < arg.size(); ++i) {
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
+                // Container Boxing: unbox the vector and iterate
+                const ValueVector& vec = arg.get();
+                for (std::size_t i = 0; i < vec.size(); ++i) {
                     std::cout << std::string(depth * 2, ' ') << prefix << "[" << i << "]:\n";
-                    print_value(*arg[i], "", depth + 1);
+                    print_value(vec[i], "", depth + 1);  // vec[i] is Value directly, no dereference
                 }
-            } else if constexpr (std::is_same_v<T, ValueArray>) {
-                for (std::size_t i = 0; i < arg.size(); ++i) {
+            } else if constexpr (std::is_same_v<T, BoxedValueArray>) {
+                // Container Boxing: unbox the array and iterate
+                const ValueArray& arr = arg.get();
+                for (std::size_t i = 0; i < arr.size(); ++i) {
                     std::cout << std::string(depth * 2, ' ') << prefix << "(" << i << "):\n";
-                    print_value(*arg[i], "", depth + 1);
+                    print_value(arr[i], "", depth + 1);  // arr[i] is Value directly, no dereference
                 }
-            } else if constexpr (std::is_same_v<T, ValueTable>) {
-                for (const auto& entry : arg) {
+            } else if constexpr (std::is_same_v<T, BoxedValueTable>) {
+                // Container Boxing: unbox the table and iterate
+                const ValueTable& tbl = arg.get();
+                for (const auto& entry : tbl) {
                     std::cout << std::string(depth * 2, ' ') << prefix << "<" << entry.id << ">:\n";
-                    print_value(*entry.value, "", depth + 1);
+                    print_value(entry.value.get(), "", depth + 1);  // TableEntry::value is still ValueBox
                 }
             } else if constexpr (std::is_same_v<T, std::monostate>) {
                 std::cout << std::string(depth * 2, ' ') << prefix << "null\n";
@@ -439,34 +450,43 @@ void serialize_value(ByteWriter& w, const Value& val) {
             } else if constexpr (std::is_same_v<T, bool>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Bool));
                 w.write_u8(arg ? 0x01 : 0x00);
-            } else if constexpr (std::is_same_v<T, std::string>) {
+            } else if constexpr (std::is_same_v<T, BoxedString>) {
+                // Container Boxing: strings are now BoxedString
                 w.write_u8(static_cast<uint8_t>(TypeTag::String));
-                w.write_string(arg);
-            } else if constexpr (std::is_same_v<T, ValueMap>) {
+                w.write_string(arg.get());
+            } else if constexpr (std::is_same_v<T, BoxedValueMap>) {
+                // Container Boxing: unbox and serialize
+                const ValueMap& m = arg.get();
                 w.write_u8(static_cast<uint8_t>(TypeTag::Map));
-                w.write_u32(static_cast<uint32_t>(arg.size()));
-                for (const auto& [k, v] : arg) {
+                w.write_u32(static_cast<uint32_t>(m.size()));
+                for (const auto& [k, v] : m) {
                     w.write_string(k);
-                    serialize_value(w, *v);
+                    serialize_value(w, v);  // v is Value directly, no dereference
                 }
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
+                // Container Boxing: unbox and serialize
+                const ValueVector& vec = arg.get();
                 w.write_u8(static_cast<uint8_t>(TypeTag::Vector));
-                w.write_u32(static_cast<uint32_t>(arg.size()));
-                for (const auto& v : arg) {
-                    serialize_value(w, *v);
+                w.write_u32(static_cast<uint32_t>(vec.size()));
+                for (const auto& v : vec) {
+                    serialize_value(w, v);  // v is Value directly, no dereference
                 }
-            } else if constexpr (std::is_same_v<T, ValueArray>) {
+            } else if constexpr (std::is_same_v<T, BoxedValueArray>) {
+                // Container Boxing: unbox and serialize
+                const ValueArray& arr = arg.get();
                 w.write_u8(static_cast<uint8_t>(TypeTag::Array));
-                w.write_u32(static_cast<uint32_t>(arg.size()));
-                for (std::size_t i = 0; i < arg.size(); ++i) {
-                    serialize_value(w, *arg[i]);
+                w.write_u32(static_cast<uint32_t>(arr.size()));
+                for (std::size_t i = 0; i < arr.size(); ++i) {
+                    serialize_value(w, arr[i]);  // arr[i] is Value directly, no dereference
                 }
-            } else if constexpr (std::is_same_v<T, ValueTable>) {
+            } else if constexpr (std::is_same_v<T, BoxedValueTable>) {
+                // Container Boxing: unbox and serialize
+                const ValueTable& tbl = arg.get();
                 w.write_u8(static_cast<uint8_t>(TypeTag::Table));
-                w.write_u32(static_cast<uint32_t>(arg.size()));
-                for (const auto& entry : arg) {
+                w.write_u32(static_cast<uint32_t>(tbl.size()));
+                for (const auto& entry : tbl) {
                     w.write_string(entry.id);
-                    serialize_value(w, *entry.value);
+                    serialize_value(w, entry.value.get());  // TableEntry::value is still ValueBox
                 }
             } else if constexpr (std::is_same_v<T, Vec2>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Vec2));
@@ -640,29 +660,35 @@ std::size_t calc_serialized_size(const Value& val) {
                 size += 8;
             } else if constexpr (std::is_same_v<T, bool>) {
                 size += 1;
-            } else if constexpr (std::is_same_v<T, std::string>) {
-                size += 4 + arg.size();
-            } else if constexpr (std::is_same_v<T, ValueMap>) {
+            } else if constexpr (std::is_same_v<T, BoxedString>) {
+                // Container Boxing: strings are now BoxedString
+                size += 4 + arg.get().size();
+            } else if constexpr (std::is_same_v<T, BoxedValueMap>) {
+                // Container Boxing: unbox to iterate
+                const ValueMap& m = arg.get();
                 size += 4; // count
-                for (const auto& [k, v] : arg) {
+                for (const auto& [k, v] : m) {
                     size += 4 + k.size(); // key string
-                    size += calc_serialized_size(*v);
+                    size += calc_serialized_size(v);  // v is Value directly
                 }
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
+                const ValueVector& vec = arg.get();
                 size += 4; // count
-                for (const auto& v : arg) {
-                    size += calc_serialized_size(*v);
+                for (const auto& v : vec) {
+                    size += calc_serialized_size(v);  // v is Value directly
                 }
-            } else if constexpr (std::is_same_v<T, ValueArray>) {
+            } else if constexpr (std::is_same_v<T, BoxedValueArray>) {
+                const ValueArray& arr = arg.get();
                 size += 4; // count
-                for (std::size_t i = 0; i < arg.size(); ++i) {
-                    size += calc_serialized_size(*arg[i]);
+                for (std::size_t i = 0; i < arr.size(); ++i) {
+                    size += calc_serialized_size(arr[i]);  // arr[i] is Value directly
                 }
-            } else if constexpr (std::is_same_v<T, ValueTable>) {
+            } else if constexpr (std::is_same_v<T, BoxedValueTable>) {
+                const ValueTable& tbl = arg.get();
                 size += 4; // count
-                for (const auto& entry : arg) {
+                for (const auto& entry : tbl) {
                     size += 4 + entry.id.size(); // id string
-                    size += calc_serialized_size(*entry.value);
+                    size += calc_serialized_size(entry.value.get());  // TableEntry::value is still ValueBox
                 }
             } else if constexpr (std::is_same_v<T, Vec2>) {
                 size += 2 * sizeof(float); // 2 floats
@@ -838,34 +864,40 @@ void serialize_value_direct(DirectByteWriter& w, const Value& val) {
             } else if constexpr (std::is_same_v<T, bool>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Bool));
                 w.write_u8(arg ? 0x01 : 0x00);
-            } else if constexpr (std::is_same_v<T, std::string>) {
+            } else if constexpr (std::is_same_v<T, BoxedString>) {
+                // Container Boxing: strings are now BoxedString
                 w.write_u8(static_cast<uint8_t>(TypeTag::String));
-                w.write_string(arg);
-            } else if constexpr (std::is_same_v<T, ValueMap>) {
+                w.write_string(arg.get());
+            } else if constexpr (std::is_same_v<T, BoxedValueMap>) {
+                // Container Boxing: unbox and serialize
+                const ValueMap& m = arg.get();
                 w.write_u8(static_cast<uint8_t>(TypeTag::Map));
-                w.write_u32(static_cast<uint32_t>(arg.size()));
-                for (const auto& [k, v] : arg) {
+                w.write_u32(static_cast<uint32_t>(m.size()));
+                for (const auto& [k, v] : m) {
                     w.write_string(k);
-                    serialize_value_direct(w, *v);
+                    serialize_value_direct(w, v);  // v is Value directly
                 }
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
+                const ValueVector& vec = arg.get();
                 w.write_u8(static_cast<uint8_t>(TypeTag::Vector));
-                w.write_u32(static_cast<uint32_t>(arg.size()));
-                for (const auto& v : arg) {
-                    serialize_value_direct(w, *v);
+                w.write_u32(static_cast<uint32_t>(vec.size()));
+                for (const auto& v : vec) {
+                    serialize_value_direct(w, v);  // v is Value directly
                 }
-            } else if constexpr (std::is_same_v<T, ValueArray>) {
+            } else if constexpr (std::is_same_v<T, BoxedValueArray>) {
+                const ValueArray& arr = arg.get();
                 w.write_u8(static_cast<uint8_t>(TypeTag::Array));
-                w.write_u32(static_cast<uint32_t>(arg.size()));
-                for (std::size_t i = 0; i < arg.size(); ++i) {
-                    serialize_value_direct(w, *arg[i]);
+                w.write_u32(static_cast<uint32_t>(arr.size()));
+                for (std::size_t i = 0; i < arr.size(); ++i) {
+                    serialize_value_direct(w, arr[i]);  // arr[i] is Value directly
                 }
-            } else if constexpr (std::is_same_v<T, ValueTable>) {
+            } else if constexpr (std::is_same_v<T, BoxedValueTable>) {
+                const ValueTable& tbl = arg.get();
                 w.write_u8(static_cast<uint8_t>(TypeTag::Table));
-                w.write_u32(static_cast<uint32_t>(arg.size()));
-                for (const auto& entry : arg) {
+                w.write_u32(static_cast<uint32_t>(tbl.size()));
+                for (const auto& entry : tbl) {
                     w.write_string(entry.id);
-                    serialize_value_direct(w, *entry.value);
+                    serialize_value_direct(w, entry.value.get());  // TableEntry::value is still ValueBox
                 }
             } else if constexpr (std::is_same_v<T, Vec2>) {
                 w.write_u8(static_cast<uint8_t>(TypeTag::Vec2));
@@ -993,8 +1025,9 @@ void to_json_impl(const Value& val, std::ostringstream& oss, bool compact, int i
                 oss << std::setprecision(7) << arg;
             } else if constexpr (std::is_same_v<T, double>) {
                 oss << std::setprecision(15) << arg;
-            } else if constexpr (std::is_same_v<T, std::string>) {
-                oss << "\"" << json_escape_string(arg) << "\"";
+            } else if constexpr (std::is_same_v<T, BoxedString>) {
+                // Container Boxing: strings are now BoxedString
+                oss << "\"" << json_escape_string(arg.get()) << "\"";
             } else if constexpr (std::is_same_v<T, Vec2>) {
                 write_float_array_json(arg, oss);
             } else if constexpr (std::is_same_v<T, Vec3>) {
@@ -1007,61 +1040,66 @@ void to_json_impl(const Value& val, std::ostringstream& oss, bool compact, int i
                 write_float_array_json(arg.get(), oss);
             } else if constexpr (std::is_same_v<T, Value::boxed_mat4>) {
                 write_float_array_json(arg.get(), oss);
-            } else if constexpr (std::is_same_v<T, ValueMap>) {
-                if (arg.size() == 0) {
+            } else if constexpr (std::is_same_v<T, BoxedValueMap>) {
+                // Container Boxing: unbox the map
+                const ValueMap& m = arg.get();
+                if (m.size() == 0) {
                     oss << "{}";
                 } else {
                     oss << "{" << newline;
                     bool first = true;
-                    for (const auto& [k, v] : arg) {
+                    for (const auto& [k, v] : m) {
                         if (!first)
                             oss << "," << newline;
                         first = false;
                         oss << child_indent << "\"" << json_escape_string(k) << "\":" << space_after_colon;
-                        to_json_impl(*v, oss, compact, indent_level + 1);
+                        to_json_impl(v, oss, compact, indent_level + 1);  // v is Value directly
                     }
                     oss << newline << indent << "}";
                 }
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
-                if (arg.size() == 0) {
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
+                const ValueVector& vec = arg.get();
+                if (vec.size() == 0) {
                     oss << "[]";
                 } else {
                     oss << "[" << newline;
                     bool first = true;
-                    for (const auto& v : arg) {
+                    for (const auto& v : vec) {
                         if (!first)
                             oss << "," << newline;
                         first = false;
                         oss << child_indent;
-                        to_json_impl(*v, oss, compact, indent_level + 1);
+                        to_json_impl(v, oss, compact, indent_level + 1);  // v is Value directly
                     }
                     oss << newline << indent << "]";
                 }
-            } else if constexpr (std::is_same_v<T, ValueArray>) {
-                if (arg.size() == 0) {
+            } else if constexpr (std::is_same_v<T, BoxedValueArray>) {
+                const ValueArray& arr = arg.get();
+                if (arr.size() == 0) {
                     oss << "[]";
                 } else {
                     oss << "[" << newline;
-                    for (std::size_t i = 0; i < arg.size(); ++i) {
+                    for (std::size_t i = 0; i < arr.size(); ++i) {
                         if (i > 0)
                             oss << "," << newline;
                         oss << child_indent;
-                        to_json_impl(*arg[i], oss, compact, indent_level + 1);
+                        to_json_impl(arr[i], oss, compact, indent_level + 1);  // arr[i] is Value directly
                     }
                     oss << newline << indent << "]";
                 }
-            } else if constexpr (std::is_same_v<T, ValueTable>) {
-                if (arg.size() == 0) {
+            } else if constexpr (std::is_same_v<T, BoxedValueTable>) {
+                const ValueTable& tbl = arg.get();
+                if (tbl.size() == 0) {
                     oss << "{}";
                 } else {
                     oss << "{" << newline;
                     bool first = true;
-                    for (const auto& entry : arg) {
+                    for (const auto& entry : tbl) {
                         if (!first)
                             oss << "," << newline;
                         first = false;
                         oss << child_indent << "\"" << json_escape_string(entry.id) << "\":" << space_after_colon;
-                        to_json_impl(*entry.value, oss, compact, indent_level + 1);
+                        to_json_impl(entry.value.get(), oss, compact, indent_level + 1);  // TableEntry::value is still ValueBox
                     }
                     oss << newline << indent << "}";
                 }

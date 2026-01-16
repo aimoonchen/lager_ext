@@ -336,7 +336,7 @@ void demo_single_process() {
     Value original = generate_large_scene(OBJECT_COUNT);
 
     std::cout << "\nOriginal Value created.\n";
-    std::cout << "Scene objects count: " << original.at("objects").size() << "\n";
+    std::cout << "Scene objects count: " << original.at("scene_object_map").size() << "\n";
 
     // Method 1: Serialization/Deserialization
     std::cout << "\n--- Method 1: Serialization/Deserialization ---\n";
