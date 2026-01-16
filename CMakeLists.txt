@@ -195,6 +195,11 @@ target_include_directories(lager_ext
 target_compile_definitions(lager_ext 
     # Note: LAGER_EXT_ENABLE_IPC is centrally managed in lager_ext_config.h
     # CMake's LAGER_EXT_ENABLE_IPC option controls which source files are compiled
+    PUBLIC
+        # Silence C++23 deprecation warnings from immer library
+        # immer uses std::aligned_storage_t which is deprecated in C++23
+        # This is a third-party library issue, not our code
+        _SILENCE_CXX23_ALIGNED_STORAGE_DEPRECATION_WARNING
     PRIVATE
         # Disable debug checks in release mode
         $<$<CONFIG:Release>:NDEBUG>
@@ -423,7 +428,7 @@ if(LAGER_EXT_IS_TOP_LEVEL)
     else()
         message(STATUS "  Library type:    STATIC")
     endif()
-    message(STATUS "  C++ Standard:    C++20")
+    message(STATUS "  C++ Standard:    C++23")
     message(STATUS "  IPC module:      ${LAGER_EXT_ENABLE_IPC}")
     message(STATUS "  Build examples:  ${LAGER_EXT_BUILD_EXAMPLES}")
     message(STATUS "  Build tests:     ${LAGER_EXT_BUILD_TESTS}")
