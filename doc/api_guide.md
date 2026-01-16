@@ -7,7 +7,7 @@ This document provides a comprehensive overview of the public APIs in the `lager
 - [lager\_ext API Guide](#lager_ext-api-guide)
   - [Table of Contents](#table-of-contents)
   - [1. Value Types](#1-value-types)
-    - [1.1 Type Aliases](#11-type-aliases)
+    - [1.1 Type Definition](#11-type-definition)
     - [1.2 Supported Data Types](#12-supported-data-types)
     - [1.3 Construction](#13-construction)
     - [1.4 Type Checking](#14-type-checking)
@@ -130,24 +130,25 @@ This document provides a comprehensive overview of the public APIs in the `lager
 
 ## 1. Value Types
 
-### 1.1 Type Aliases
+### 1.1 Type Definition
 
 ```cpp
 #include <lager_ext/value.h>
 
-// Default single-threaded Value (recommended for most use cases)
-using Value = lager_ext::UnsafeValue;
-
-// Thread-safe Value for multi-threaded scenarios
-using SyncValue = lager_ext::ThreadSafeValue;
+// Value is a concrete type (not a template)
+// Uses immer::default_memory_policy, which is optimized for single-threaded use
+// via IMMER_NO_THREAD_SAFETY=1 in lager_ext_config.h
+using namespace lager_ext;
+Value val = Value::map({{"name", "Alice"}});
 ```
 
-**Memory Policy Variants:**
+**Memory Policy:**
 
-| Type Alias | Memory Policy | Thread Safety | Performance |
-|------------|---------------|---------------|-------------|
-| `Value` (alias for `UnsafeValue`) | `unsafe_memory_policy` | Single-threaded only | Fastest (10-30% faster) |
-| `SyncValue` (alias for `ThreadSafeValue`) | `thread_safe_memory_policy` | Thread-safe | Standard |
+| Type | Memory Policy | Thread Safety | Notes |
+|------|---------------|---------------|-------|
+| `Value` | `immer::default_memory_policy` | Single-threaded only | Optimized via `IMMER_NO_THREAD_SAFETY=1` |
+
+> **Note:** The library uses a single concrete `Value` type (not a template). Thread safety is disabled at compile time for maximum performance. If you need thread-safe values, you must manage synchronization externally.
 
 ### 1.2 Supported Data Types
 
@@ -332,14 +333,14 @@ using namespace lager_ext;
 
 **Available Builders:**
 
-| Single-Threaded Builder | Output Type | Thread-Safe Variant |
-|-------------------------|-------------|---------------------|
-| `MapBuilder` | `Value` containing `ValueMap` | `SyncMapBuilder` |
-| `VectorBuilder` | `Value` containing `ValueVector` | `SyncVectorBuilder` |
-| `ArrayBuilder` | `Value` containing `ValueArray` | `SyncArrayBuilder` |
-| `TableBuilder` | `Value` containing `ValueTable` | `SyncTableBuilder` |
+| Builder | Output Type |
+|---------|-------------|
+| `MapBuilder` | `Value` containing `ValueMap` |
+| `VectorBuilder` | `Value` containing `ValueVector` |
+| `ArrayBuilder` | `Value` containing `ValueArray` |
+| `TableBuilder` | `Value` containing `ValueTable` |
 
-> **Note:** Use the single-threaded builders (`MapBuilder`, etc.) with `Value` for best performance. Use `Sync*` variants with `SyncValue` when thread safety is required.
+> **Note:** All builders are concrete classes (not templates). They use immer's transient API internally for efficient O(n) construction.
 
 ### 2.2 MapBuilder
 
@@ -3467,27 +3468,27 @@ int main() {
 #include <lager_ext/value.h>
 #include <lager_ext/builders.h>
 #include <thread>
+#include <mutex>
 using namespace lager_ext;
 
 int main() {
-    // For single-threaded code, use Value (default, fastest)
-    Value local_state = MapBuilder()
+    // Value is optimized for single-threaded use (IMMER_NO_THREAD_SAFETY=1)
+    Value state = MapBuilder()
         .set("counter", 0)
         .finish();
 
-    // For multi-threaded code, use SyncValue
-    SyncValue shared_state = SyncMapBuilder()
-        .set("counter", 0)
-        .finish();
-
-    // Safe to read from multiple threads
-    std::thread t1([&shared_state]() {
-        SyncValue copy = shared_state;  // atomic refcount
+    // For multi-threaded access, use external synchronization
+    std::mutex state_mutex;
+    
+    std::thread t1([&state, &state_mutex]() {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        Value copy = state;  // Safe under lock
         // ... read copy safely
     });
 
-    std::thread t2([&shared_state]() {
-        SyncValue copy = shared_state;  // atomic refcount
+    std::thread t2([&state, &state_mutex]() {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        Value copy = state;  // Safe under lock
         // ... read copy safely
     });
 
@@ -3503,8 +3504,8 @@ int main() {
 ## Notes
 
 - All `Value` operations are **immutable** - modifications return new values.
-- Use `Value` (alias for `UnsafeValue`) for single-threaded performance (10-30% faster).
-- Use `SyncValue` (alias for `ThreadSafeValue`) when sharing values across threads.
+- `Value` is optimized for single-threaded use via `IMMER_NO_THREAD_SAFETY=1`.
+- For multi-threaded scenarios, use external synchronization (e.g., `std::mutex`).
 - Use `SharedState` for cross-process state synchronization.
 - Builders are essential for efficient O(n) construction of containers.
 - C++20 features are used: concepts, `<=>`, `std::span`, `source_location`.

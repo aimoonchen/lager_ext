@@ -453,15 +453,12 @@ lager::debug::http_server server{store, 8080};
 3. **Value 抽象:** 创建类似 JSON 的动态值类型，用于灵活的状态表示
 
 ```cpp
-// pathlens 中的 SharedValue 概念
-using SharedValue = BasicValue<shared_memory_policy>;
+// lager_ext 的 Value 类型使用 immer::default_memory_policy
+// 通过 IMMER_NO_THREAD_SAFETY=1 优化为单线程模式
+using Value = lager_ext::Value;  // 具体类型，非模板
 
-// 可以跨进程共享的 lager store
-auto shared_store = make_shared_store<SharedAction>(
-    SharedValue{},
-    shared_reducer,
-    shared_memory_segment
-);
+// 如需跨进程共享，请使用 IPC 机制 (SharedBufferSPSC, RemoteBus 等)
+// 而不是共享内存策略
 ```
 
 ---
@@ -1155,7 +1152,8 @@ using shared_memory_policy = immer::memory_policy<
     immer::no_transience_policy,
     false>;
 
-using SharedValue = BasicValue<shared_memory_policy>;
+// 注意：当前 lager_ext 使用 immer::default_memory_policy
+// 跨进程共享需通过 IPC 机制 (如 RemoteBus) 实现
 ```
 
 **关键设计决策：**
