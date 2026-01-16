@@ -10,9 +10,6 @@
 /// - Container types: map, vector, array, table (using immer's immutable containers)
 /// - Null (std::monostate)
 ///
-/// The Value type is templated on a memory policy, allowing users to
-/// customize memory allocation strategies for the underlying immer containers.
-///
 /// ## C++20 Features Used
 /// - Concepts for type constraints
 /// - std::source_location for error diagnostics
@@ -168,66 +165,59 @@ struct TransparentStringEqual {
     [[nodiscard]] bool operator()(std::string_view a, std::string_view b) const noexcept { return a == b; }
 };
 
-// Forward declaration
-template <typename MemoryPolicy>
-struct BasicValue;
+// ============================================================
+// Container Type Forward Declarations
+// ============================================================
 
-template <typename MemoryPolicy>
-using BasicValueBox = immer::box<BasicValue<MemoryPolicy>, MemoryPolicy>;
+// Forward declare Value for container definitions
+struct Value;
+
+/// ValueBox wraps Value in an immer::box for efficient sharing
+using ValueBox = immer::box<Value>;
 
 /// Map container with transparent lookup support
 /// Allows find/count/at operations with string_view without allocation
-template <typename MemoryPolicy>
-using BasicValueMap =
-    immer::map<std::string, BasicValueBox<MemoryPolicy>, TransparentStringHash, TransparentStringEqual, MemoryPolicy>;
+using ValueMap = immer::map<std::string, ValueBox, TransparentStringHash, TransparentStringEqual>;
 
-template <typename MemoryPolicy>
-using BasicValueVector = immer::vector<BasicValueBox<MemoryPolicy>, MemoryPolicy>;
+/// Vector container for ordered sequences
+using ValueVector = immer::vector<ValueBox>;
 
-template <typename MemoryPolicy>
-using BasicValueArray = immer::array<BasicValueBox<MemoryPolicy>, MemoryPolicy>;
+/// Array container for small fixed-size sequences
+using ValueArray = immer::array<ValueBox>;
 
-template <typename MemoryPolicy>
-struct BasicTableEntry {
+/// Table entry with string id
+struct TableEntry {
     std::string id;
-    BasicValueBox<MemoryPolicy> value;
+    ValueBox value;
 
     /// C++20 defaulted equality comparison
     /// Compiler generates operator== and operator!= automatically
-    bool operator==(const BasicTableEntry&) const = default;
+    bool operator==(const TableEntry&) const = default;
 };
 
 /// Table container with transparent lookup support
 /// Allows find/count operations with string_view without allocation
-template <typename MemoryPolicy>
-using BasicValueTable = immer::table<BasicTableEntry<MemoryPolicy>, immer::table_key_fn, TransparentStringHash,
-                                     TransparentStringEqual, MemoryPolicy>;
+using ValueTable = immer::table<TableEntry, immer::table_key_fn, TransparentStringHash, TransparentStringEqual>;
 
 // Boxed matrix types (reduces variant size from ~72 to ~40 bytes)
-template <typename MemoryPolicy>
-using BoxedMat3 = immer::box<Mat3, MemoryPolicy>;
-
-template <typename MemoryPolicy>
-using BoxedMat4x3 = immer::box<Mat4x3, MemoryPolicy>;
-
-template <typename MemoryPolicy>
-using BoxedMat4 = immer::box<Mat4, MemoryPolicy>;
+using BoxedMat3 = immer::box<Mat3>;
+using BoxedMat4x3 = immer::box<Mat4x3>;
+using BoxedMat4 = immer::box<Mat4>;
 
 /// @brief Byte buffer type for binary serialization
 using ByteBuffer = std::vector<uint8_t>;
 
-template <typename MemoryPolicy>
-struct BasicValue {
-    using memory_policy = MemoryPolicy;
-    using value_box = BasicValueBox<MemoryPolicy>;
-    using value_map = BasicValueMap<MemoryPolicy>;
-    using value_vector = BasicValueVector<MemoryPolicy>;
-    using value_array = BasicValueArray<MemoryPolicy>;
-    using value_table = BasicValueTable<MemoryPolicy>;
-    using table_entry = BasicTableEntry<MemoryPolicy>;
-    using boxed_mat3 = BoxedMat3<MemoryPolicy>;
-    using boxed_mat4x3 = BoxedMat4x3<MemoryPolicy>;
-    using boxed_mat4 = BoxedMat4<MemoryPolicy>;
+struct Value {
+    // Type aliases for container types
+    using value_box = ValueBox;
+    using value_map = ValueMap;
+    using value_vector = ValueVector;
+    using value_array = ValueArray;
+    using value_table = ValueTable;
+    using table_entry = TableEntry;
+    using boxed_mat3 = BoxedMat3;
+    using boxed_mat4x3 = BoxedMat4x3;
+    using boxed_mat4 = BoxedMat4;
 
     std::variant<int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t, float, double, bool,
                  std::string, Vec2, Vec3, Vec4, boxed_mat3, boxed_mat4x3, boxed_mat4, value_map, value_vector,
@@ -239,99 +229,99 @@ struct BasicValue {
     //   1. Container types (map, vector, etc.) are not constexpr-constructible
     //   2. Value is designed for runtime dynamic data (like JSON), not compile-time constants
     //   3. Consistency: most constructors can't be constexpr anyway
-    BasicValue() noexcept : data(std::monostate{}) {}
-    BasicValue(int8_t v) noexcept : data(v) {}
-    BasicValue(int16_t v) noexcept : data(v) {}
-    BasicValue(int32_t v) noexcept : data(v) {}
-    BasicValue(int64_t v) noexcept : data(v) {}
-    BasicValue(uint8_t v) noexcept : data(v) {}
-    BasicValue(uint16_t v) noexcept : data(v) {}
-    BasicValue(uint32_t v) noexcept : data(v) {}
-    BasicValue(uint64_t v) noexcept : data(v) {}
-    BasicValue(float v) noexcept : data(v) {}
-    BasicValue(double v) noexcept : data(v) {}
-    BasicValue(bool v) noexcept : data(v) {}
-    BasicValue(const std::string& v) : data(v) {}
-    BasicValue(std::string&& v) noexcept : data(std::move(v)) {}
-    BasicValue(const char* v) : data(std::in_place_type<std::string>, v) {}
-    BasicValue(Vec2 v) noexcept : data(v) {}
-    BasicValue(Vec3 v) noexcept : data(v) {}
-    BasicValue(Vec4 v) noexcept : data(v) {}
-    BasicValue(const Mat3& v) : data(boxed_mat3{v}) {}
-    BasicValue(const Mat4x3& v) : data(boxed_mat4x3{v}) {}
-    BasicValue(const Mat4& v) : data(boxed_mat4{v}) {}
-    BasicValue(boxed_mat3 v) : data(std::move(v)) {}
-    BasicValue(boxed_mat4x3 v) : data(std::move(v)) {}
-    BasicValue(boxed_mat4 v) : data(std::move(v)) {}
-    BasicValue(value_map v) : data(std::move(v)) {}
-    BasicValue(value_vector v) : data(std::move(v)) {}
-    BasicValue(value_array v) : data(std::move(v)) {}
-    BasicValue(value_table v) : data(std::move(v)) {}
+    Value() noexcept : data(std::monostate{}) {}
+    Value(int8_t v) noexcept : data(v) {}
+    Value(int16_t v) noexcept : data(v) {}
+    Value(int32_t v) noexcept : data(v) {}
+    Value(int64_t v) noexcept : data(v) {}
+    Value(uint8_t v) noexcept : data(v) {}
+    Value(uint16_t v) noexcept : data(v) {}
+    Value(uint32_t v) noexcept : data(v) {}
+    Value(uint64_t v) noexcept : data(v) {}
+    Value(float v) noexcept : data(v) {}
+    Value(double v) noexcept : data(v) {}
+    Value(bool v) noexcept : data(v) {}
+    Value(const std::string& v) : data(v) {}
+    Value(std::string&& v) noexcept : data(std::move(v)) {}
+    Value(const char* v) : data(std::in_place_type<std::string>, v) {}
+    Value(Vec2 v) noexcept : data(v) {}
+    Value(Vec3 v) noexcept : data(v) {}
+    Value(Vec4 v) noexcept : data(v) {}
+    Value(const Mat3& v) : data(boxed_mat3{v}) {}
+    Value(const Mat4x3& v) : data(boxed_mat4x3{v}) {}
+    Value(const Mat4& v) : data(boxed_mat4{v}) {}
+    Value(boxed_mat3 v) : data(std::move(v)) {}
+    Value(boxed_mat4x3 v) : data(std::move(v)) {}
+    Value(boxed_mat4 v) : data(std::move(v)) {}
+    Value(value_map v) : data(std::move(v)) {}
+    Value(value_vector v) : data(std::move(v)) {}
+    Value(value_array v) : data(std::move(v)) {}
+    Value(value_table v) : data(std::move(v)) {}
 
     // Factory functions for container types
-    static BasicValue map(std::initializer_list<std::pair<std::string, BasicValue>> init) {
+    static Value map(std::initializer_list<std::pair<std::string, Value>> init) {
         auto t = value_map{}.transient();
         for (const auto& [key, val] : init) {
             t.set(key, value_box{val});
         }
-        return BasicValue{t.persistent()};
+        return Value{t.persistent()};
     }
 
-    static BasicValue vector(std::initializer_list<BasicValue> init) {
+    static Value vector(std::initializer_list<Value> init) {
         auto t = value_vector{}.transient();
         for (const auto& val : init) {
             t.push_back(value_box{val});
         }
-        return BasicValue{t.persistent()};
+        return Value{t.persistent()};
     }
 
-    static BasicValue array(std::initializer_list<BasicValue> init) {
+    static Value array(std::initializer_list<Value> init) {
         value_array result;
         for (const auto& val : init) {
             result = std::move(result).push_back(value_box{val});
         }
-        return BasicValue{std::move(result)};
+        return Value{std::move(result)};
     }
 
-    static BasicValue table(std::initializer_list<std::pair<std::string, BasicValue>> init) {
+    static Value table(std::initializer_list<std::pair<std::string, Value>> init) {
         auto t = value_table{}.transient();
         for (const auto& [id, val] : init) {
             t.insert(table_entry{id, value_box{val}});
         }
-        return BasicValue{t.persistent()};
+        return Value{t.persistent()};
     }
 
     /// Factory functions for math types with explicit parameters
-    static BasicValue vec2(float x, float y) { return BasicValue{Vec2{x, y}}; }
+    static Value vec2(float x, float y) { return Value{Vec2{x, y}}; }
 
-    static BasicValue vec3(float x, float y, float z) { return BasicValue{Vec3{x, y, z}}; }
+    static Value vec3(float x, float y, float z) { return Value{Vec3{x, y, z}}; }
 
-    static BasicValue vec4(float x, float y, float z, float w) { return BasicValue{Vec4{x, y, z, w}}; }
+    static Value vec4(float x, float y, float z, float w) { return Value{Vec4{x, y, z, w}}; }
 
     /// Factory functions for math types from raw float pointers
     /// @note Useful for interop with other math libraries (GLM, Eigen, etc.)
-    static BasicValue vec2(const float* ptr) { return BasicValue{Vec2{ptr[0], ptr[1]}}; }
+    static Value vec2(const float* ptr) { return Value{Vec2{ptr[0], ptr[1]}}; }
 
-    static BasicValue vec3(const float* ptr) { return BasicValue{Vec3{ptr[0], ptr[1], ptr[2]}}; }
+    static Value vec3(const float* ptr) { return Value{Vec3{ptr[0], ptr[1], ptr[2]}}; }
 
-    static BasicValue vec4(const float* ptr) { return BasicValue{Vec4{ptr[0], ptr[1], ptr[2], ptr[3]}}; }
+    static Value vec4(const float* ptr) { return Value{Vec4{ptr[0], ptr[1], ptr[2], ptr[3]}}; }
 
-    static BasicValue mat3(const float* ptr) {
+    static Value mat3(const float* ptr) {
         Mat3 m;
         std::memcpy(m.data(), ptr, sizeof(Mat3));
-        return BasicValue{m};
+        return Value{m};
     }
 
-    static BasicValue mat4x3(const float* ptr) {
+    static Value mat4x3(const float* ptr) {
         Mat4x3 m;
         std::memcpy(m.data(), ptr, sizeof(Mat4x3));
-        return BasicValue{m};
+        return Value{m};
     }
 
-    static BasicValue mat4(const float* ptr) {
+    static Value mat4(const float* ptr) {
         Mat4 m;
         std::memcpy(m.data(), ptr, sizeof(Mat4));
-        return BasicValue{m};
+        return Value{m};
     }
 
     /// Get pointer to contained value of type T, or nullptr if type mismatch
@@ -362,7 +352,7 @@ struct BasicValue {
 
     /// Access element by key (zero-allocation with transparent lookup)
     /// @note std::string and const char* implicitly convert to string_view (C++17+)
-    [[nodiscard]] BasicValue at(std::string_view key) const {
+    [[nodiscard]] Value at(std::string_view key) const {
         if (auto* m = get_if<value_map>()) {
             if (auto* found = m->find(key))
                 return found->get();
@@ -372,10 +362,10 @@ struct BasicValue {
                 return found->value.get();
         }
         detail::log_key_error("Value::at", key, "not found or type mismatch");
-        return BasicValue{};
+        return Value{};
     }
 
-    [[nodiscard]] BasicValue at(std::size_t index) const {
+    [[nodiscard]] Value at(std::size_t index) const {
         if (auto* v = get_if<value_vector>()) {
             if (index < v->size())
                 return (*v)[index].get();
@@ -385,7 +375,7 @@ struct BasicValue {
                 return (*a)[index].get();
         }
         detail::log_index_error("Value::at", index, "out of range or type mismatch");
-        return BasicValue{};
+        return Value{};
     }
 
     /// Get value as type T, or return default if type mismatch
@@ -463,7 +453,7 @@ struct BasicValue {
 
     /// Set value by string_view key
     /// @note Allocation is unavoidable since immer::map needs owned keys for persistence.
-    [[nodiscard]] BasicValue set(std::string_view key, BasicValue val) const {
+    [[nodiscard]] Value set(std::string_view key, Value val) const {
         if (auto* m = get_if<value_map>())
             return m->set(std::string{key}, value_box{std::move(val)});
         if (auto* t = get_if<value_table>())
@@ -473,18 +463,18 @@ struct BasicValue {
     }
 
     /// Set value by const char* key (disambiguation for string literals)
-    [[nodiscard]] BasicValue set(const char* key, BasicValue val) const {
+    [[nodiscard]] Value set(const char* key, Value val) const {
         return set(std::string_view{key}, std::move(val));
     }
 
     /// Set value by const string& key (disambiguation for string lvalue)
-    [[nodiscard]] BasicValue set(const std::string& key, BasicValue val) const {
+    [[nodiscard]] Value set(const std::string& key, Value val) const {
         return set(std::string_view{key}, std::move(val));
     }
 
     /// Set value by rvalue string key (zero-copy key transfer)
     /// @note Use this overload when you have a std::string that can be moved.
-    [[nodiscard]] BasicValue set(std::string&& key, BasicValue val) const {
+    [[nodiscard]] Value set(std::string&& key, Value val) const {
         if (auto* m = get_if<value_map>())
             return m->set(std::move(key), value_box{std::move(val)});
         if (auto* t = get_if<value_table>())
@@ -493,7 +483,7 @@ struct BasicValue {
         return *this;
     }
 
-    [[nodiscard]] BasicValue set(std::size_t index, BasicValue val) const {
+    [[nodiscard]] Value set(std::size_t index, Value val) const {
         if (auto* v = get_if<value_vector>()) {
             if (index < v->size())
                 return v->set(index, value_box{std::move(val)});
@@ -507,7 +497,7 @@ struct BasicValue {
         return *this;
     }
 
-    [[nodiscard]] BasicValue set_vivify(std::string_view key, BasicValue val) const {
+    [[nodiscard]] Value set_vivify(std::string_view key, Value val) const {
         if (auto* m = get_if<value_map>())
             return m->set(std::string{key}, value_box{std::move(val)});
         if (auto* t = get_if<value_table>())
@@ -519,17 +509,17 @@ struct BasicValue {
     }
 
     /// Set value by const char* key with auto-vivification (disambiguation for string literals)
-    [[nodiscard]] BasicValue set_vivify(const char* key, BasicValue val) const {
+    [[nodiscard]] Value set_vivify(const char* key, Value val) const {
         return set_vivify(std::string_view{key}, std::move(val));
     }
 
     /// Set value by const string& key with auto-vivification (disambiguation for string lvalue)
-    [[nodiscard]] BasicValue set_vivify(const std::string& key, BasicValue val) const {
+    [[nodiscard]] Value set_vivify(const std::string& key, Value val) const {
         return set_vivify(std::string_view{key}, std::move(val));
     }
 
     /// Set value by rvalue string key with auto-vivification (zero-copy key transfer)
-    [[nodiscard]] BasicValue set_vivify(std::string&& key, BasicValue val) const {
+    [[nodiscard]] Value set_vivify(std::string&& key, Value val) const {
         if (auto* m = get_if<value_map>())
             return m->set(std::move(key), value_box{std::move(val)});
         if (auto* t = get_if<value_table>())
@@ -540,7 +530,7 @@ struct BasicValue {
         return *this;
     }
 
-    [[nodiscard]] BasicValue set_vivify(std::size_t index, BasicValue val) const {
+    [[nodiscard]] Value set_vivify(std::size_t index, Value val) const {
         if (auto* v = get_if<value_vector>()) {
             if (index < v->size())
                 return v->set(index, value_box{std::move(val)});
@@ -593,47 +583,21 @@ struct BasicValue {
 };
 
 // ============================================================
-// Value Type Aliases
-//
-// Since IMMER_NO_THREAD_SAFETY=1 is set in lager_ext_config.h:
-//   - immer::default_memory_policy is already the optimal single-threaded policy
-//   - No custom memory policy aliases needed
-//   - All templates use immer::default_memory_policy as default parameter
-//
-// The default_memory_policy (when IMMER_NO_THREAD_SAFETY=1) provides:
-//   - unsafe_free_list_heap_policy<cpp_heap> (no-lock free list)
-//   - unsafe_refcount_policy (non-atomic reference counting)
-//   - no_lock_policy (no spinlocks)
-// ============================================================
-
-// Value = BasicValue<> uses immer::default_memory_policy by default
-// Note: Value is already defined in value_fwd.h, redeclared here for clarity
-using Value = BasicValue<>;
-using ValueBox = BasicValueBox<immer::default_memory_policy>;
-using ValueMap = BasicValueMap<immer::default_memory_policy>;
-using ValueVector = BasicValueVector<immer::default_memory_policy>;
-using ValueArray = BasicValueArray<immer::default_memory_policy>;
-using ValueTable = BasicValueTable<immer::default_memory_policy>;
-using TableEntry = BasicTableEntry<immer::default_memory_policy>;
-
-// ============================================================
-// BasicValue comparison operators (C++20)
+// Value comparison operators (C++20)
 //
 // Uses spaceship operator (<=>): compiler auto-generates ==, !=, <, >, <=, >=
 // Note: std::variant supports <=> in C++20, enabling lexicographic comparison
 // ============================================================
 
-/// Equality comparison for BasicValue
-template <typename MemoryPolicy>
-bool operator==(const BasicValue<MemoryPolicy>& a, const BasicValue<MemoryPolicy>& b) {
+/// Equality comparison for Value
+inline bool operator==(const Value& a, const Value& b) {
     return a.data == b.data;
 }
 
-/// Three-way comparison (spaceship operator) for BasicValue
+/// Three-way comparison (spaceship operator) for Value
 /// Enables all comparison operators: ==, !=, <, >, <=, >=
 /// Returns std::partial_ordering because floating-point types may be NaN
-template <typename MemoryPolicy>
-std::partial_ordering operator<=>(const BasicValue<MemoryPolicy>& a, const BasicValue<MemoryPolicy>& b) {
+inline std::partial_ordering operator<=>(const Value& a, const Value& b) {
     // Compare type indices first
     if (a.data.index() != b.data.index()) {
         return a.data.index() <=> b.data.index();
@@ -708,17 +672,5 @@ LAGER_EXT_API void print_value(const Value& val, const std::string& prefix = "",
 // }
 // ============================================================
 LAGER_EXT_API Value create_sample_data();
-
-// ============================================================
-// Extern Template Declarations
-//
-// These declarations prevent implicit instantiation of common template
-// specializations in every translation unit that includes this header.
-// The actual instantiations are in value.cpp, reducing compile time
-// and object file size.
-// ============================================================
-
-extern template struct BasicValue<immer::default_memory_policy>;
-extern template struct BasicTableEntry<immer::default_memory_policy>;
 
 } // namespace lager_ext

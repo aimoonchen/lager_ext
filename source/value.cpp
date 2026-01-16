@@ -1348,25 +1348,4 @@ Value from_json(const std::string& json_str, std::string* error_out) {
 // Note: Path construction from strings is handled by Path constructors in path_types.cpp
 // Path::to_string_path() serialization is also implemented in path_types.cpp
 
-// ============================================================
-// Explicit Template Instantiations
-//
-// These instantiations generate the actual code for the templated classes
-// that are declared with 'extern template' in value.h.
-// This centralizes instantiation in a single translation unit, reducing:
-//   - Compile time (no redundant instantiations across TUs)
-//   - Object file size (no duplicate symbols)
-//   - Link time (fewer symbols to deduplicate)
-// ============================================================
-
-// Explicit instantiation for immer::default_memory_policy
-// Note: Since IMMER_NO_THREAD_SAFETY=1 is set in lager_ext_config.h,
-// default_memory_policy is already configured for single-threaded use.
-template struct BasicValue<immer::default_memory_policy>;
-template struct BasicTableEntry<immer::default_memory_policy>;
-template class BasicMapBuilder<immer::default_memory_policy>;
-template class BasicVectorBuilder<immer::default_memory_policy>;
-template class BasicArrayBuilder<immer::default_memory_policy>;
-template class BasicTableBuilder<immer::default_memory_policy>;
-
 } // namespace lager_ext

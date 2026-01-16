@@ -27,56 +27,40 @@
 // This ensures consistent macro settings across all compilation units
 #include <lager_ext/lager_ext_config.h>
 
-#include <immer/memory_policy.hpp>
-
 namespace lager_ext {
 
 // ============================================================
 // Value Type Forward Declarations
 // ============================================================
 //
+// Value is a concrete type (not a template) optimized for single-threaded use.
 // Since IMMER_NO_THREAD_SAFETY=1 is set in lager_ext_config.h:
 //   - immer::default_memory_policy is already the optimal single-threaded policy
-//   - No custom memory policy aliases needed
-//   - BasicValue template uses immer::default_memory_policy as default parameter
+//   - All immer containers use this policy by default
 //
 // ============================================================
 
-// Forward declare the basic template
-template <typename MemoryPolicy = immer::default_memory_policy>
-struct BasicValue;
-
-/// @brief The primary Value type - optimized for single-threaded use
+/// @brief Forward declaration of the Value type
 /// 
 /// This is the main type for representing JSON-like dynamic data.
 /// Uses immer::default_memory_policy which is configured for single-threaded
 /// high-performance use via lager_ext_config.h.
-using Value = BasicValue<>;
+struct Value;
 
 // ============================================================
 // Builder Type Forward Declarations
 // ============================================================
 
-// Forward declare builder templates
-template <typename MemoryPolicy = immer::default_memory_policy>
-class BasicMapBuilder;
-template <typename MemoryPolicy = immer::default_memory_policy>
-class BasicVectorBuilder;
-template <typename MemoryPolicy = immer::default_memory_policy>
-class BasicArrayBuilder;
-template <typename MemoryPolicy = immer::default_memory_policy>
-class BasicTableBuilder;
-
 /// @brief Builder for constructing map Values
-using MapBuilder = BasicMapBuilder<>;
+class MapBuilder;
 
 /// @brief Builder for constructing vector Values
-using VectorBuilder = BasicVectorBuilder<>;
+class VectorBuilder;
 
 /// @brief Builder for constructing array Values  
-using ArrayBuilder = BasicArrayBuilder<>;
+class ArrayBuilder;
 
 /// @brief Builder for constructing table Values
-using TableBuilder = BasicTableBuilder<>;
+class TableBuilder;
 
 } // namespace lager_ext
