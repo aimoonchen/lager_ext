@@ -304,10 +304,10 @@ public:
     [[nodiscard]] const std::string& last_error() const;
 
 private:
-    Connection subscribe_remote_impl(std::string_view event_name, std::function<void(const Value&)> handler);
-    Connection on_request_impl(std::string_view event_name, std::function<Value(const Value&)> handler);
+    Connection subscribe_remote_impl(std::string_view event_name, std::move_only_function<void(const Value&)> handler);
+    Connection on_request_impl(std::string_view event_name, std::move_only_function<Value(const Value&)> handler);
     Connection subscribe_domain_impl(MessageDomain domain, 
-                                     std::function<void(const DomainEnvelope&, const Value&)> handler);
+                                     std::move_only_function<void(const DomainEnvelope&, const Value&)> handler);
     EventBus& bus_ref();
 
     class Impl;

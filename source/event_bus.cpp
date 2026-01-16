@@ -64,7 +64,7 @@ Connection EventBusImpl::subscribe_single(std::uint64_t hash, DynamicHandler han
     return Connection(slot, this);
 }
 
-Connection EventBusImpl::subscribe_multi(std::unordered_set<std::uint64_t> hashes, DynamicHandler handler,
+Connection EventBusImpl::subscribe_multi(tsl::robin_set<std::uint64_t> hashes, DynamicHandler handler,
                                          GuardFunc guard) {
     auto* slot = create_slot();
     slot->handler = std::move(handler);

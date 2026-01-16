@@ -314,7 +314,7 @@ public:
     //-------------------------------------------------------------------------
 
     std::optional<Channel::ReceivedMessage> tryReceive() {
-        if (!header_) {
+        if (!header_) [[unlikely]] {
             lastError_ = "Channel not initialized";
             return std::nullopt;
         }
@@ -323,8 +323,8 @@ public:
         uint64_t currentRead = header_->readIndex.load(std::memory_order_relaxed);
         uint64_t currentWrite = header_->writeIndex.load(std::memory_order_acquire);
 
-        if (currentRead >= currentWrite) {
-            return std::nullopt; // Empty
+        if (currentRead >= currentWrite) [[likely]] {
+            return std::nullopt; // Empty - common case for polling
         }
 
         // Get message
@@ -384,23 +384,23 @@ public:
     }
 
     int tryReceiveRaw(uint32_t& outMsgId, void* outData, size_t maxSize) {
-        if (!header_) {
+        if (!header_) [[unlikely]] {
             return 0;
         }
 
         uint64_t currentRead = header_->readIndex.load(std::memory_order_relaxed);
         uint64_t currentWrite = header_->writeIndex.load(std::memory_order_acquire);
 
-        if (currentRead >= currentWrite) {
-            return 0; // Empty
+        if (currentRead >= currentWrite) [[likely]] {
+            return 0; // Empty - common case for polling
         }
 
         Message* msg = header_->messageAt(currentRead);
         outMsgId = msg->msgId;
 
         // Copy inline data
-        if (msg->dataSize > 0) {
-            if (msg->dataSize > maxSize) {
+        if (msg->dataSize > 0) [[likely]] {
+            if (msg->dataSize > maxSize) [[unlikely]] {
                 return -1; // Buffer too small
             }
             std::memcpy(outData, msg->inlineData, msg->dataSize);

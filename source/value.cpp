@@ -737,6 +737,11 @@ std::size_t serialized_size(const Value& val) {
 // Helper class to write directly to a pre-allocated buffer
 // OPTIMIZATION: Use memcpy batch writes instead of per-byte operations
 namespace {
+/// DirectByteWriter: writes directly to a pre-allocated buffer
+/// 
+/// OPTIMIZATION: Since serialize_to() already validates buffer size via
+/// calc_serialized_size(), we can eliminate most bounds checks in release builds.
+/// We use [[unlikely]] hints on error paths to help branch prediction.
 class DirectByteWriter {
 public:
     uint8_t* buffer;
@@ -746,14 +751,14 @@ public:
     DirectByteWriter(uint8_t* buf, std::size_t cap) : buffer(buf), capacity(cap) {}
 
     void write_u8(uint8_t v) {
-        if (pos >= capacity)
+        if (pos >= capacity) [[unlikely]]
             throw std::runtime_error("Buffer overflow");
         buffer[pos++] = v;
     }
 
     // 16-bit write with memcpy
     void write_u16(uint16_t v) {
-        if (pos + sizeof(v) > capacity)
+        if (pos + sizeof(v) > capacity) [[unlikely]]
             throw std::runtime_error("Buffer overflow");
         std::memcpy(buffer + pos, &v, sizeof(v));
         pos += sizeof(v);
@@ -763,7 +768,7 @@ public:
 
     // 32-bit write with memcpy
     void write_u32(uint32_t v) {
-        if (pos + sizeof(v) > capacity)
+        if (pos + sizeof(v) > capacity) [[unlikely]]
             throw std::runtime_error("Buffer overflow");
         std::memcpy(buffer + pos, &v, sizeof(v));
         pos += sizeof(v);
@@ -773,7 +778,7 @@ public:
 
     // 32-bit float with memcpy
     void write_f32(float v) {
-        if (pos + sizeof(v) > capacity)
+        if (pos + sizeof(v) > capacity) [[unlikely]]
             throw std::runtime_error("Buffer overflow");
         std::memcpy(buffer + pos, &v, sizeof(v));
         pos += sizeof(v);
@@ -781,7 +786,7 @@ public:
 
     // 64-bit double with memcpy
     void write_f64(double v) {
-        if (pos + sizeof(v) > capacity)
+        if (pos + sizeof(v) > capacity) [[unlikely]]
             throw std::runtime_error("Buffer overflow");
         std::memcpy(buffer + pos, &v, sizeof(v));
         pos += sizeof(v);
@@ -789,14 +794,14 @@ public:
 
     // 64-bit integer with memcpy
     void write_i64(int64_t v) {
-        if (pos + sizeof(v) > capacity)
+        if (pos + sizeof(v) > capacity) [[unlikely]]
             throw std::runtime_error("Buffer overflow");
         std::memcpy(buffer + pos, &v, sizeof(v));
         pos += sizeof(v);
     }
 
     void write_u64(uint64_t v) {
-        if (pos + sizeof(v) > capacity)
+        if (pos + sizeof(v) > capacity) [[unlikely]]
             throw std::runtime_error("Buffer overflow");
         std::memcpy(buffer + pos, &v, sizeof(v));
         pos += sizeof(v);
@@ -804,7 +809,7 @@ public:
 
     void write_string(const std::string& s) {
         write_u32(static_cast<uint32_t>(s.size()));
-        if (pos + s.size() > capacity)
+        if (pos + s.size() > capacity) [[unlikely]]
             throw std::runtime_error("Buffer overflow");
         std::memcpy(buffer + pos, s.data(), s.size());
         pos += s.size();
@@ -813,7 +818,7 @@ public:
     // OPTIMIZATION: Batch write entire float array with single memcpy
     template <std::size_t N>
     void write_float_array(const std::array<float, N>& arr) {
-        if (pos + sizeof(arr) > capacity)
+        if (pos + sizeof(arr) > capacity) [[unlikely]]
             throw std::runtime_error("Buffer overflow");
         std::memcpy(buffer + pos, arr.data(), sizeof(arr));
         pos += sizeof(arr);

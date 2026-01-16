@@ -23,13 +23,13 @@ public:
     /// Remote handler with ID for lifecycle management
     struct RemoteHandler {
         uint64_t id;
-        std::function<void(const Value&)> handler;
+        std::move_only_function<void(const Value&)> handler;
     };
 
     /// Domain handler with ID for lifecycle management
     struct DomainHandler {
         uint64_t id;
-        std::function<void(const RemoteBus::DomainEnvelope&, const Value&)> handler;
+        std::move_only_function<void(const RemoteBus::DomainEnvelope&, const Value&)> handler;
     };
 
     Impl(std::string_view channel_name, EventBus& bus, Role role, std::size_t capacity)
@@ -85,7 +85,7 @@ public:
         return post_remote(event_name, payload);
     }
 
-    Connection subscribe_remote_impl(std::string_view event_name, std::function<void(const Value&)> handler) {
+    Connection subscribe_remote_impl(std::string_view event_name, std::move_only_function<void(const Value&)> handler) {
         uint64_t slot_id = next_slot_id_++;
         std::string name(event_name);
         
@@ -97,7 +97,7 @@ public:
         });
     }
 
-    Connection on_request_impl(std::string_view event_name, std::function<Value(const Value&)> handler) {
+    Connection on_request_impl(std::string_view event_name, std::move_only_function<Value(const Value&)> handler) {
         std::string name(event_name);
         request_handlers_[name] = std::move(handler);
         
@@ -314,7 +314,7 @@ private:
     uint64_t next_slot_id_ = 1;
     
     // Request-response handlers
-    std::unordered_map<std::string, std::function<Value(const Value&)>> request_handlers_;
+    std::unordered_map<std::string, std::move_only_function<Value(const Value&)>> request_handlers_;
     uint64_t next_request_id_ = 1;
 
     // Domain handlers - keyed by domain enum
@@ -323,7 +323,7 @@ private:
 public:
     // Domain subscription implementation
     Connection subscribe_domain_impl(ipc::MessageDomain domain,
-                                     std::function<void(const RemoteBus::DomainEnvelope&, const Value&)> handler) {
+                                     std::move_only_function<void(const RemoteBus::DomainEnvelope&, const Value&)> handler) {
         uint64_t slot_id = next_slot_id_++;
         uint8_t domain_key = static_cast<uint8_t>(domain);
         
@@ -392,11 +392,11 @@ bool RemoteBus::broadcast(std::string_view event_name, const Value& payload) {
     return impl_->broadcast(event_name, payload);
 }
 
-Connection RemoteBus::subscribe_remote_impl(std::string_view event_name, std::function<void(const Value&)> handler) {
+Connection RemoteBus::subscribe_remote_impl(std::string_view event_name, std::move_only_function<void(const Value&)> handler) {
     return impl_->subscribe_remote_impl(event_name, std::move(handler));
 }
 
-Connection RemoteBus::on_request_impl(std::string_view event_name, std::function<Value(const Value&)> handler) {
+Connection RemoteBus::on_request_impl(std::string_view event_name, std::move_only_function<Value(const Value&)> handler) {
     return impl_->on_request_impl(event_name, std::move(handler));
 }
 
@@ -434,7 +434,7 @@ EventBus& RemoteBus::bus_ref() {
 }
 
 Connection RemoteBus::subscribe_domain_impl(MessageDomain domain,
-                                            std::function<void(const DomainEnvelope&, const Value&)> handler) {
+                                            std::move_only_function<void(const DomainEnvelope&, const Value&)> handler) {
     return impl_->subscribe_domain_impl(domain, std::move(handler));
 }
 

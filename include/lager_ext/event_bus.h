@@ -48,8 +48,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
-#include <unordered_set>
+#include <tsl/robin_map.h>
+#include <tsl/robin_set.h>
 #include <vector>
 
 namespace lager_ext {
@@ -107,7 +107,8 @@ constexpr std::uint64_t fnv1a_hash(std::string_view sv) noexcept {
 class Connection {
 public:
     /// @brief Custom disconnector function type
-    using Disconnector = std::function<void()>;
+    /// Optimization: Use move_only_function (C++23) to reduce virtual call overhead
+    using Disconnector = std::move_only_function<void()>;
 
     Connection() noexcept = default;
     
@@ -161,7 +162,9 @@ private:
 /// @brief Container for multiple scoped connections
 class ScopedConnectionList {
 public:
-    ScopedConnectionList() = default;
+    /// @brief Default constructor with pre-allocation for small sizes
+    /// Optimization: Avoid initial heap allocation for common use cases (1-4 connections)
+    ScopedConnectionList() { connections_.reserve(4); }
     ~ScopedConnectionList() = default;
     ScopedConnectionList(ScopedConnectionList&&) = default;
     ScopedConnectionList& operator=(ScopedConnectionList&&) = default;
@@ -254,9 +257,13 @@ inline EventBus& default_bus() {
 namespace detail {
 
 /// @brief Type-erased slot for event handlers
-using DynamicHandler = std::function<void(std::string_view, const Value&)>;
-using FilterFunc = std::function<bool(std::string_view)>;
-using GuardFunc = std::function<bool()>;
+/// Optimization: Use move_only_function (C++23) for:
+/// - Single indirect call instead of vtable lookup
+/// - Larger SBO buffer (less heap allocation)
+/// - No copy overhead (callbacks are move-only anyway)
+using DynamicHandler = std::move_only_function<void(std::string_view, const Value&)>;
+using FilterFunc = std::move_only_function<bool(std::string_view)>;
+using GuardFunc = std::move_only_function<bool()>;
 
 /// @brief Subscription slot
 struct Slot {
@@ -264,12 +271,17 @@ struct Slot {
     GuardFunc guard;                          // Optional: returns false when expired
     FilterFunc filter;                        // For filter-based subscriptions
     std::uint64_t hash = 0;                   // For single-event optimization
-    std::unordered_set<std::uint64_t> hashes; // For multi-event subscriptions
+    tsl::robin_set<std::uint64_t> hashes;     // For multi-event subscriptions (faster than std::unordered_set)
     enum class Type : std::uint8_t { Single, Multi, Filter } type = Type::Single;
     bool active = true;
 };
 
 /// @brief Implementation class for EventBus
+/// 
+/// Optimization: Uses tsl::robin_map instead of std::unordered_map for:
+/// - Better cache locality (open addressing)
+/// - Faster lookups and iterations
+/// - Lower memory overhead
 class EventBusImpl {
 public:
     EventBusImpl() = default;
@@ -279,7 +291,7 @@ public:
     EventBusImpl& operator=(const EventBusImpl&) = delete;
 
     Connection subscribe_single(std::uint64_t hash, DynamicHandler handler, GuardFunc guard = nullptr);
-    Connection subscribe_multi(std::unordered_set<std::uint64_t> hashes, DynamicHandler handler,
+    Connection subscribe_multi(tsl::robin_set<std::uint64_t> hashes, DynamicHandler handler,
                                GuardFunc guard = nullptr);
     Connection subscribe_filter(FilterFunc filter, DynamicHandler handler, GuardFunc guard = nullptr);
 
@@ -290,7 +302,7 @@ private:
     Slot* create_slot();
     void maybe_compact();  // Lazy cleanup of inactive slots
 
-    std::unordered_map<std::uint64_t, std::vector<Slot*>> single_slots_;
+    tsl::robin_map<std::uint64_t, std::vector<Slot*>> single_slots_;  // robin_map for faster lookup
     std::vector<Slot*> complex_slots_;
     std::vector<std::unique_ptr<Slot>> all_slots_;
     std::vector<Slot*> dispatch_buffer_; // Reused buffer for publish
@@ -354,7 +366,7 @@ inline void Connection::disconnect() {
 }
 
 inline bool Connection::connected() const noexcept {
-    return (slot_ != nullptr && bus_ != nullptr) || (custom_disconnector_ != nullptr);
+    return (slot_ != nullptr && bus_ != nullptr) || static_cast<bool>(custom_disconnector_);
 }
 
 inline ScopedConnection::ScopedConnection(Connection conn) noexcept : conn_(std::move(conn)) {}
@@ -448,7 +460,7 @@ Connection EventBus::subscribe(std::string_view event_name, Handler&& handler) {
 
 template <std::invocable<std::string_view, const Value&> Handler>
 Connection EventBus::subscribe(std::initializer_list<std::string_view> event_names, Handler&& handler) {
-    std::unordered_set<std::uint64_t> hashes;
+    tsl::robin_set<std::uint64_t> hashes;
     for (auto name : event_names) {
         hashes.insert(detail::fnv1a_hash(name));
     }

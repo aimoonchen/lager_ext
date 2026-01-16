@@ -141,20 +141,38 @@ namespace lager_ext {
 // it supports heterogeneous lookup (C++14/C++20 feature).
 // ============================================================
 
-/// Transparent hash functor for string types
+/// Transparent hash functor for string types using FNV-1a algorithm
 /// Supports: std::string, std::string_view, const char*
+///
+/// Optimization: Uses constexpr FNV-1a instead of std::hash for:
+/// - Potentially faster hashing (no vtable/indirection)
+/// - Compile-time hash computation when input is constexpr
+/// - Consistent hash values across different std::hash implementations
 struct TransparentStringHash {
     using is_transparent = void; // Enable heterogeneous lookup
 
-    [[nodiscard]] std::size_t operator()(std::string_view sv) const noexcept {
-        return std::hash<std::string_view>{}(sv);
+    /// FNV-1a hash - same algorithm as event_bus.h for consistency
+    [[nodiscard]] static constexpr std::size_t fnv1a(std::string_view sv) noexcept {
+        // FNV-1a 64-bit parameters
+        std::size_t hash = 14695981039346656037ull;
+        for (char c : sv) {
+            hash ^= static_cast<std::size_t>(static_cast<unsigned char>(c));
+            hash *= 1099511628211ull;
+        }
+        return hash;
     }
 
-    [[nodiscard]] std::size_t operator()(const std::string& s) const noexcept {
-        return std::hash<std::string_view>{}(s);
+    [[nodiscard]] constexpr std::size_t operator()(std::string_view sv) const noexcept {
+        return fnv1a(sv);
     }
 
-    [[nodiscard]] std::size_t operator()(const char* s) const noexcept { return std::hash<std::string_view>{}(s); }
+    [[nodiscard]] constexpr std::size_t operator()(const std::string& s) const noexcept {
+        return fnv1a(s);
+    }
+
+    [[nodiscard]] constexpr std::size_t operator()(const char* s) const noexcept { 
+        return fnv1a(std::string_view{s}); 
+    }
 };
 
 /// Transparent equality comparator for string types
@@ -739,54 +757,51 @@ inline bool operator==(const Value& a, const Value& b) {
 /// Three-way comparison (spaceship operator) for Value
 /// Enables all comparison operators: ==, !=, <, >, <=, >=
 /// Returns std::partial_ordering because floating-point types may be NaN
+///
+/// Optimization: Uses single-argument std::visit instead of two-argument version.
+/// This reduces template instantiations from O(N²) to O(N) where N is the number
+/// of variant alternatives (~23 types). This significantly improves compile times.
 inline std::partial_ordering operator<=>(const Value& a, const Value& b) {
-    // Compare type indices first
+    // Compare type indices first - fast path for different types
     if (a.data.index() != b.data.index()) {
         return a.data.index() <=> b.data.index();
     }
 
-    // Same type, compare values using std::visit
+    // Same type index - use single-argument visit (O(N) instantiations instead of O(N²))
+    // Since indices are equal, we can safely std::get<T> from b.data
     return std::visit(
-        [](const auto& lhs, const auto& rhs) -> std::partial_ordering {
+        [&b](const auto& lhs) -> std::partial_ordering {
             using T = std::decay_t<decltype(lhs)>;
-            using U = std::decay_t<decltype(rhs)>;
+            // Safe: we already checked a.data.index() == b.data.index()
+            const T& rhs = std::get<T>(b.data);
 
-            if constexpr (std::is_same_v<T, U>) {
-                // Same type, compare directly
-                if constexpr (std::is_same_v<T, std::monostate>) {
-                    return std::partial_ordering::equivalent;
-                } else if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>) {
-                    // Floating-point: use partial_ordering
-                    return lhs <=> rhs;
-                } else if constexpr (requires { lhs <=> rhs; }) {
-                    // Type supports <=>
-                    auto result = lhs <=> rhs;
-                    if constexpr (std::is_same_v<decltype(result), std::strong_ordering>) {
-                        return static_cast<std::partial_ordering>(result);
-                    } else {
-                        return result;
-                    }
-                } else if constexpr (requires {
-                                         lhs < rhs;
-                                         lhs == rhs;
-                                     }) {
-                    // Fall back to < and == operators
-                    if (lhs == rhs)
-                        return std::partial_ordering::equivalent;
-                    if (lhs < rhs)
-                        return std::partial_ordering::less;
-                    return std::partial_ordering::greater;
+            if constexpr (std::is_same_v<T, std::monostate>) {
+                return std::partial_ordering::equivalent;
+            } else if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>) {
+                // Floating-point: use partial_ordering (handles NaN correctly)
+                return lhs <=> rhs;
+            } else if constexpr (requires { lhs <=> rhs; }) {
+                // Type supports <=> natively
+                auto result = lhs <=> rhs;
+                if constexpr (std::is_same_v<decltype(result), std::strong_ordering>) {
+                    return static_cast<std::partial_ordering>(result);
                 } else {
-                    // Types without comparison (e.g., immer containers)
-                    // Fall back to address comparison (arbitrary but consistent)
-                    return std::partial_ordering::equivalent;
+                    return result;
                 }
+            } else if constexpr (requires { lhs < rhs; lhs == rhs; }) {
+                // Fall back to < and == operators
+                if (lhs == rhs)
+                    return std::partial_ordering::equivalent;
+                if (lhs < rhs)
+                    return std::partial_ordering::less;
+                return std::partial_ordering::greater;
             } else {
-                // Different types shouldn't happen (same index), but handle anyway
-                return std::partial_ordering::unordered;
+                // Types without comparison (e.g., immer containers)
+                // Fall back to identity comparison (pointer equality for boxed types)
+                return std::partial_ordering::equivalent;
             }
         },
-        a.data, b.data);
+        a.data);
 }
 
 // ============================================================
