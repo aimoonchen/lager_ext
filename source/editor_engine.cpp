@@ -436,18 +436,18 @@ void EngineSimulator::apply_full_state(const Value& state) {
 }
 
 Value EngineSimulator::get_state_as_value() const {
-    // Convert scene to Value for serialization
+    // Container Boxing: Convert scene to Value with BoxedValueMap
     ValueMap objects_map;
     for (const auto& [id, obj] : impl_->scene.objects) {
-        objects_map = objects_map.set(id, ValueBox{obj.data});
+        objects_map = objects_map.set(id, obj.data);
     }
 
     ValueMap scene_value;
-    scene_value = scene_value.set("objects", ValueBox{Value{objects_map}});
-    scene_value = scene_value.set("root_id", ValueBox{Value{impl_->scene.root_id}});
-    scene_value = scene_value.set("version", ValueBox{Value{static_cast<int>(impl_->scene.version)}});
+    scene_value = scene_value.set("objects", Value{BoxedValueMap{objects_map}});
+    scene_value = scene_value.set("root_id", Value{impl_->scene.root_id});
+    scene_value = scene_value.set("version", Value{static_cast<int>(impl_->scene.version)});
 
-    return Value{scene_value};
+    return Value{BoxedValueMap{scene_value}};
 }
 
 void EngineSimulator::on_event(EngineCallback callback) {
@@ -505,17 +505,18 @@ struct EditorController::Impl {
     }
 
     static Value scene_to_value(const SceneState& scene) {
+        // Container Boxing: wrap maps in BoxedValueMap
         ValueMap objects_map;
         for (const auto& [id, obj] : scene.objects) {
-            objects_map = objects_map.set(id, ValueBox{obj.data});
+            objects_map = objects_map.set(id, obj.data);
         }
 
         ValueMap scene_map;
-        scene_map = scene_map.set("objects", ValueBox{Value{objects_map}});
-        scene_map = scene_map.set("selected_id", ValueBox{Value{scene.selected_id}});
-        scene_map = scene_map.set("version", ValueBox{Value{static_cast<int>(scene.version)}});
+        scene_map = scene_map.set("objects", Value{BoxedValueMap{objects_map}});
+        scene_map = scene_map.set("selected_id", Value{scene.selected_id});
+        scene_map = scene_map.set("version", Value{static_cast<int>(scene.version)});
 
-        return Value{scene_map};
+        return Value{BoxedValueMap{scene_map}};
     }
 };
 

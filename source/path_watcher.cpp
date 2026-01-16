@@ -37,25 +37,26 @@ bool values_share_structure(const Value& a, const Value& b) {
         return false;
 
     // For containers, check if they share the same immer internal pointer
-    if (auto* map_a = a.get_if<ValueMap>()) {
-        if (auto* map_b = b.get_if<ValueMap>()) {
+    // Container Boxing: use BoxedValueMap, BoxedValueVector, etc.
+    if (auto* boxed_map_a = a.get_if<BoxedValueMap>()) {
+        if (auto* boxed_map_b = b.get_if<BoxedValueMap>()) {
             // immer::map uses structural sharing - same identity means same data
-            return map_a->identity() == map_b->identity();
+            return boxed_map_a->get().identity() == boxed_map_b->get().identity();
         }
     }
-    if (auto* vec_a = a.get_if<ValueVector>()) {
-        if (auto* vec_b = b.get_if<ValueVector>()) {
-            return vec_a->identity() == vec_b->identity();
+    if (auto* boxed_vec_a = a.get_if<BoxedValueVector>()) {
+        if (auto* boxed_vec_b = b.get_if<BoxedValueVector>()) {
+            return boxed_vec_a->get().identity() == boxed_vec_b->get().identity();
         }
     }
-    if (auto* arr_a = a.get_if<ValueArray>()) {
-        if (auto* arr_b = b.get_if<ValueArray>()) {
+    if (auto* boxed_arr_a = a.get_if<BoxedValueArray>()) {
+        if (auto* boxed_arr_b = b.get_if<BoxedValueArray>()) {
             // ValueArray doesn't have identity(), fall back to equality
             return a == b;
         }
     }
-    if (auto* tab_a = a.get_if<ValueTable>()) {
-        if (auto* tab_b = b.get_if<ValueTable>()) {
+    if (auto* boxed_tab_a = a.get_if<BoxedValueTable>()) {
+        if (auto* boxed_tab_b = b.get_if<BoxedValueTable>()) {
             // ValueTable doesn't expose identity(), fall back to equality
             return a == b;
         }

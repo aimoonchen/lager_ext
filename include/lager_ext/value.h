@@ -166,26 +166,79 @@ struct TransparentStringEqual {
 };
 
 // ============================================================
+// Size Traits for Incomplete Type Support
+//
+// immer::vector needs sizeof(T) to calculate leaf node parameters.
+// When T is incomplete (like Value before its definition), we use
+// size_traits to provide an estimated size at compile time.
+// ============================================================
+
+/// Size traits template - default uses sizeof(T)
+template <typename T>
+struct size_traits {
+    static constexpr std::size_t value = sizeof(T);
+};
+
+/// Derive bits-leaf parameter for immer::vector based on element size
+/// This allows immer::vector to be instantiated with incomplete types
+template <std::size_t Size>
+constexpr auto derive_bl() {
+    constexpr std::size_t space = 264;
+    constexpr std::size_t full_elems = space / Size;
+    if constexpr (full_elems >= 256) return 8;
+    else if constexpr (full_elems >= 128) return 7;
+    else if constexpr (full_elems >= 64) return 6;
+    else if constexpr (full_elems >= 32) return 5;
+    else if constexpr (full_elems >= 16) return 4;
+    else if constexpr (full_elems >= 8) return 3;
+    else if constexpr (full_elems >= 4) return 2;
+    else if constexpr (full_elems >= 2) return 1;
+    else return 0;
+}
+
+// ============================================================
 // Container Type Forward Declarations
 // ============================================================
 
 // Forward declare Value for container definitions
 struct Value;
 
+// Specialize size_traits for Value before container definitions
+// Estimated size: 16 bytes (for derive_bl calculation)
+template <>
+struct size_traits<Value> {
+    static constexpr std::size_t value = 16;
+};
+
 /// ValueBox wraps Value in an immer::box for efficient sharing
+/// Used by TableEntry and for explicit boxing scenarios
 using ValueBox = immer::box<Value>;
 
+/// Boxed string type for O(1) equality comparison in diff operations
+using BoxedString = immer::box<std::string>;
+
+// ============================================================
+// Raw Container Types (store Value directly, no boxing)
+//
+// These are the actual immer containers that store Value elements.
+// Container Boxing wraps these in immer::box for O(1) diff comparison.
+// ============================================================
+
 /// Map container with transparent lookup support
-/// Allows find/count/at operations with string_view without allocation
-using ValueMap = immer::map<std::string, ValueBox, TransparentStringHash, TransparentStringEqual>;
+/// Stores Value directly (Container Boxing architecture)
+using ValueMap = immer::map<std::string, Value, TransparentStringHash, TransparentStringEqual>;
 
 /// Vector container for ordered sequences
-using ValueVector = immer::vector<ValueBox>;
+/// Uses derive_bl to bypass sizeof(Value) requirement for incomplete type
+using ValueVector = immer::vector<Value, immer::default_memory_policy, 
+                                  immer::default_bits, 
+                                  derive_bl<size_traits<Value>::value>()>;
 
 /// Array container for small fixed-size sequences
-using ValueArray = immer::array<ValueBox>;
+using ValueArray = immer::array<Value>;
 
 /// Table entry with string id
+/// Note: TableEntry::value uses ValueBox (Element Boxing for tables)
 struct TableEntry {
     std::string id;
     ValueBox value;
@@ -196,8 +249,27 @@ struct TableEntry {
 };
 
 /// Table container with transparent lookup support
-/// Allows find/count operations with string_view without allocation
 using ValueTable = immer::table<TableEntry, immer::table_key_fn, TransparentStringHash, TransparentStringEqual>;
+
+// ============================================================
+// Boxed Container Types (Container Boxing)
+//
+// These wrap the raw containers in immer::box for:
+// - O(1) identity comparison in immer::diff
+// - Efficient sharing across Value instances
+// ============================================================
+
+/// Boxed map container
+using BoxedValueMap = immer::box<ValueMap>;
+
+/// Boxed vector container
+using BoxedValueVector = immer::box<ValueVector>;
+
+/// Boxed array container
+using BoxedValueArray = immer::box<ValueArray>;
+
+/// Boxed table container
+using BoxedValueTable = immer::box<ValueTable>;
 
 // Boxed matrix types (reduces variant size from ~72 to ~40 bytes)
 using BoxedMat3 = immer::box<Mat3>;
@@ -208,20 +280,27 @@ using BoxedMat4 = immer::box<Mat4>;
 using ByteBuffer = std::vector<uint8_t>;
 
 struct Value {
-    // Type aliases for container types
+    // Type aliases for raw container types (unboxed)
     using value_box = ValueBox;
+    using boxed_string = BoxedString;
     using value_map = ValueMap;
     using value_vector = ValueVector;
     using value_array = ValueArray;
     using value_table = ValueTable;
     using table_entry = TableEntry;
+    
+    // Type aliases for boxed container types (in variant)
+    using boxed_value_map = BoxedValueMap;
+    using boxed_value_vector = BoxedValueVector;
+    using boxed_value_array = BoxedValueArray;
+    using boxed_value_table = BoxedValueTable;
     using boxed_mat3 = BoxedMat3;
     using boxed_mat4x3 = BoxedMat4x3;
     using boxed_mat4 = BoxedMat4;
 
     std::variant<int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t, float, double, bool,
-                 std::string, Vec2, Vec3, Vec4, boxed_mat3, boxed_mat4x3, boxed_mat4, value_map, value_vector,
-                 value_array, value_table, std::monostate>
+                 boxed_string, Vec2, Vec3, Vec4, boxed_mat3, boxed_mat4x3, boxed_mat4, boxed_value_map, boxed_value_vector,
+                 boxed_value_array, boxed_value_table, std::monostate>
         data;
 
     // Constructors for primitive and math types
@@ -241,9 +320,14 @@ struct Value {
     Value(float v) noexcept : data(v) {}
     Value(double v) noexcept : data(v) {}
     Value(bool v) noexcept : data(v) {}
-    Value(const std::string& v) : data(v) {}
-    Value(std::string&& v) noexcept : data(std::move(v)) {}
-    Value(const char* v) : data(std::in_place_type<std::string>, v) {}
+    
+    // String constructors - box the string
+    Value(const std::string& v) : data(boxed_string{v}) {}
+    Value(std::string&& v) noexcept : data(boxed_string{std::move(v)}) {}
+    Value(const char* v) : data(boxed_string{std::string{v}}) {}
+    Value(boxed_string v) : data(std::move(v)) {}
+    
+    // Math type constructors
     Value(Vec2 v) noexcept : data(v) {}
     Value(Vec3 v) noexcept : data(v) {}
     Value(Vec4 v) noexcept : data(v) {}
@@ -253,42 +337,51 @@ struct Value {
     Value(boxed_mat3 v) : data(std::move(v)) {}
     Value(boxed_mat4x3 v) : data(std::move(v)) {}
     Value(boxed_mat4 v) : data(std::move(v)) {}
-    Value(value_map v) : data(std::move(v)) {}
-    Value(value_vector v) : data(std::move(v)) {}
-    Value(value_array v) : data(std::move(v)) {}
-    Value(value_table v) : data(std::move(v)) {}
+    
+    // Boxed container constructors (Container Boxing)
+    Value(boxed_value_map v) : data(std::move(v)) {}
+    Value(boxed_value_vector v) : data(std::move(v)) {}
+    Value(boxed_value_array v) : data(std::move(v)) {}
+    Value(boxed_value_table v) : data(std::move(v)) {}
+    
+    // Raw container constructors - auto-box
+    Value(value_map v) : data(boxed_value_map{std::move(v)}) {}
+    Value(value_vector v) : data(boxed_value_vector{std::move(v)}) {}
+    Value(value_array v) : data(boxed_value_array{std::move(v)}) {}
+    Value(value_table v) : data(boxed_value_table{std::move(v)}) {}
 
     // Factory functions for container types
+    // Container Boxing: containers store Value directly (not ValueBox)
     static Value map(std::initializer_list<std::pair<std::string, Value>> init) {
         auto t = value_map{}.transient();
         for (const auto& [key, val] : init) {
-            t.set(key, value_box{val});
+            t.set(key, val);  // Store Value directly
         }
-        return Value{t.persistent()};
+        return Value{boxed_value_map{t.persistent()}};
     }
 
     static Value vector(std::initializer_list<Value> init) {
         auto t = value_vector{}.transient();
         for (const auto& val : init) {
-            t.push_back(value_box{val});
+            t.push_back(val);  // Store Value directly
         }
-        return Value{t.persistent()};
+        return Value{boxed_value_vector{t.persistent()}};
     }
 
     static Value array(std::initializer_list<Value> init) {
         value_array result;
         for (const auto& val : init) {
-            result = std::move(result).push_back(value_box{val});
+            result = std::move(result).push_back(val);  // Store Value directly
         }
-        return Value{std::move(result)};
+        return Value{boxed_value_array{std::move(result)}};
     }
 
     static Value table(std::initializer_list<std::pair<std::string, Value>> init) {
         auto t = value_table{}.transient();
         for (const auto& [id, val] : init) {
-            t.insert(table_entry{id, value_box{val}});
+            t.insert(table_entry{id, value_box{val}});  // TableEntry::value uses ValueBox
         }
-        return Value{t.persistent()};
+        return Value{boxed_value_table{t.persistent()}};
     }
 
     /// Factory functions for math types with explicit parameters
@@ -341,6 +434,7 @@ struct Value {
 
     /// Type predicates (constexpr for compile-time usage)
     [[nodiscard]] constexpr bool is_null() const noexcept { return std::holds_alternative<std::monostate>(data); }
+    [[nodiscard]] constexpr bool is_string() const noexcept { return is<boxed_string>(); }
     [[nodiscard]] constexpr bool is_vec2() const noexcept { return is<Vec2>(); }
     [[nodiscard]] constexpr bool is_vec3() const noexcept { return is<Vec3>(); }
     [[nodiscard]] constexpr bool is_vec4() const noexcept { return is<Vec4>(); }
@@ -349,30 +443,38 @@ struct Value {
     [[nodiscard]] constexpr bool is_math_type() const noexcept {
         return is_vec2() || is_vec3() || is_vec4() || is_mat3() || is_mat4x3();
     }
+    [[nodiscard]] constexpr bool is_map() const noexcept { return is<boxed_value_map>(); }
+    [[nodiscard]] constexpr bool is_vector() const noexcept { return is<boxed_value_vector>(); }
+    [[nodiscard]] constexpr bool is_array() const noexcept { return is<boxed_value_array>(); }
+    [[nodiscard]] constexpr bool is_table() const noexcept { return is<boxed_value_table>(); }
 
     /// Access element by key (zero-allocation with transparent lookup)
     /// @note std::string and const char* implicitly convert to string_view (C++17+)
     [[nodiscard]] Value at(std::string_view key) const {
-        if (auto* m = get_if<value_map>()) {
-            if (auto* found = m->find(key))
-                return found->get();
+        // Container Boxing: unbox -> access
+        if (auto* m = get_if<boxed_value_map>()) {
+            if (auto* found = m->get().find(key))
+                return *found;  // Elements are Value directly
         }
-        if (auto* t = get_if<value_table>()) {
-            if (auto* found = t->find(key))
-                return found->value.get();
+        if (auto* t = get_if<boxed_value_table>()) {
+            if (auto* found = t->get().find(key))
+                return found->value.get();  // TableEntry::value is ValueBox
         }
         detail::log_key_error("Value::at", key, "not found or type mismatch");
         return Value{};
     }
 
     [[nodiscard]] Value at(std::size_t index) const {
-        if (auto* v = get_if<value_vector>()) {
-            if (index < v->size())
-                return (*v)[index].get();
+        // Container Boxing: unbox -> access
+        if (auto* v = get_if<boxed_value_vector>()) {
+            const auto& vec = v->get();
+            if (index < vec.size())
+                return vec[index];  // Elements are Value directly
         }
-        if (auto* a = get_if<value_array>()) {
-            if (index < a->size())
-                return (*a)[index].get();
+        if (auto* a = get_if<boxed_value_array>()) {
+            const auto& arr = a->get();
+            if (index < arr.size())
+                return arr[index];  // Elements are Value directly
         }
         detail::log_index_error("Value::at", index, "out of range or type mismatch");
         return Value{};
@@ -380,36 +482,42 @@ struct Value {
 
     /// Get value as type T, or return default if type mismatch
     /// @note Use this for all primitive types: as<int>(), as<double>(), as<Vec2>(), etc.
-    /// @example val.as<int>(42), val.as<float>(), val.as<bool>(false)
+    /// @note For std::string, this is specialized to call as_string() automatically.
+    /// @example val.as<int>(42), val.as<float>(), val.as<bool>(false), val.as<std::string>()
     template <typename T>
     [[nodiscard]] T as(T default_val = T{}) const {
-        if (auto* ptr = get_if<T>())
-            return *ptr;
-        return default_val;
+        // Special handling for std::string - delegate to as_string()
+        if constexpr (std::is_same_v<T, std::string>) {
+            return as_string(default_val);
+        } else {
+            if (auto* ptr = get_if<T>())
+                return *ptr;
+            return default_val;
+        }
     }
 
     // ============================================================
     // Special accessor functions (cannot be replaced by as<T>)
     // ============================================================
 
-    /// Get string with lvalue/rvalue optimization
+    /// Get string (requires unboxing from BoxedString)
     // Lvalue version - copy the string
     [[nodiscard]] std::string as_string(std::string default_val = "") const& {
-        if (auto* p = get_if<std::string>())
-            return *p;
+        if (auto* p = get_if<boxed_string>())
+            return p->get();  // Unbox the string
         return default_val;
     }
 
-    // Rvalue version - move the string for zero-copy when Value is about to be destroyed
+    // Rvalue version - copy (can't move from box without losing sharing)
     [[nodiscard]] std::string as_string(std::string default_val = "") && {
-        if (auto* p = get_if<std::string>())
-            return std::move(*p);
+        if (auto* p = get_if<boxed_string>())
+            return p->get();  // Unbox the string
         return default_val;
     }
 
     [[nodiscard]] std::string_view as_string_view() const noexcept {
-        if (auto* p = get_if<std::string>())
-            return *p;
+        if (auto* p = get_if<boxed_string>())
+            return p->get();  // Unbox the string
         return {};
     }
 
@@ -444,20 +552,25 @@ struct Value {
     [[nodiscard]] bool contains(std::string_view key) const { return count(key) > 0; }
 
     [[nodiscard]] bool contains(std::size_t index) const {
-        if (auto* v = get_if<value_vector>())
-            return index < v->size();
-        if (auto* a = get_if<value_array>())
-            return index < a->size();
+        // Container Boxing: unbox -> access
+        if (auto* v = get_if<boxed_value_vector>())
+            return index < v->get().size();
+        if (auto* a = get_if<boxed_value_array>())
+            return index < a->get().size();
         return false;
     }
 
     /// Set value by string_view key
-    /// @note Allocation is unavoidable since immer::map needs owned keys for persistence.
+    /// Container Boxing: unbox -> modify -> rebox
     [[nodiscard]] Value set(std::string_view key, Value val) const {
-        if (auto* m = get_if<value_map>())
-            return m->set(std::string{key}, value_box{std::move(val)});
-        if (auto* t = get_if<value_table>())
-            return t->insert(table_entry{std::string{key}, value_box{std::move(val)}});
+        if (auto* m = get_if<boxed_value_map>()) {
+            // Unbox -> modify -> rebox
+            return Value{boxed_value_map{m->get().set(std::string{key}, std::move(val))}};
+        }
+        if (auto* t = get_if<boxed_value_table>()) {
+            // Unbox -> modify -> rebox (TableEntry::value uses ValueBox)
+            return Value{boxed_value_table{t->get().insert(table_entry{std::string{key}, value_box{std::move(val)}})}};
+        }
         detail::log_key_error("Value::set", key, "cannot set on non-map type");
         return *this;
     }
@@ -473,24 +586,32 @@ struct Value {
     }
 
     /// Set value by rvalue string key (zero-copy key transfer)
-    /// @note Use this overload when you have a std::string that can be moved.
     [[nodiscard]] Value set(std::string&& key, Value val) const {
-        if (auto* m = get_if<value_map>())
-            return m->set(std::move(key), value_box{std::move(val)});
-        if (auto* t = get_if<value_table>())
-            return t->insert(table_entry{std::move(key), value_box{std::move(val)}});
+        if (auto* m = get_if<boxed_value_map>()) {
+            // Container Boxing: unbox -> modify -> rebox
+            return Value{boxed_value_map{m->get().set(std::move(key), std::move(val))}};
+        }
+        if (auto* t = get_if<boxed_value_table>()) {
+            // Container Boxing: unbox -> modify -> rebox
+            return Value{boxed_value_table{t->get().insert(table_entry{std::move(key), value_box{std::move(val)}})}};
+        }
         detail::log_key_error("Value::set", key, "cannot set on non-map type");
         return *this;
     }
 
     [[nodiscard]] Value set(std::size_t index, Value val) const {
-        if (auto* v = get_if<value_vector>()) {
-            if (index < v->size())
-                return v->set(index, value_box{std::move(val)});
+        if (auto* v = get_if<boxed_value_vector>()) {
+            const auto& vec = v->get();
+            if (index < vec.size()) {
+                // Container Boxing: unbox -> modify -> rebox
+                return Value{boxed_value_vector{vec.set(index, std::move(val))}};
+            }
         }
-        if (auto* a = get_if<value_array>()) {
-            if (index < a->size()) {
-                return a->update(index, [&val](const value_box&) { return value_box{std::move(val)}; });
+        if (auto* a = get_if<boxed_value_array>()) {
+            const auto& arr = a->get();
+            if (index < arr.size()) {
+                // Container Boxing: unbox -> modify -> rebox
+                return Value{boxed_value_array{arr.update(index, [&val](const Value&) { return std::move(val); })}};
             }
         }
         detail::log_index_error("Value::set", index, "cannot set on non-vector type");
@@ -498,12 +619,18 @@ struct Value {
     }
 
     [[nodiscard]] Value set_vivify(std::string_view key, Value val) const {
-        if (auto* m = get_if<value_map>())
-            return m->set(std::string{key}, value_box{std::move(val)});
-        if (auto* t = get_if<value_table>())
-            return t->insert(table_entry{std::string{key}, value_box{std::move(val)}});
-        if (is_null())
-            return value_map{}.set(std::string{key}, value_box{std::move(val)});
+        if (auto* m = get_if<boxed_value_map>()) {
+            // Container Boxing: unbox -> modify -> rebox
+            return Value{boxed_value_map{m->get().set(std::string{key}, std::move(val))}};
+        }
+        if (auto* t = get_if<boxed_value_table>()) {
+            // Container Boxing: unbox -> modify -> rebox
+            return Value{boxed_value_table{t->get().insert(table_entry{std::string{key}, value_box{std::move(val)}})}};
+        }
+        if (is_null()) {
+            // Auto-vivify: create new map
+            return Value{boxed_value_map{value_map{}.set(std::string{key}, std::move(val))}};
+        }
         detail::log_key_error("Value::set_vivify", key, "cannot set on non-map/non-null type");
         return *this;
     }
@@ -520,39 +647,52 @@ struct Value {
 
     /// Set value by rvalue string key with auto-vivification (zero-copy key transfer)
     [[nodiscard]] Value set_vivify(std::string&& key, Value val) const {
-        if (auto* m = get_if<value_map>())
-            return m->set(std::move(key), value_box{std::move(val)});
-        if (auto* t = get_if<value_table>())
-            return t->insert(table_entry{std::move(key), value_box{std::move(val)}});
-        if (is_null())
-            return value_map{}.set(std::move(key), value_box{std::move(val)});
+        if (auto* m = get_if<boxed_value_map>()) {
+            // Container Boxing: unbox -> modify -> rebox
+            return Value{boxed_value_map{m->get().set(std::move(key), std::move(val))}};
+        }
+        if (auto* t = get_if<boxed_value_table>()) {
+            // Container Boxing: unbox -> modify -> rebox
+            return Value{boxed_value_table{t->get().insert(table_entry{std::move(key), value_box{std::move(val)}})}};
+        }
+        if (is_null()) {
+            // Auto-vivify: create new map
+            return Value{boxed_value_map{value_map{}.set(std::move(key), std::move(val))}};
+        }
         detail::log_key_error("Value::set_vivify", key, "cannot set on non-map/non-null type");
         return *this;
     }
 
     [[nodiscard]] Value set_vivify(std::size_t index, Value val) const {
-        if (auto* v = get_if<value_vector>()) {
-            if (index < v->size())
-                return v->set(index, value_box{std::move(val)});
-            auto trans = v->transient();
+        if (auto* v = get_if<boxed_value_vector>()) {
+            const auto& vec = v->get();
+            if (index < vec.size()) {
+                // Container Boxing: unbox -> modify -> rebox
+                return Value{boxed_value_vector{vec.set(index, std::move(val))}};
+            }
+            // Extend vector to fit index
+            auto trans = vec.transient();
             while (trans.size() <= index)
-                trans.push_back(value_box{});
-            trans.set(index, value_box{std::move(val)});
-            return trans.persistent();
+                trans.push_back(Value{});
+            trans.set(index, std::move(val));
+            return Value{boxed_value_vector{trans.persistent()}};
         }
-        if (auto* a = get_if<value_array>()) {
-            if (index < a->size()) {
-                return a->update(index, [&val](const value_box&) { return value_box{std::move(val)}; });
+        if (auto* a = get_if<boxed_value_array>()) {
+            const auto& arr = a->get();
+            if (index < arr.size()) {
+                // Container Boxing: unbox -> modify -> rebox
+                return Value{boxed_value_array{arr.update(index, [&val](const Value&) { return std::move(val); })}};
             }
             detail::log_index_error("Value::set_vivify", index, "array index out of range");
             return *this;
         }
         if (is_null()) {
+            // Auto-vivify: create new vector
             auto trans = value_vector{}.transient();
             for (std::size_t i = 0; i < index; ++i)
-                trans.push_back(value_box{});
-            trans.push_back(value_box{std::move(val)});
-            return trans.persistent();
+                trans.push_back(Value{});
+            trans.push_back(std::move(val));
+            return Value{boxed_value_vector{trans.persistent()}};
         }
         detail::log_index_error("Value::set_vivify", index, "cannot set on non-vector/non-null type");
         return *this;
@@ -560,22 +700,24 @@ struct Value {
 
     /// Count occurrences of key (zero-allocation with transparent lookup)
     [[nodiscard]] std::size_t count(std::string_view key) const {
-        if (auto* m = get_if<value_map>())
-            return m->count(key);
-        if (auto* t = get_if<value_table>())
-            return t->count(key) ? 1 : 0;
+        // Container Boxing: unbox -> access
+        if (auto* m = get_if<boxed_value_map>())
+            return m->get().count(key);
+        if (auto* t = get_if<boxed_value_table>())
+            return t->get().count(key) ? 1 : 0;
         return 0;
     }
 
     [[nodiscard]] std::size_t size() const {
-        if (auto* m = get_if<value_map>())
-            return m->size();
-        if (auto* v = get_if<value_vector>())
-            return v->size();
-        if (auto* a = get_if<value_array>())
-            return a->size();
-        if (auto* t = get_if<value_table>())
-            return t->size();
+        // Container Boxing: unbox -> access
+        if (auto* m = get_if<boxed_value_map>())
+            return m->get().size();
+        if (auto* v = get_if<boxed_value_vector>())
+            return v->get().size();
+        if (auto* a = get_if<boxed_value_array>())
+            return a->get().size();
+        if (auto* t = get_if<boxed_value_table>())
+            return t->get().size();
         return 0;
     }
 

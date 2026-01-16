@@ -205,39 +205,39 @@ void demo_string_path() {
     //   "config": { "version": 1, "theme~mode": "dark" }
     // }
 
-    // Build inner structures first
+    // Build inner structures first using Container Boxing
     ValueVector alice_tags;
-    alice_tags = alice_tags.push_back(ValueBox{"c++"});
-    alice_tags = alice_tags.push_back(ValueBox{"rust"});
+    alice_tags = alice_tags.push_back(Value{"c++"});
+    alice_tags = alice_tags.push_back(Value{"rust"});
 
     ValueMap alice_profile;
-    alice_profile = alice_profile.set("city", ValueBox{"Beijing"});
-    alice_profile = alice_profile.set("tags/skills", ValueBox{alice_tags}); // key with '/'
+    alice_profile = alice_profile.set("city", Value{"Beijing"});
+    alice_profile = alice_profile.set("tags/skills", Value{BoxedValueVector{alice_tags}}); // key with '/'
 
     ValueMap alice;
-    alice = alice.set("name", ValueBox{"Alice"});
-    alice = alice.set("profile", ValueBox{alice_profile});
+    alice = alice.set("name", Value{"Alice"});
+    alice = alice.set("profile", Value{BoxedValueMap{alice_profile}});
 
     ValueMap bob_profile;
-    bob_profile = bob_profile.set("city", ValueBox{"Shanghai"});
+    bob_profile = bob_profile.set("city", Value{"Shanghai"});
 
     ValueMap bob;
-    bob = bob.set("name", ValueBox{"Bob"});
-    bob = bob.set("profile", ValueBox{bob_profile});
+    bob = bob.set("name", Value{"Bob"});
+    bob = bob.set("profile", Value{BoxedValueMap{bob_profile}});
 
     ValueVector users;
-    users = users.push_back(ValueBox{alice});
-    users = users.push_back(ValueBox{bob});
+    users = users.push_back(Value{BoxedValueMap{alice}});
+    users = users.push_back(Value{BoxedValueMap{bob}});
 
     ValueMap config;
-    config = config.set("version", ValueBox{1});
-    config = config.set("theme~mode", ValueBox{"dark"}); // key with '~'
+    config = config.set("version", Value{1});
+    config = config.set("theme~mode", Value{"dark"}); // key with '~'
 
     ValueMap root;
-    root = root.set("users", ValueBox{users});
-    root = root.set("config", ValueBox{config});
+    root = root.set("users", Value{BoxedValueVector{users}});
+    root = root.set("config", Value{BoxedValueMap{config}});
 
-    Value data{root};
+    Value data{BoxedValueMap{root}};
 
     std::cout << "Data structure:\n";
     print_value(data, "", 1);
@@ -346,8 +346,8 @@ void demo_string_path() {
               << "\n";
 
     auto after_over = lager::over(name_lens, data, [](Value v) {
-        if (auto* s = v.get_if<std::string>()) {
-            return Value{*s + " (modified)"};
+        if (auto* s = v.get_if<BoxedString>()) {
+            return Value{s->get() + " (modified)"};
         }
         return v;
     });
@@ -371,16 +371,17 @@ void demo_immer_diff() {
     std::cout << "--- immer::vector comparison (manual) ---\n";
     std::cout << "Note: immer::diff does NOT support vector, must compare manually\n\n";
 
+    // Container Boxing: vector now stores Value directly
     ValueVector old_vec;
-    old_vec = old_vec.push_back(ValueBox{Value{std::string{"Alice"}}});
-    old_vec = old_vec.push_back(ValueBox{Value{std::string{"Bob"}}});
-    old_vec = old_vec.push_back(ValueBox{Value{std::string{"Charlie"}}});
+    old_vec = old_vec.push_back(Value{std::string{"Alice"}});
+    old_vec = old_vec.push_back(Value{std::string{"Bob"}});
+    old_vec = old_vec.push_back(Value{std::string{"Charlie"}});
 
     ValueVector new_vec;
-    new_vec = new_vec.push_back(ValueBox{Value{std::string{"Alice"}}});
-    new_vec = new_vec.push_back(ValueBox{Value{std::string{"Bobby"}}});
-    new_vec = new_vec.push_back(ValueBox{Value{std::string{"Charlie"}}});
-    new_vec = new_vec.push_back(ValueBox{Value{std::string{"David"}}});
+    new_vec = new_vec.push_back(Value{std::string{"Alice"}});
+    new_vec = new_vec.push_back(Value{std::string{"Bobby"}});
+    new_vec = new_vec.push_back(Value{std::string{"Charlie"}});
+    new_vec = new_vec.push_back(Value{std::string{"David"}});
 
     std::cout << "Old: [Alice, Bob, Charlie]\n";
     std::cout << "New: [Alice, Bobby, Charlie, David]\n\n";
@@ -392,47 +393,52 @@ void demo_immer_diff() {
     size_t common_size = std::min(old_size, new_size);
 
     for (size_t i = 0; i < common_size; ++i) {
-        const auto& old_box = old_vec[i];
-        const auto& new_box = new_vec[i];
+        const Value& old_val = old_vec[i];
+        const Value& new_val = new_vec[i];
 
-        auto* old_str = old_box->get_if<std::string>();
-        auto* new_str = new_box->get_if<std::string>();
+        // Container Boxing: strings are stored as BoxedString
+        std::string old_str = old_val.as_string();
+        std::string new_str = new_val.as_string();
 
-        if (old_str && new_str) {
-            if (old_box == new_box) {
-                std::cout << "  [" << i << "] retained: " << *old_str << " (same pointer)\n";
-            } else if (*old_str == *new_str) {
-                std::cout << "  [" << i << "] retained: " << *old_str << " (same value)\n";
+        if (!old_str.empty() && !new_str.empty()) {
+            // Container Boxing: compare by value address for identity check
+            if (&old_val.data == &new_val.data) {
+                std::cout << "  [" << i << "] retained: " << old_str << " (same pointer)\n";
+            } else if (old_str == new_str) {
+                std::cout << "  [" << i << "] retained: " << old_str << " (same value)\n";
             } else {
-                std::cout << "  [" << i << "] modified: " << *old_str << " -> " << *new_str << "\n";
+                std::cout << "  [" << i << "] modified: " << old_str << " -> " << new_str << "\n";
             }
         }
     }
 
     for (size_t i = common_size; i < old_size; ++i) {
-        if (auto* str = old_vec[i]->get_if<std::string>()) {
-            std::cout << "  [" << i << "] removed: " << *str << "\n";
+        std::string str = old_vec[i].as_string();
+        if (!str.empty()) {
+            std::cout << "  [" << i << "] removed: " << str << "\n";
         }
     }
 
     for (size_t i = common_size; i < new_size; ++i) {
-        if (auto* str = new_vec[i]->get_if<std::string>()) {
-            std::cout << "  [" << i << "] added: " << *str << "\n";
+        std::string str = new_vec[i].as_string();
+        if (!str.empty()) {
+            std::cout << "  [" << i << "] added: " << str << "\n";
         }
     }
 
     // --- immer::map diff ---
     std::cout << "\n--- immer::map diff (using immer::diff) ---\n";
 
+    // Container Boxing: map now stores Value directly
     ValueMap old_map;
-    old_map = old_map.set("name", ValueBox{Value{std::string{"Tom"}}});
-    old_map = old_map.set("age", ValueBox{Value{25}});
-    old_map = old_map.set("city", ValueBox{Value{std::string{"Beijing"}}});
+    old_map = old_map.set("name", Value{std::string{"Tom"}});
+    old_map = old_map.set("age", Value{25});
+    old_map = old_map.set("city", Value{std::string{"Beijing"}});
 
     ValueMap new_map;
-    new_map = new_map.set("name", ValueBox{Value{std::string{"Tom"}}});
-    new_map = new_map.set("age", ValueBox{Value{26}});
-    new_map = new_map.set("email", ValueBox{Value{std::string{"tom@x.com"}}});
+    new_map = new_map.set("name", Value{std::string{"Tom"}});
+    new_map = new_map.set("age", Value{26});
+    new_map = new_map.set("email", Value{std::string{"tom@x.com"}});
 
     std::cout << "Old: {name: Tom, age: 25, city: Beijing}\n";
     std::cout << "New: {name: Tom, age: 26, email: tom@x.com}\n\n";
@@ -443,7 +449,8 @@ void demo_immer_diff() {
         old_map, new_map, [](const auto& removed) { std::cout << "  [removed] key=" << removed.first << "\n"; },
         [](const auto& added) { std::cout << "  [added] key=" << added.first << "\n"; },
         [](const auto& old_kv, const auto& new_kv) {
-            if (old_kv.second.get() == new_kv.second.get()) {
+            // Container Boxing: compare Value addresses for identity check
+            if (&old_kv.second.data == &new_kv.second.data) {
                 std::cout << "  [retained] key=" << old_kv.first << " (same pointer)\n";
             } else {
                 std::cout << "  [modified] key=" << old_kv.first << "\n";
@@ -456,45 +463,45 @@ void demo_immer_diff() {
 void demo_recursive_diff_collector() {
     std::cout << "\n=== DiffEntryCollector Demo ===\n\n";
 
-    // Create old state
+    // Create old state - Container Boxing: maps now store Value directly
     ValueMap user1;
-    user1 = user1.set("name", ValueBox{Value{std::string{"Alice"}}});
-    user1 = user1.set("age", ValueBox{Value{25}});
+    user1 = user1.set("name", Value{std::string{"Alice"}});
+    user1 = user1.set("age", Value{25});
 
     ValueMap user2;
-    user2 = user2.set("name", ValueBox{Value{std::string{"Bob"}}});
-    user2 = user2.set("age", ValueBox{Value{30}});
+    user2 = user2.set("name", Value{std::string{"Bob"}});
+    user2 = user2.set("age", Value{30});
 
     ValueVector users_old;
-    users_old = users_old.push_back(ValueBox{Value{user1}});
-    users_old = users_old.push_back(ValueBox{Value{user2}});
+    users_old = users_old.push_back(Value{BoxedValueMap{user1}});
+    users_old = users_old.push_back(Value{BoxedValueMap{user2}});
 
     ValueMap old_root;
-    old_root = old_root.set("users", ValueBox{Value{users_old}});
-    old_root = old_root.set("version", ValueBox{Value{1}});
+    old_root = old_root.set("users", Value{BoxedValueVector{users_old}});
+    old_root = old_root.set("version", Value{1});
 
-    Value old_state{old_root};
+    Value old_state{BoxedValueMap{old_root}};
 
     // Create new state (with modifications)
     ValueMap user1_new;
-    user1_new = user1_new.set("name", ValueBox{Value{std::string{"Alice"}}});
-    user1_new = user1_new.set("age", ValueBox{Value{26}});                           // modified
-    user1_new = user1_new.set("email", ValueBox{Value{std::string{"alice@x.com"}}}); // added
+    user1_new = user1_new.set("name", Value{std::string{"Alice"}});
+    user1_new = user1_new.set("age", Value{26});                           // modified
+    user1_new = user1_new.set("email", Value{std::string{"alice@x.com"}}); // added
 
     ValueMap user3;
-    user3 = user3.set("name", ValueBox{Value{std::string{"Charlie"}}});
-    user3 = user3.set("age", ValueBox{Value{35}});
+    user3 = user3.set("name", Value{std::string{"Charlie"}});
+    user3 = user3.set("age", Value{35});
 
     ValueVector users_new;
-    users_new = users_new.push_back(ValueBox{Value{user1_new}});
-    users_new = users_new.push_back(ValueBox{Value{user2}}); // unchanged
-    users_new = users_new.push_back(ValueBox{Value{user3}}); // added
+    users_new = users_new.push_back(Value{BoxedValueMap{user1_new}});
+    users_new = users_new.push_back(Value{BoxedValueMap{user2}}); // unchanged (shared reference)
+    users_new = users_new.push_back(Value{BoxedValueMap{user3}}); // added
 
     ValueMap new_root;
-    new_root = new_root.set("users", ValueBox{Value{users_new}});
-    new_root = new_root.set("version", ValueBox{Value{2}}); // modified
+    new_root = new_root.set("users", Value{BoxedValueVector{users_new}});
+    new_root = new_root.set("version", Value{2}); // modified
 
-    Value new_state{new_root};
+    Value new_state{BoxedValueMap{new_root}};
 
     // Print states
     std::cout << "--- Old State ---\n";
@@ -568,13 +575,15 @@ void demo_shared_state() {
     std::cout << "\n--- Modifying state (changing Alice's age to 26) ---\n";
 
     Value modified_state = initial_state;
-    // Navigate: users[0].age
-    if (auto* users_vec = modified_state.at("users").get_if<ValueVector>()) {
-        if (users_vec->size() > 0) {
-            Value alice = (*users_vec)[0].get();
+    // Navigate: users[0].age - Container Boxing: use boxed access
+    if (auto* boxed_vec = modified_state.at("users").get_if<BoxedValueVector>()) {
+        const ValueVector& users_vec = boxed_vec->get();
+        if (users_vec.size() > 0) {
+            Value alice = users_vec[0];
             alice = alice.set("age", Value{26});
-            auto new_vec = users_vec->set(0, ValueBox{alice});
-            modified_state = modified_state.set("users", Value{new_vec});
+            // Unbox-Modify-Rebox: create new vector and wrap in box
+            auto new_vec = users_vec.set(0, alice);
+            modified_state = modified_state.set("users", Value{BoxedValueVector{new_vec}});
         }
     }
 

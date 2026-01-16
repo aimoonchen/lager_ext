@@ -538,19 +538,22 @@ void demo_subscriber() {
 
     // Display data summary
     std::cout << "\n--- Data Summary ---\n";
-    if (auto* map = local.get_if<ValueMap>()) {
-        if (auto it = map->find("name"); it) {
-            if (auto* name = (*it)->get_if<std::string>()) {
-                std::cout << "Scene name: " << *name << "\n";
+    // Container Boxing: use BoxedValueMap
+    if (auto* boxed_map = local.get_if<BoxedValueMap>()) {
+        const ValueMap& map = boxed_map->get();
+        if (auto it = map.find("name"); it) {
+            // ValueMap stores Value directly; strings are BoxedString
+            if (auto* boxed_name = it->get_if<BoxedString>()) {
+                std::cout << "Scene name: " << boxed_name->get() << "\n";
             }
         }
-        if (auto it = map->find("version"); it) {
-            if (auto* ver = (*it)->get_if<int>()) {
+        if (auto it = map.find("version"); it) {
+            if (auto* ver = it->get_if<int32_t>()) {
                 std::cout << "Version: " << *ver << "\n";
             }
         }
-        if (auto it = map->find("objects"); it) {
-            std::cout << "Objects count: " << (*it)->size() << "\n";
+        if (auto it = map.find("objects"); it) {
+            std::cout << "Objects count: " << it->size() << "\n";
         }
     }
 
@@ -588,17 +591,22 @@ size_t traverse_shared_value(const SharedValue& sv) {
 size_t traverse_value(const Value& v) {
     size_t count = 1;
 
-    if (auto* map = v.get_if<ValueMap>()) {
-        for (const auto& [key, box] : *map) {
-            count += traverse_value(box.get());
+    // Container Boxing: ValueMap/ValueVector now store Value directly, not box<Value>
+    // But they are wrapped in BoxedValueMap/BoxedValueVector
+    if (auto* boxed_map = v.get_if<BoxedValueMap>()) {
+        const ValueMap& map = boxed_map->get();
+        for (const auto& [key, val] : map) {
+            count += traverse_value(val);
         }
-    } else if (auto* vec = v.get_if<ValueVector>()) {
-        for (const auto& box : *vec) {
-            count += traverse_value(box.get());
+    } else if (auto* boxed_vec = v.get_if<BoxedValueVector>()) {
+        const ValueVector& vec = boxed_vec->get();
+        for (const auto& val : vec) {
+            count += traverse_value(val);
         }
-    } else if (auto* arr = v.get_if<ValueArray>()) {
-        for (const auto& box : *arr) {
-            count += traverse_value(box.get());
+    } else if (auto* boxed_arr = v.get_if<BoxedValueArray>()) {
+        const ValueArray& arr = boxed_arr->get();
+        for (const auto& val : arr) {
+            count += traverse_value(val);
         }
     }
 

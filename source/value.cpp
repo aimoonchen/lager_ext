@@ -542,16 +542,17 @@ Value deserialize_value(ByteReader& r) {
     case TypeTag::String:
         return Value{r.read_string()};
 
-    // Container types
+    // Container types - Container Boxing: wrap in immer::box
     case TypeTag::Map: {
         uint32_t count = r.read_u32();
         auto transient = ValueMap{}.transient();
         for (uint32_t i = 0; i < count; ++i) {
             std::string key = r.read_string();
             Value val = deserialize_value(r);
-            transient.set(std::move(key), ValueBox{std::move(val)});
+            // Container Boxing: map now stores Value directly
+            transient.set(std::move(key), std::move(val));
         }
-        return Value{transient.persistent()};
+        return Value{BoxedValueMap{transient.persistent()}};
     }
 
     case TypeTag::Vector: {
@@ -559,24 +560,25 @@ Value deserialize_value(ByteReader& r) {
         auto transient = ValueVector{}.transient();
         for (uint32_t i = 0; i < count; ++i) {
             Value val = deserialize_value(r);
-            transient.push_back(ValueBox{std::move(val)});
+            // Container Boxing: vector now stores Value directly
+            transient.push_back(std::move(val));
         }
-        return Value{transient.persistent()};
+        return Value{BoxedValueVector{transient.persistent()}};
     }
 
     case TypeTag::Array: {
-        // Deserialize as immer::array to preserve type information
+        // Container Boxing: Deserialize as immer::array, wrap in BoxedValueArray
         // Note: immer::array's transient may not work with custom MemoryPolicy,
         // so we use std::vector + range constructor for O(n) construction.
         uint32_t count = r.read_u32();
-        std::vector<ValueBox> temp;
+        std::vector<Value> temp;
         temp.reserve(count);
         for (uint32_t i = 0; i < count; ++i) {
             Value val = deserialize_value(r);
             temp.emplace_back(std::move(val));
         }
         // Construct immer::array using move iterators for efficiency
-        return Value{ValueArray(std::make_move_iterator(temp.begin()), std::make_move_iterator(temp.end()))};
+        return Value{BoxedValueArray{ValueArray(std::make_move_iterator(temp.begin()), std::make_move_iterator(temp.end()))}};
     }
 
     case TypeTag::Table: {
@@ -585,9 +587,10 @@ Value deserialize_value(ByteReader& r) {
         for (uint32_t i = 0; i < count; ++i) {
             std::string id = r.read_string();
             Value val = deserialize_value(r);
-            transient.insert(TableEntry{std::move(id), ValueBox{std::move(val)}});
+            // Container Boxing: TableEntry now stores Value directly
+            transient.insert(TableEntry{std::move(id), std::move(val)});
         }
-        return Value{transient.persistent()};
+        return Value{BoxedValueTable{transient.persistent()}};
     }
 
     // Math types
@@ -1139,7 +1142,7 @@ private:
 
         if (peek() == '}') {
             consume();
-            return Value{ValueMap{}};
+            return Value{BoxedValueMap{ValueMap{}}};
         }
 
         auto transient = ValueMap{}.transient();
@@ -1149,7 +1152,8 @@ private:
             std::string key = parse_string_raw();
             expect(':');
             Value val = parse_value();
-            transient.set(std::move(key), ValueBox{std::move(val)});
+            // Container Boxing: map now stores Value directly
+            transient.set(std::move(key), std::move(val));
 
             skip_whitespace();
             char c = peek();
@@ -1163,7 +1167,7 @@ private:
             consume();
         }
 
-        return Value{transient.persistent()};
+        return Value{BoxedValueMap{transient.persistent()}};
     }
 
     Value parse_array() {
@@ -1172,14 +1176,15 @@ private:
 
         if (peek() == ']') {
             consume();
-            return Value{ValueVector{}};
+            return Value{BoxedValueVector{ValueVector{}}};
         }
 
         auto transient = ValueVector{}.transient();
 
         while (true) {
             Value val = parse_value();
-            transient.push_back(ValueBox{std::move(val)});
+            // Container Boxing: vector now stores Value directly
+            transient.push_back(std::move(val));
 
             skip_whitespace();
             char c = peek();
@@ -1193,7 +1198,7 @@ private:
             consume();
         }
 
-        return Value{transient.persistent()};
+        return Value{BoxedValueVector{transient.persistent()}};
     }
 
     std::string parse_string_raw() {

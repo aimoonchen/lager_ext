@@ -298,8 +298,9 @@ private:
         switch (meta_.widget_type) {
         case WidgetType::LineEdit: {
             if (auto* edit = qobject_cast<QLineEdit*>(widget_)) {
-                if (auto* str = val.get_if<std::string>()) {
-                    edit->setText(QString::fromStdString(*str));
+                // Container Boxing: strings are stored as BoxedString
+                if (auto* boxed_str = val.get_if<BoxedString>()) {
+                    edit->setText(QString::fromStdString(boxed_str->get()));
                 }
             }
             break;
@@ -344,25 +345,28 @@ private:
         }
         case WidgetType::ComboBox: {
             if (auto* combo = qobject_cast<QComboBox*>(widget_)) {
-                if (auto* str = val.get_if<std::string>()) {
-                    combo->setCurrentText(QString::fromStdString(*str));
+                // Container Boxing: strings are stored as BoxedString
+                if (auto* boxed_str = val.get_if<BoxedString>()) {
+                    combo->setCurrentText(QString::fromStdString(boxed_str->get()));
                 }
             }
             break;
         }
         case WidgetType::Vector3Edit: {
             if (xSpin_ && ySpin_ && zSpin_) {
-                if (auto* map = val.get_if<ValueMap>()) {
-                    if (auto it = map->find("x"); it) {
-                        if (auto* d = (*it)->get_if<double>())
+                // Container Boxing: try BoxedValueMap first
+                if (auto* boxed_map = val.get_if<BoxedValueMap>()) {
+                    const ValueMap& map = boxed_map->get();
+                    if (auto it = map.find("x"); it) {
+                        if (auto* d = it->get_if<double>())
                             xSpin_->setValue(*d);
                     }
-                    if (auto it = map->find("y"); it) {
-                        if (auto* d = (*it)->get_if<double>())
+                    if (auto it = map.find("y"); it) {
+                        if (auto* d = it->get_if<double>())
                             ySpin_->setValue(*d);
                     }
-                    if (auto it = map->find("z"); it) {
-                        if (auto* d = (*it)->get_if<double>())
+                    if (auto it = map.find("z"); it) {
+                        if (auto* d = it->get_if<double>())
                             zSpin_->setValue(*d);
                     }
                 }
@@ -507,9 +511,11 @@ public:
 
     void updateValues(const SceneObject& obj) {
         for (auto& [name, widget] : propertyWidgets_) {
-            if (auto* map = obj.data.get_if<ValueMap>()) {
-                if (auto it = map->find(name); it) {
-                    widget->setValue(**it);
+            // Container Boxing: data is BoxedValueMap
+            if (auto* boxed_map = obj.data.get_if<BoxedValueMap>()) {
+                const ValueMap& map = boxed_map->get();
+                if (auto it = map.find(name); it) {
+                    widget->setValue(*it);  // ValueMap stores Value directly, not box<Value>
                 }
             }
         }
@@ -523,9 +529,11 @@ private:
                                          std::function<void(const std::string&, Value)> setter) {
         auto* widget = new PropertyWidget(meta, this);
 
-        if (auto* map = obj.data.get_if<ValueMap>()) {
-            if (auto it = map->find(meta.name); it) {
-                widget->setValue(**it);
+        // Container Boxing: data is BoxedValueMap
+        if (auto* boxed_map = obj.data.get_if<BoxedValueMap>()) {
+            const ValueMap& map = boxed_map->get();
+            if (auto it = map.find(meta.name); it) {
+                widget->setValue(*it);  // ValueMap stores Value directly, not box<Value>
             }
         }
 
@@ -583,10 +591,13 @@ public:
             auto* item = new QTreeWidgetItem();
 
             QString name = QString::fromStdString(id);
-            if (auto* map = obj.data.get_if<ValueMap>()) {
-                if (auto it = map->find("name"); it) {
-                    if (auto* str = (*it)->get_if<std::string>()) {
-                        name = QString::fromStdString(*str);
+            // Container Boxing: data is BoxedValueMap
+            if (auto* boxed_map = obj.data.get_if<BoxedValueMap>()) {
+                const ValueMap& map = boxed_map->get();
+                if (auto it = map.find("name"); it) {
+                    // ValueMap now stores Value directly; strings are BoxedString
+                    if (auto* boxed_str = it->get_if<BoxedString>()) {
+                        name = QString::fromStdString(boxed_str->get());
                     }
                 }
             }

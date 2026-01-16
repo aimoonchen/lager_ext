@@ -22,31 +22,33 @@ ObjectState object_update(ObjectState state, ObjectAction action) {
             using T = std::decay_t<decltype(act)>;
 
             if constexpr (std::is_same_v<T, object_actions::SetProperty>) {
-                // Get current data as map
-                auto* map_ptr = state.data.get_if<ValueMap>();
-                if (!map_ptr) {
+                // Container Boxing: Get current data as BoxedValueMap
+                auto* boxed_map = state.data.get_if<BoxedValueMap>();
+                if (!boxed_map) {
                     // Initialize as empty map if not a map
-                    state.data = Value{ValueMap{}};
-                    map_ptr = state.data.get_if<ValueMap>();
+                    state.data = Value{BoxedValueMap{ValueMap{}}};
+                    boxed_map = state.data.get_if<BoxedValueMap>();
                 }
 
-                // Set the property
-                state.data = Value{map_ptr->set(act.property_name, ValueBox(act.new_value))};
+                // Set the property (Unbox-Modify-Rebox pattern)
+                auto new_map = boxed_map->get().set(act.property_name, act.new_value);
+                state.data = Value{BoxedValueMap{std::move(new_map)}};
                 state.version++;
                 return state;
             } else if constexpr (std::is_same_v<T, object_actions::SetProperties>) {
-                auto* map_ptr = state.data.get_if<ValueMap>();
-                if (!map_ptr) {
-                    state.data = Value{ValueMap{}};
-                    map_ptr = state.data.get_if<ValueMap>();
+                // Container Boxing: Get current data as BoxedValueMap
+                auto* boxed_map = state.data.get_if<BoxedValueMap>();
+                if (!boxed_map) {
+                    state.data = Value{BoxedValueMap{ValueMap{}}};
+                    boxed_map = state.data.get_if<BoxedValueMap>();
                 }
 
                 // Use transient for efficient batch update
-                auto trans = map_ptr->transient();
+                auto trans = boxed_map->get().transient();
                 for (const auto& [name, value] : act.properties) {
-                    trans.set(name, ValueBox(value));
+                    trans.set(name, value);
                 }
-                state.data = Value{trans.persistent()};
+                state.data = Value{BoxedValueMap{trans.persistent()}};
                 state.version++;
                 return state;
             } else if constexpr (std::is_same_v<T, object_actions::ReplaceData>) {
@@ -526,15 +528,15 @@ void demo_multi_store_basic() {
     std::cout << "1. Adding objects...\n";
 
     ValueMap light_data;
-    light_data = light_data.set("name", ValueBox(Value{"Sun Light"}));
-    light_data = light_data.set("intensity", ValueBox(Value{1.0}));
-    light_data = light_data.set("color", ValueBox(Value{"#FFFFFF"}));
-    controller.add_object("light_sun", "Light", Value{light_data});
+    light_data = light_data.set("name", Value{"Sun Light"});
+    light_data = light_data.set("intensity", Value{1.0});
+    light_data = light_data.set("color", Value{"#FFFFFF"});
+    controller.add_object("light_sun", "Light", Value{BoxedValueMap{light_data}});
 
     ValueMap camera_data;
-    camera_data = camera_data.set("name", ValueBox(Value{"Main Camera"}));
-    camera_data = camera_data.set("fov", ValueBox(Value{60.0}));
-    controller.add_object("camera_main", "Camera", Value{camera_data});
+    camera_data = camera_data.set("name", Value{"Main Camera"});
+    camera_data = camera_data.set("fov", Value{60.0});
+    controller.add_object("camera_main", "Camera", Value{BoxedValueMap{camera_data}});
 
     std::cout << "   Objects added: " << controller.object_count() << "\n";
     std::cout << "   Undo stack: " << controller.undo_count() << "\n\n";
@@ -544,9 +546,10 @@ void demo_multi_store_basic() {
     controller.set_property("light_sun", "intensity", Value{2.5});
 
     if (auto* obj = controller.get_object("light_sun")) {
-        if (auto* map = obj->data.get_if<ValueMap>()) {
-            if (auto it = map->find("intensity"); it) {
-                std::cout << "   New intensity: " << value_to_string(**it) << "\n";
+        if (auto* boxed_map = obj->data.get_if<BoxedValueMap>()) {
+            const auto& map = boxed_map->get();
+            if (auto it = map.find("intensity"); it) {
+                std::cout << "   New intensity: " << value_to_string(*it) << "\n";
             }
         }
     }
@@ -564,9 +567,10 @@ void demo_multi_store_basic() {
     controller.undo();
 
     if (auto* obj = controller.get_object("light_sun")) {
-        if (auto* map = obj->data.get_if<ValueMap>()) {
-            if (auto it = map->find("intensity"); it) {
-                std::cout << "   Intensity after undo: " << value_to_string(**it) << "\n";
+        if (auto* boxed_map = obj->data.get_if<BoxedValueMap>()) {
+            const auto& map = boxed_map->get();
+            if (auto it = map.find("intensity"); it) {
+                std::cout << "   Intensity after undo: " << value_to_string(*it) << "\n";
             }
         }
     }
@@ -583,11 +587,11 @@ void demo_multi_store_transactions() {
     // Create multiple objects
     for (int i = 0; i < 5; ++i) {
         ValueMap data;
-        data = data.set("name", ValueBox(Value{"Cube_" + std::to_string(i)}));
-        data = data.set("x", ValueBox(Value{static_cast<double>(i * 10)}));
-        data = data.set("y", ValueBox(Value{0.0}));
-        data = data.set("z", ValueBox(Value{0.0}));
-        controller.add_object("cube_" + std::to_string(i), "Mesh", Value{data}, false);
+        data = data.set("name", Value{"Cube_" + std::to_string(i)});
+        data = data.set("x", Value{static_cast<double>(i * 10)});
+        data = data.set("y", Value{0.0});
+        data = data.set("z", Value{0.0});
+        controller.add_object("cube_" + std::to_string(i), "Mesh", Value{BoxedValueMap{data}}, false);
     }
 
     std::cout << "Created " << controller.object_count() << " cubes\n";
@@ -611,9 +615,10 @@ void demo_multi_store_transactions() {
     std::cout << "2. Verifying changes...\n";
     for (int i = 0; i < 3; ++i) {
         if (auto* obj = controller.get_object("cube_" + std::to_string(i))) {
-            if (auto* map = obj->data.get_if<ValueMap>()) {
-                if (auto it = map->find("y"); it) {
-                    std::cout << "   cube_" << i << " y = " << value_to_string(**it) << "\n";
+            if (auto* boxed_map = obj->data.get_if<BoxedValueMap>()) {
+                const auto& map = boxed_map->get();
+                if (auto it = map.find("y"); it) {
+                    std::cout << "   cube_" << i << " y = " << value_to_string(*it) << "\n";
                 }
             }
         }
@@ -625,9 +630,10 @@ void demo_multi_store_transactions() {
 
     for (int i = 0; i < 3; ++i) {
         if (auto* obj = controller.get_object("cube_" + std::to_string(i))) {
-            if (auto* map = obj->data.get_if<ValueMap>()) {
-                if (auto it = map->find("y"); it) {
-                    std::cout << "   cube_" << i << " y = " << value_to_string(**it) << "\n";
+            if (auto* boxed_map = obj->data.get_if<BoxedValueMap>()) {
+                const auto& map = boxed_map->get();
+                if (auto it = map.find("y"); it) {
+                    std::cout << "   cube_" << i << " y = " << value_to_string(*it) << "\n";
                 }
             }
         }
@@ -644,12 +650,12 @@ void demo_multi_store_undo_redo() {
 
     // Create two objects
     ValueMap light_data;
-    light_data = light_data.set("intensity", ValueBox(Value{1.0}));
-    controller.add_object("light", "Light", Value{light_data});
+    light_data = light_data.set("intensity", Value{1.0});
+    controller.add_object("light", "Light", Value{BoxedValueMap{light_data}});
 
     ValueMap mesh_data;
-    mesh_data = mesh_data.set("scale", ValueBox(Value{1.0}));
-    controller.add_object("mesh", "Mesh", Value{mesh_data});
+    mesh_data = mesh_data.set("scale", Value{1.0});
+    controller.add_object("mesh", "Mesh", Value{BoxedValueMap{mesh_data}});
 
     std::cout << "Created 2 objects (2 undo operations)\n";
     std::cout << "Undo stack: " << controller.undo_count() << "\n\n";
@@ -670,16 +676,18 @@ void demo_multi_store_undo_redo() {
     auto print_state = [&]() {
         std::cout << "   Current state:\n";
         if (auto* light = controller.get_object("light")) {
-            if (auto* map = light->data.get_if<ValueMap>()) {
-                if (auto it = map->find("intensity"); it) {
-                    std::cout << "     light.intensity = " << value_to_string(**it) << "\n";
+            if (auto* boxed_map = light->data.get_if<BoxedValueMap>()) {
+                const auto& map = boxed_map->get();
+                if (auto it = map.find("intensity"); it) {
+                    std::cout << "     light.intensity = " << value_to_string(*it) << "\n";
                 }
             }
         }
         if (auto* mesh = controller.get_object("mesh")) {
-            if (auto* map = mesh->data.get_if<ValueMap>()) {
-                if (auto it = map->find("scale"); it) {
-                    std::cout << "     mesh.scale = " << value_to_string(**it) << "\n";
+            if (auto* boxed_map = mesh->data.get_if<BoxedValueMap>()) {
+                const auto& map = boxed_map->get();
+                if (auto it = map.find("scale"); it) {
+                    std::cout << "     mesh.scale = " << value_to_string(*it) << "\n";
                 }
             }
         }
@@ -731,13 +739,13 @@ void demo_multi_store_performance() {
 
     for (int i = 0; i < NUM_OBJECTS; ++i) {
         ValueMap data;
-        data = data.set("name", ValueBox(Value{"Object_" + std::to_string(i)}));
-        data = data.set("x", ValueBox(Value{static_cast<double>(i)}));
-        data = data.set("y", ValueBox(Value{0.0}));
-        data = data.set("z", ValueBox(Value{0.0}));
-        data = data.set("visible", ValueBox(Value{true}));
+        data = data.set("name", Value{"Object_" + std::to_string(i)});
+        data = data.set("x", Value{static_cast<double>(i)});
+        data = data.set("y", Value{0.0});
+        data = data.set("z", Value{0.0});
+        data = data.set("visible", Value{true});
         // Create without recording undo (simulating initial load)
-        controller.add_object("obj_" + std::to_string(i), "Mesh", Value{data}, false);
+        controller.add_object("obj_" + std::to_string(i), "Mesh", Value{BoxedValueMap{data}}, false);
     }
 
     auto end = std::chrono::high_resolution_clock::now();

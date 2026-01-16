@@ -76,9 +76,11 @@ namespace detail {
 
 /// Erase a key from a map value
 /// @note Internal helper
+/// @note Container Boxing: uses BoxedValueMap, unbox -> modify -> rebox
 [[nodiscard]] inline Value erase_key_from_map(const Value& val, std::string_view key) {
-    if (auto* m = val.get_if<ValueMap>()) {
-        return m->erase(std::string{key});
+    if (auto* boxed_map = val.get_if<BoxedValueMap>()) {
+        auto new_map = boxed_map->get().erase(std::string{key});
+        return Value{BoxedValueMap{std::move(new_map)}};
     }
     return val;
 }
@@ -86,19 +88,20 @@ namespace detail {
 /// Check if a path element can be accessed in the given value
 /// @note Internal helper - prefer is_valid_path() for public use
 /// @note Uses transparent lookup for zero-allocation string_view access
+/// @note Container Boxing: accesses BoxedValueMap/BoxedValueVector/BoxedValueArray
 [[nodiscard]] inline bool can_access_element(const Value& val, const PathElement& elem) {
     if (auto* key = std::get_if<std::string_view>(&elem)) {
-        if (const auto* map = val.get_if<ValueMap>()) {
-            return map->count(*key) > 0; // Zero-allocation: uses transparent lookup
+        if (const auto* boxed_map = val.get_if<BoxedValueMap>()) {
+            return boxed_map->get().count(*key) > 0; // Zero-allocation: uses transparent lookup
         }
         return false;
     } else {
         auto idx = std::get<std::size_t>(elem);
-        if (const auto* vec = val.get_if<ValueVector>()) {
-            return idx < vec->size();
+        if (const auto* boxed_vec = val.get_if<BoxedValueVector>()) {
+            return idx < boxed_vec->get().size();
         }
-        if (const auto* arr = val.get_if<ValueArray>()) {
-            return idx < arr->size();
+        if (const auto* boxed_arr = val.get_if<BoxedValueArray>()) {
+            return idx < boxed_arr->get().size();
         }
         return false;
     }

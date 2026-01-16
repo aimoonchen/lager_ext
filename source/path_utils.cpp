@@ -61,37 +61,43 @@ Value set_at_path_element_vivify(const Value& current, const PathElement& elem, 
     if (auto* key = std::get_if<std::string_view>(&elem)) {
         // For string keys: auto-create map if null
         std::string key_str{*key};
-        if (auto* m = current.get_if<ValueMap>()) {
-            return m->set(key_str, ValueBox{std::move(new_val)});
+        // Container Boxing: use BoxedValueMap
+        if (auto* boxed_map = current.get_if<BoxedValueMap>()) {
+            auto new_map = boxed_map->get().set(key_str, std::move(new_val));
+            return Value{BoxedValueMap{std::move(new_map)}};
         }
         if (current.is_null()) {
             // Auto-vivification: create new map
-            return ValueMap{}.set(key_str, ValueBox{std::move(new_val)});
+            auto new_map = ValueMap{}.set(key_str, std::move(new_val));
+            return Value{BoxedValueMap{std::move(new_map)}};
         }
         // Not a map and not null - cannot vivify
         return current;
     } else {
         // For index: auto-extend vector if needed
         auto idx = std::get<std::size_t>(elem);
+        // Container Boxing: use BoxedValueVector
         // Use transient mode for O(N) batch push_back
-        if (auto* v = current.get_if<ValueVector>()) {
-            if (idx < v->size()) {
-                return v->set(idx, ValueBox{std::move(new_val)});
+        if (auto* boxed_vec = current.get_if<BoxedValueVector>()) {
+            const auto& v = boxed_vec->get();
+            if (idx < v.size()) {
+                auto new_vec = v.set(idx, std::move(new_val));
+                return Value{BoxedValueVector{std::move(new_vec)}};
             }
-            auto trans = v->transient();
+            auto trans = v.transient();
             while (trans.size() <= idx) {
-                trans.push_back(ValueBox{});
+                trans.push_back(Value{});
             }
-            trans.set(idx, ValueBox{std::move(new_val)});
-            return trans.persistent();
+            trans.set(idx, std::move(new_val));
+            return Value{BoxedValueVector{trans.persistent()}};
         }
         if (current.is_null()) {
             auto trans = ValueVector{}.transient();
             for (std::size_t i = 0; i < idx; ++i) {
-                trans.push_back(ValueBox{});
+                trans.push_back(Value{});
             }
-            trans.push_back(ValueBox{std::move(new_val)});
-            return trans.persistent();
+            trans.push_back(std::move(new_val));
+            return Value{BoxedValueVector{trans.persistent()}};
         }
         return current;
     }
@@ -107,12 +113,13 @@ Value set_at_path_recursive_vivify(const Value& root, PathView path, std::size_t
     Value current_child = detail::get_at_path_element(root, elem);
 
     // If child is null and we have more path elements, prepare for vivification
+    // Container Boxing: wrap in immer::box
     if (current_child.is_null() && path_index + 1 < path.size()) {
         const auto& next_elem = path[path_index + 1];
         if (std::holds_alternative<std::string_view>(next_elem)) {
-            current_child = Value{ValueMap{}};
+            current_child = Value{BoxedValueMap{ValueMap{}}};
         } else {
-            current_child = Value{ValueVector{}};
+            current_child = Value{BoxedValueVector{ValueVector{}}};
         }
     }
 

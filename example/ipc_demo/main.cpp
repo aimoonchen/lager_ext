@@ -161,12 +161,15 @@ int runServer() {
             Value tags = msg->data.at("tags");
             if (!tags.is_null()) {
                 std::cout << "  tags: [";
-                if (auto* vec = tags.get_if<ValueVector>()) {
+                // Container Boxing: use BoxedValueVector
+                if (auto* boxed_vec = tags.get_if<BoxedValueVector>()) {
+                    const ValueVector& vec = boxed_vec->get();
                     bool first = true;
-                    for (const auto& item : *vec) {
+                    for (const auto& item : vec) {
                         if (!first)
                             std::cout << ", ";
-                        std::cout << "\"" << item.get().as_string() << "\"";
+                        // ValueVector stores Value directly, not box<Value>
+                        std::cout << "\"" << item.as_string() << "\"";
                         first = false;
                     }
                 }

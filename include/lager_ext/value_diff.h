@@ -89,16 +89,19 @@ struct DiffNodeView {
     /// After successful parse, access type/old_value/new_value directly (O(1))
     /// The pointers remain valid as long as the original Value is alive.
     bool parse(const Value& val) {
-        auto* m = val.get_if<ValueMap>();
-        if (!m)
+        // Container Boxing: get the boxed map first, then access the raw map
+        auto* boxed_m = val.get_if<BoxedValueMap>();
+        if (!boxed_m)
             return false;
+        const auto& m = boxed_m->get();
 
         // Look up type (required field)
-        auto* type_box = m->find(diff_keys::TYPE);
-        if (!type_box)
+        // Container Boxing: ValueMap stores Value directly now
+        auto* type_ptr = m.find(diff_keys::TYPE);
+        if (!type_ptr)
             return false;
 
-        auto* type_val = type_box->get().get_if<uint8_t>();
+        auto* type_val = type_ptr->get_if<uint8_t>();
         if (!type_val || *type_val > static_cast<uint8_t>(DiffEntry::Type::Change)) {
             return false;
         }
@@ -106,15 +109,17 @@ struct DiffNodeView {
         type = static_cast<DiffEntry::Type>(*type_val);
 
         // Look up old value (optional, present for Remove/Change)
-        if (auto* old_box = m->find(diff_keys::OLD)) {
-            old_value = &old_box->get();
+        // Container Boxing: ValueMap stores Value directly
+        if (auto* old_ptr = m.find(diff_keys::OLD)) {
+            old_value = old_ptr;
         } else {
             old_value = nullptr;
         }
 
         // Look up new value (optional, present for Add/Change)
-        if (auto* new_box = m->find(diff_keys::NEW)) {
-            new_value = &new_box->get();
+        // Container Boxing: ValueMap stores Value directly
+        if (auto* new_ptr = m.find(diff_keys::NEW)) {
+            new_value = new_ptr;
         } else {
             new_value = nullptr;
         }

@@ -638,118 +638,128 @@ static void collect_diff_recursive(const Value& old_val, const Value& new_val, s
         return;
     }
 
-    // Both are maps
-    if (auto* old_map = old_val.get_if<ValueMap>()) [[likely]] {
-        auto* new_map = new_val.get_if<ValueMap>();
+    // Both are maps - Container Boxing: use BoxedValueMap
+    if (auto* old_boxed_map = old_val.get_if<BoxedValueMap>()) [[likely]] {
+        auto* new_boxed_map = new_val.get_if<BoxedValueMap>();
+        const auto& old_map = old_boxed_map->get();
+        const auto& new_map = new_boxed_map->get();
 
         // Ensure path_stack has space for one more element
         if (path_stack.size() <= path_depth) {
             path_stack.resize(path_depth + 1);
         }
 
+        // Container Boxing: ValueMap now stores Value directly
         // Check for added and modified entries
-        for (const auto& [key, new_box] : *new_map) {
+        for (const auto& [key, new_child] : new_map) {
             path_stack[path_depth] = std::string_view{key};
 
-            if (auto* old_box = old_map->find(key)) {
-                // Key exists in both - check if same box (structural sharing)
-                if (old_box->get() != new_box.get()) [[unlikely]] {
-                    collect_diff_recursive(old_box->get(), new_box.get(), path_stack, path_depth + 1, result);
+            if (auto* old_child_ptr = old_map.find(key)) {
+                // Key exists in both - check if same value (by address for identity)
+                if (&old_child_ptr->data != &new_child.data) [[unlikely]] {
+                    collect_diff_recursive(*old_child_ptr, new_child, path_stack, path_depth + 1, result);
                 }
             } else {
                 // Key only in new - added
                 Path child_path;
                 child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
-                result.added.emplace_back(std::move(child_path), new_box.get());
+                result.added.emplace_back(std::move(child_path), new_child);
             }
         }
 
         // Check for removed entries
-        for (const auto& [key, old_box] : *old_map) {
-            if (!new_map->find(key)) [[unlikely]] {
+        for (const auto& [key, old_child] : old_map) {
+            if (!new_map.find(key)) [[unlikely]] {
                 path_stack[path_depth] = std::string_view{key};
                 Path child_path;
                 child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
-                result.removed.emplace_back(std::move(child_path), old_box.get());
+                result.removed.emplace_back(std::move(child_path), old_child);
             }
         }
         return;
     }
 
-    // Both are vectors
-    if (auto* old_vec = old_val.get_if<ValueVector>()) {
-        auto* new_vec = new_val.get_if<ValueVector>();
+    // Both are vectors - Container Boxing: use BoxedValueVector
+    if (auto* old_boxed_vec = old_val.get_if<BoxedValueVector>()) {
+        auto* new_boxed_vec = new_val.get_if<BoxedValueVector>();
+        const auto& old_vec = old_boxed_vec->get();
+        const auto& new_vec = new_boxed_vec->get();
 
         // Ensure path_stack has space for one more element
         if (path_stack.size() <= path_depth) {
             path_stack.resize(path_depth + 1);
         }
 
-        std::size_t min_size = std::min(old_vec->size(), new_vec->size());
+        std::size_t min_size = std::min(old_vec.size(), new_vec.size());
 
+        // Container Boxing: ValueVector now stores Value directly
         // Compare common elements
         for (std::size_t i = 0; i < min_size; ++i) {
-            const auto& old_box = (*old_vec)[i];
-            const auto& new_box = (*new_vec)[i];
+            const Value& old_child = old_vec[i];
+            const Value& new_child = new_vec[i];
 
-            // Check if same box (structural sharing)
-            if (old_box.get() != new_box.get()) [[unlikely]] {
+            // Check if same value (by address for identity)
+            if (&old_child.data != &new_child.data) [[unlikely]] {
                 path_stack[path_depth] = i;
-                collect_diff_recursive(old_box.get(), new_box.get(), path_stack, path_depth + 1, result);
+                collect_diff_recursive(old_child, new_child, path_stack, path_depth + 1, result);
             }
         }
 
         // Elements added to new vector
-        for (std::size_t i = min_size; i < new_vec->size(); ++i) {
+        for (std::size_t i = min_size; i < new_vec.size(); ++i) {
             path_stack[path_depth] = i;
             Path child_path;
             child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
-            result.added.emplace_back(std::move(child_path), (*new_vec)[i].get());
+            result.added.emplace_back(std::move(child_path), new_vec[i]);
         }
 
         // Elements removed from old vector
-        for (std::size_t i = min_size; i < old_vec->size(); ++i) {
+        for (std::size_t i = min_size; i < old_vec.size(); ++i) {
             path_stack[path_depth] = i;
             Path child_path;
             child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
-            result.removed.emplace_back(std::move(child_path), (*old_vec)[i].get());
+            result.removed.emplace_back(std::move(child_path), old_vec[i]);
         }
         return;
     }
 
-    // Both are arrays
-    if (auto* old_arr = old_val.get_if<ValueArray>()) {
-        auto* new_arr = new_val.get_if<ValueArray>();
+    // Both are arrays - Container Boxing: use BoxedValueArray
+    if (auto* old_boxed_arr = old_val.get_if<BoxedValueArray>()) {
+        auto* new_boxed_arr = new_val.get_if<BoxedValueArray>();
+        const auto& old_arr = old_boxed_arr->get();
+        const auto& new_arr = new_boxed_arr->get();
 
         // Ensure path_stack has space for one more element
         if (path_stack.size() <= path_depth) {
             path_stack.resize(path_depth + 1);
         }
 
-        std::size_t min_size = std::min(old_arr->size(), new_arr->size());
+        std::size_t min_size = std::min(old_arr.size(), new_arr.size());
 
+        // Container Boxing: ValueArray now stores Value directly
         for (std::size_t i = 0; i < min_size; ++i) {
-            const auto& old_box = (*old_arr)[i];
-            const auto& new_box = (*new_arr)[i];
+            const Value& old_child = old_arr[i];
+            const Value& new_child = new_arr[i];
 
-            if (old_box.get() != new_box.get()) [[unlikely]] {
+            // Check if same value (by address for identity)
+            if (&old_child.data != &new_child.data) [[unlikely]] {
                 path_stack[path_depth] = i;
-                collect_diff_recursive(old_box.get(), new_box.get(), path_stack, path_depth + 1, result);
+                collect_diff_recursive(old_child, new_child, path_stack, path_depth + 1, result);
             }
         }
 
-        for (std::size_t i = min_size; i < new_arr->size(); ++i) {
+        for (std::size_t i = min_size; i < new_arr.size(); ++i) {
             path_stack[path_depth] = i;
             Path child_path;
             child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
-            result.added.emplace_back(std::move(child_path), (*new_arr)[i].get());
+            result.added.emplace_back(std::move(child_path), new_arr[i]);
         }
 
-        for (std::size_t i = min_size; i < old_arr->size(); ++i) {
+        for (std::size_t i = min_size; i < old_arr.size(); ++i) {
             path_stack[path_depth] = i;
             Path child_path;
             child_path.assign(path_stack.begin(), path_stack.begin() + static_cast<std::ptrdiff_t>(path_depth + 1));
-            result.removed.emplace_back(std::move(child_path), (*old_arr)[i].get());
+            result.removed.emplace_back(std::move(child_path), old_arr[i]);
         }
         return;
     }

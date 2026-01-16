@@ -97,11 +97,12 @@ void DiffEntryCollector::diff_value_optimized(const Value& old_val, const Value&
         [&](const auto& old_arg) {
             using T = std::decay_t<decltype(old_arg)>;
 
-            if constexpr (std::is_same_v<T, ValueMap>) {
-                const auto& new_map = std::get<ValueMap>(new_val.data);
-                // OPTIMIZATION: immer container identity check - O(1)
-                if (old_arg.impl().root == new_map.impl().root && old_arg.impl().size == new_map.impl().size)
-                    [[likely]] {
+            // Container Boxing: variant now holds BoxedValueMap, BoxedValueVector, etc.
+            if constexpr (std::is_same_v<T, BoxedValueMap>) {
+                const auto& new_boxed = std::get<BoxedValueMap>(new_val.data);
+                // OPTIMIZATION: box identity check - O(1)
+                if (old_arg.get().impl().root == new_boxed.get().impl().root &&
+                    old_arg.get().impl().size == new_boxed.get().impl().size) [[likely]] {
                     return;
                 }
                 // Shallow mode: report container change without recursing
@@ -110,12 +111,13 @@ void DiffEntryCollector::diff_value_optimized(const Value& old_val, const Value&
                     diffs_.emplace_back(DiffEntry::Type::Change, std::move(current_path), old_val, new_val);
                     return;
                 }
-                diff_map_optimized(old_arg, new_map, path_depth);
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
-                const auto& new_vec = std::get<ValueVector>(new_val.data);
-                // OPTIMIZATION: immer container identity check - O(1)
-                if (old_arg.impl().root == new_vec.impl().root && old_arg.impl().tail == new_vec.impl().tail &&
-                    old_arg.impl().size == new_vec.impl().size) [[likely]] {
+                diff_map_optimized(old_arg.get(), new_boxed.get(), path_depth);
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
+                const auto& new_boxed = std::get<BoxedValueVector>(new_val.data);
+                // OPTIMIZATION: box identity check - O(1)
+                if (old_arg.get().impl().root == new_boxed.get().impl().root &&
+                    old_arg.get().impl().tail == new_boxed.get().impl().tail &&
+                    old_arg.get().impl().size == new_boxed.get().impl().size) [[likely]] {
                     return;
                 }
                 // Shallow mode: report container change without recursing
@@ -124,11 +126,11 @@ void DiffEntryCollector::diff_value_optimized(const Value& old_val, const Value&
                     diffs_.emplace_back(DiffEntry::Type::Change, std::move(current_path), old_val, new_val);
                     return;
                 }
-                diff_vector_optimized(old_arg, new_vec, path_depth);
+                diff_vector_optimized(old_arg.get(), new_boxed.get(), path_depth);
             } else if constexpr (std::is_same_v<T, std::monostate>) {
                 // Both null, no change
             } else {
-                // Primitive types: direct comparison (already verified same type)
+                // Primitive types and BoxedString: direct comparison (already verified same type)
                 const auto& new_arg = std::get<T>(new_val.data);
                 if (old_arg != new_arg) {
                     Path current_path(current_path_view(path_depth));
@@ -145,26 +147,23 @@ void DiffEntryCollector::diff_map_optimized(const ValueMap& old_map, const Value
         path_stack_.resize(path_depth + 1);
     }
 
+    // Container Boxing: ValueMap now stores Value directly, not ValueBox
     auto map_differ = immer::make_differ(
         // added
-        [&](const std::pair<const std::string, ValueBox>& added_kv) {
+        [&](const std::pair<const std::string, Value>& added_kv) {
             path_stack_[path_depth] = PathElement{added_kv.first};
-            collect_added_optimized(*added_kv.second, path_depth + 1);
+            collect_added_optimized(added_kv.second, path_depth + 1);
         },
         // removed
-        [&](const std::pair<const std::string, ValueBox>& removed_kv) {
+        [&](const std::pair<const std::string, Value>& removed_kv) {
             path_stack_[path_depth] = PathElement{removed_kv.first};
-            collect_removed_optimized(*removed_kv.second, path_depth + 1);
+            collect_removed_optimized(removed_kv.second, path_depth + 1);
         },
         // changed (retained key)
-        [&](const std::pair<const std::string, ValueBox>& old_kv,
-            const std::pair<const std::string, ValueBox>& new_kv) {
-            // Optimization: pointer comparison - O(1)
-            if (old_kv.second.get() == new_kv.second.get()) [[likely]] {
-                return; // Same pointer, unchanged
-            }
+        [&](const std::pair<const std::string, Value>& old_kv,
+            const std::pair<const std::string, Value>& new_kv) {
             path_stack_[path_depth] = PathElement{old_kv.first};
-            diff_value_optimized(*old_kv.second, *new_kv.second, path_depth + 1);
+            diff_value_optimized(old_kv.second, new_kv.second, path_depth + 1);
         });
 
     immer::diff(old_map, new_map, map_differ);
@@ -181,29 +180,25 @@ void DiffEntryCollector::diff_vector_optimized(const ValueVector& old_vec, const
         path_stack_.resize(path_depth + 1);
     }
 
+    // Container Boxing: ValueVector now stores Value directly, not ValueBox
     for (size_t i = 0; i < common_size; ++i) {
-        const auto& old_box = old_vec[i];
-        const auto& new_box = new_vec[i];
-
-        // Optimization: immer::box pointer comparison - O(1)
-        if (old_box.get() == new_box.get()) [[likely]] {
-            continue;
-        }
+        const Value& old_val = old_vec[i];
+        const Value& new_val = new_vec[i];
 
         path_stack_[path_depth] = PathElement{i};
-        diff_value_optimized(*old_box, *new_box, path_depth + 1);
+        diff_value_optimized(old_val, new_val, path_depth + 1);
     }
 
     // Removed tail elements
     for (size_t i = common_size; i < old_size; ++i) {
         path_stack_[path_depth] = PathElement{i};
-        collect_removed_optimized(*old_vec[i], path_depth + 1);
+        collect_removed_optimized(old_vec[i], path_depth + 1);
     }
 
     // Added tail elements
     for (size_t i = common_size; i < new_size; ++i) {
         path_stack_[path_depth] = PathElement{i};
-        collect_added_optimized(*new_vec[i], path_depth + 1);
+        collect_added_optimized(new_vec[i], path_depth + 1);
     }
 }
 
@@ -220,26 +215,30 @@ void DiffEntryCollector::collect_entries_optimized(const Value& val, std::size_t
     }
 
     // Recursive mode: descend into containers
+    // Container Boxing: variant now holds BoxedValueMap, BoxedValueVector, etc.
     std::visit(
         [&](const auto& arg) {
             using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, ValueMap>) {
+            if constexpr (std::is_same_v<T, BoxedValueMap>) {
                 // Ensure path stack has enough capacity for next level
                 if (path_stack_.size() <= path_depth) {
                     path_stack_.resize(path_depth + 1);
                 }
-                for (const auto& [k, v] : arg) {
+                // Container Boxing: map now stores Value directly
+                for (const auto& [k, v] : arg.get()) {
                     path_stack_[path_depth] = PathElement{k};
-                    collect_entries_optimized(*v, path_depth + 1, is_add);
+                    collect_entries_optimized(v, path_depth + 1, is_add);
                 }
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
                 // Ensure path stack has enough capacity for next level
                 if (path_stack_.size() <= path_depth) {
                     path_stack_.resize(path_depth + 1);
                 }
-                for (size_t i = 0; i < arg.size(); ++i) {
+                // Container Boxing: vector now stores Value directly
+                const auto& vec = arg.get();
+                for (size_t i = 0; i < vec.size(); ++i) {
                     path_stack_[path_depth] = PathElement{i};
-                    collect_entries_optimized(*arg[i], path_depth + 1, is_add);
+                    collect_entries_optimized(vec[i], path_depth + 1, is_add);
                 }
             } else if constexpr (!std::is_same_v<T, std::monostate>) {
                 // Leaf value: record it - both fields reference the same value
@@ -304,14 +303,17 @@ bool values_differ(const Value& old_val, const Value& new_val, bool recursive) {
         return true;
     }
 
+    // Container Boxing: variant now holds BoxedValueMap, BoxedValueVector, etc.
     return std::visit(
         [&](const auto& old_arg) -> bool {
             using T = std::decay_t<decltype(old_arg)>;
 
-            if constexpr (std::is_same_v<T, ValueMap>) {
-                const auto& new_map = std::get<ValueMap>(new_val.data);
+            if constexpr (std::is_same_v<T, BoxedValueMap>) {
+                const auto& new_boxed = std::get<BoxedValueMap>(new_val.data);
+                const auto& old_map = old_arg.get();
+                const auto& new_map = new_boxed.get();
                 // O(1) identity check
-                if (old_arg.impl().root == new_map.impl().root && old_arg.impl().size == new_map.impl().size)
+                if (old_map.impl().root == new_map.impl().root && old_map.impl().size == new_map.impl().size)
                     [[likely]] {
                     return false;
                 }
@@ -319,19 +321,21 @@ bool values_differ(const Value& old_val, const Value& new_val, bool recursive) {
                 if (!recursive) {
                     return true;
                 }
-                return maps_differ(old_arg, new_map, recursive);
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
-                const auto& new_vec = std::get<ValueVector>(new_val.data);
+                return maps_differ(old_map, new_map, recursive);
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
+                const auto& new_boxed = std::get<BoxedValueVector>(new_val.data);
+                const auto& old_vec = old_arg.get();
+                const auto& new_vec = new_boxed.get();
                 // O(1) identity check
-                if (old_arg.impl().root == new_vec.impl().root && old_arg.impl().tail == new_vec.impl().tail &&
-                    old_arg.impl().size == new_vec.impl().size) [[likely]] {
+                if (old_vec.impl().root == new_vec.impl().root && old_vec.impl().tail == new_vec.impl().tail &&
+                    old_vec.impl().size == new_vec.impl().size) [[likely]] {
                     return false;
                 }
                 // Shallow mode: identity check failed, containers are different
                 if (!recursive) {
                     return true;
                 }
-                return vectors_differ(old_arg, new_vec, recursive);
+                return vectors_differ(old_vec, new_vec, recursive);
             } else if constexpr (std::is_same_v<T, std::monostate>) {
                 return false; // Both null
             } else {
@@ -350,30 +354,22 @@ bool maps_differ(const ValueMap& old_map, const ValueMap& new_map, bool recursiv
     }
 
     // Use immer::diff with early exit
+    // Container Boxing: ValueMap now stores Value directly, not ValueBox
     bool found_difference = false;
 
     auto differ = immer::make_differ(
         // added - any addition means difference
-        [&](const std::pair<const std::string, ValueBox>&) { found_difference = true; },
+        [&](const std::pair<const std::string, Value>&) { found_difference = true; },
         // removed - any removal means difference
-        [&](const std::pair<const std::string, ValueBox>&) { found_difference = true; },
+        [&](const std::pair<const std::string, Value>&) { found_difference = true; },
         // retained - check if values differ
-        [&](const std::pair<const std::string, ValueBox>& old_kv,
-            const std::pair<const std::string, ValueBox>& new_kv) {
+        [&](const std::pair<const std::string, Value>& old_kv,
+            const std::pair<const std::string, Value>& new_kv) {
             if (found_difference)
                 return; // Already found, skip
 
-            // O(1) pointer check
-            if (old_kv.second.get() == new_kv.second.get()) [[likely]] {
-                return;
-            }
-            // Shallow mode: pointer differs, that's enough
-            if (!recursive) {
-                found_difference = true;
-                return;
-            }
             // Recurse
-            if (values_differ(*old_kv.second, *new_kv.second, recursive)) {
+            if (values_differ(old_kv.second, new_kv.second, recursive)) {
                 found_difference = true;
             }
         });
@@ -391,23 +387,14 @@ bool vectors_differ(const ValueVector& old_vec, const ValueVector& new_vec, bool
         return true;
     }
 
+    // Container Boxing: ValueVector now stores Value directly, not ValueBox
     // Check each element (early exit on first difference)
     for (size_t i = 0; i < old_size; ++i) {
-        const auto& old_box = old_vec[i];
-        const auto& new_box = new_vec[i];
-
-        // O(1) pointer check
-        if (old_box.get() == new_box.get()) [[likely]] {
-            continue;
-        }
-
-        // Shallow mode: pointer differs, that's enough
-        if (!recursive) {
-            return true;
-        }
+        const Value& old_val = old_vec[i];
+        const Value& new_val = new_vec[i];
 
         // Recurse - early exit if different
-        if (values_differ(*old_box, *new_box, recursive)) {
+        if (values_differ(old_val, new_val, recursive)) {
             return true;
         }
     }
@@ -534,14 +521,17 @@ Value DiffValueCollector::diff_value_impl(const Value& old_val, const Value& new
         return make_diff_node(DiffEntry::Type::Change, old_val, new_val);
     }
 
+    // Container Boxing: variant now holds BoxedValueMap, BoxedValueVector, etc.
     return std::visit(
         [&](const auto& old_arg) -> Value {
             using T = std::decay_t<decltype(old_arg)>;
 
-            if constexpr (std::is_same_v<T, ValueMap>) {
-                const auto& new_map = std::get<ValueMap>(new_val.data);
+            if constexpr (std::is_same_v<T, BoxedValueMap>) {
+                const auto& new_boxed = std::get<BoxedValueMap>(new_val.data);
+                const auto& old_map = old_arg.get();
+                const auto& new_map = new_boxed.get();
                 // O(1) identity check
-                if (old_arg.impl().root == new_map.impl().root && old_arg.impl().size == new_map.impl().size)
+                if (old_map.impl().root == new_map.impl().root && old_map.impl().size == new_map.impl().size)
                     [[likely]] {
                     return Value{}; // No change
                 }
@@ -550,12 +540,14 @@ Value DiffValueCollector::diff_value_impl(const Value& old_val, const Value& new
                     changed = true;
                     return make_diff_node(DiffEntry::Type::Change, old_val, new_val);
                 }
-                return diff_map_impl(old_arg, new_map, changed);
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
-                const auto& new_vec = std::get<ValueVector>(new_val.data);
+                return diff_map_impl(old_map, new_map, changed);
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
+                const auto& new_boxed = std::get<BoxedValueVector>(new_val.data);
+                const auto& old_vec = old_arg.get();
+                const auto& new_vec = new_boxed.get();
                 // O(1) identity check
-                if (old_arg.impl().root == new_vec.impl().root && old_arg.impl().tail == new_vec.impl().tail &&
-                    old_arg.impl().size == new_vec.impl().size) [[likely]] {
+                if (old_vec.impl().root == new_vec.impl().root && old_vec.impl().tail == new_vec.impl().tail &&
+                    old_vec.impl().size == new_vec.impl().size) [[likely]] {
                     return Value{}; // No change
                 }
                 // Shallow mode: report container change without recursing
@@ -563,7 +555,7 @@ Value DiffValueCollector::diff_value_impl(const Value& old_val, const Value& new
                     changed = true;
                     return make_diff_node(DiffEntry::Type::Change, old_val, new_val);
                 }
-                return diff_vector_impl(old_arg, new_vec, changed);
+                return diff_vector_impl(old_vec, new_vec, changed);
             } else if constexpr (std::is_same_v<T, std::monostate>) {
                 return Value{}; // Both null, no change
             } else {
@@ -580,6 +572,7 @@ Value DiffValueCollector::diff_value_impl(const Value& old_val, const Value& new
 }
 
 // ValueBox version for zero-copy when we already have boxes from container traversal
+// Note: With Container Boxing, this is primarily used for TableEntry which still uses ValueBox
 Value DiffValueCollector::diff_value_impl_box(const ValueBox& old_box, const ValueBox& new_box, bool& changed) {
     const Value& old_val = *old_box;
     const Value& new_val = *new_box;
@@ -593,13 +586,16 @@ Value DiffValueCollector::diff_value_impl_box(const ValueBox& old_box, const Val
         return make_diff_node(DiffEntry::Type::Change, old_box, new_box);
     }
 
+    // Container Boxing: variant now holds BoxedValueMap, BoxedValueVector, etc.
     return std::visit(
         [&](const auto& old_arg) -> Value {
             using T = std::decay_t<decltype(old_arg)>;
 
-            if constexpr (std::is_same_v<T, ValueMap>) {
-                const auto& new_map = std::get<ValueMap>(new_val.data);
-                if (old_arg.impl().root == new_map.impl().root && old_arg.impl().size == new_map.impl().size)
+            if constexpr (std::is_same_v<T, BoxedValueMap>) {
+                const auto& new_boxed = std::get<BoxedValueMap>(new_val.data);
+                const auto& old_map = old_arg.get();
+                const auto& new_map = new_boxed.get();
+                if (old_map.impl().root == new_map.impl().root && old_map.impl().size == new_map.impl().size)
                     [[likely]] {
                     return Value{};
                 }
@@ -607,18 +603,20 @@ Value DiffValueCollector::diff_value_impl_box(const ValueBox& old_box, const Val
                     changed = true;
                     return make_diff_node(DiffEntry::Type::Change, old_box, new_box);
                 }
-                return diff_map_impl(old_arg, new_map, changed);
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
-                const auto& new_vec = std::get<ValueVector>(new_val.data);
-                if (old_arg.impl().root == new_vec.impl().root && old_arg.impl().tail == new_vec.impl().tail &&
-                    old_arg.impl().size == new_vec.impl().size) [[likely]] {
+                return diff_map_impl(old_map, new_map, changed);
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
+                const auto& new_boxed = std::get<BoxedValueVector>(new_val.data);
+                const auto& old_vec = old_arg.get();
+                const auto& new_vec = new_boxed.get();
+                if (old_vec.impl().root == new_vec.impl().root && old_vec.impl().tail == new_vec.impl().tail &&
+                    old_vec.impl().size == new_vec.impl().size) [[likely]] {
                     return Value{};
                 }
                 if (!recursive_) {
                     changed = true;
                     return make_diff_node(DiffEntry::Type::Change, old_box, new_box);
                 }
-                return diff_vector_impl(old_arg, new_vec, changed);
+                return diff_vector_impl(old_vec, new_vec, changed);
             } else if constexpr (std::is_same_v<T, std::monostate>) {
                 return Value{};
             } else {
@@ -638,31 +636,32 @@ Value DiffValueCollector::diff_map_impl(const ValueMap& old_map, const ValueMap&
     auto transient = ValueMap{}.transient();
     bool has_any_change = false;
 
+    // Container Boxing: ValueMap now stores Value directly, not ValueBox
     auto map_differ = immer::make_differ(
-        // added - use ValueBox directly for zero-copy
-        [&](const std::pair<const std::string, ValueBox>& added_kv) {
+        // added - Value stored directly in map
+        [&](const std::pair<const std::string, Value>& added_kv) {
             has_any_change = true;
-            Value subtree = collect_entries_box(added_kv.second, DiffEntry::Type::Add);
-            transient.set(added_kv.first, ValueBox{subtree});
+            Value subtree = collect_entries(added_kv.second, DiffEntry::Type::Add);
+            transient.set(added_kv.first, std::move(subtree));
         },
-        // removed - use ValueBox directly for zero-copy
-        [&](const std::pair<const std::string, ValueBox>& removed_kv) {
+        // removed - Value stored directly in map
+        [&](const std::pair<const std::string, Value>& removed_kv) {
             has_any_change = true;
-            Value subtree = collect_entries_box(removed_kv.second, DiffEntry::Type::Remove);
-            transient.set(removed_kv.first, ValueBox{subtree});
+            Value subtree = collect_entries(removed_kv.second, DiffEntry::Type::Remove);
+            transient.set(removed_kv.first, std::move(subtree));
         },
         // changed (retained key)
-        [&](const std::pair<const std::string, ValueBox>& old_kv,
-            const std::pair<const std::string, ValueBox>& new_kv) {
-            // O(1) pointer check
-            if (old_kv.second.get() == new_kv.second.get()) [[likely]] {
+        [&](const std::pair<const std::string, Value>& old_kv,
+            const std::pair<const std::string, Value>& new_kv) {
+            // Compare value data addresses for identity check
+            if (&old_kv.second.data == &new_kv.second.data) [[likely]] {
                 return;
             }
             bool subtree_changed = false;
-            Value subtree = diff_value_impl_box(old_kv.second, new_kv.second, subtree_changed);
+            Value subtree = diff_value_impl(old_kv.second, new_kv.second, subtree_changed);
             if (subtree_changed) {
                 has_any_change = true;
-                transient.set(old_kv.first, ValueBox{subtree});
+                transient.set(old_kv.first, std::move(subtree));
             }
         });
 
@@ -670,7 +669,7 @@ Value DiffValueCollector::diff_map_impl(const ValueMap& old_map, const ValueMap&
 
     if (has_any_change) {
         changed = true;
-        return Value{transient.persistent()};
+        return Value{BoxedValueMap{transient.persistent()}};
     }
     return Value{};
 }
@@ -681,44 +680,46 @@ Value DiffValueCollector::diff_vector_impl(const ValueVector& old_vec, const Val
     const size_t common_size = std::min(old_size, new_size);
 
     // Use transient for O(n) batch updates instead of O(n log n) with chained .set()
+    // Note: Vector diffs are stored as a map with string keys for indices
     auto transient = ValueMap{}.transient();
     bool has_any_change = false;
 
-    // Compare common elements - use box version for zero-copy
+    // Container Boxing: ValueVector now stores Value directly
+    // Compare common elements
     for (size_t i = 0; i < common_size; ++i) {
-        const auto& old_box = old_vec[i];
-        const auto& new_box = new_vec[i];
+        const Value& old_val = old_vec[i];
+        const Value& new_val = new_vec[i];
 
-        // O(1) pointer check
-        if (old_box.get() == new_box.get()) [[likely]] {
+        // Compare value data addresses for identity check
+        if (&old_val.data == &new_val.data) [[likely]] {
             continue;
         }
 
         bool subtree_changed = false;
-        Value subtree = diff_value_impl_box(old_box, new_box, subtree_changed);
+        Value subtree = diff_value_impl(old_val, new_val, subtree_changed);
         if (subtree_changed) {
             has_any_change = true;
-            transient.set(get_index_string(i), ValueBox{subtree});
+            transient.set(get_index_string(i), std::move(subtree));
         }
     }
 
-    // Removed tail elements - use box version for zero-copy
+    // Removed tail elements
     for (size_t i = common_size; i < old_size; ++i) {
         has_any_change = true;
-        Value subtree = collect_entries_box(old_vec[i], DiffEntry::Type::Remove);
-        transient.set(get_index_string(i), ValueBox{subtree});
+        Value subtree = collect_entries(old_vec[i], DiffEntry::Type::Remove);
+        transient.set(get_index_string(i), std::move(subtree));
     }
 
-    // Added tail elements - use box version for zero-copy
+    // Added tail elements
     for (size_t i = common_size; i < new_size; ++i) {
         has_any_change = true;
-        Value subtree = collect_entries_box(new_vec[i], DiffEntry::Type::Add);
-        transient.set(get_index_string(i), ValueBox{subtree});
+        Value subtree = collect_entries(new_vec[i], DiffEntry::Type::Add);
+        transient.set(get_index_string(i), std::move(subtree));
     }
 
     if (has_any_change) {
         changed = true;
-        return Value{transient.persistent()};
+        return Value{BoxedValueMap{transient.persistent()}};
     }
     return Value{};
 }
@@ -731,27 +732,30 @@ Value DiffValueCollector::collect_entries(const Value& val, DiffEntry::Type type
     }
 
     // Recursive mode: descend into containers
+    // Container Boxing: variant now holds BoxedValueMap, BoxedValueVector, etc.
     return std::visit(
         [&](const auto& arg) -> Value {
             using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, ValueMap>) {
+            if constexpr (std::is_same_v<T, BoxedValueMap>) {
                 // Use transient for O(n) batch updates
                 auto transient = ValueMap{}.transient();
-                for (const auto& [k, v] : arg) {
-                    // Use box version for zero-copy
-                    Value subtree = collect_entries_box(v, type);
-                    transient.set(k, ValueBox{subtree});
+                // Container Boxing: map stores Value directly
+                for (const auto& [k, v] : arg.get()) {
+                    Value subtree = collect_entries(v, type);
+                    transient.set(k, std::move(subtree));
                 }
-                return Value{transient.persistent()};
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
+                return Value{BoxedValueMap{transient.persistent()}};
+            } else if constexpr (std::is_same_v<T, BoxedValueVector>) {
                 // Use transient for O(n) batch updates
+                // Note: Vector diffs are stored as a map with string keys for indices
                 auto transient = ValueMap{}.transient();
-                for (size_t i = 0; i < arg.size(); ++i) {
-                    // Use box version for zero-copy, and cached index string
-                    Value subtree = collect_entries_box(arg[i], type);
-                    transient.set(get_index_string(i), ValueBox{subtree});
+                // Container Boxing: vector stores Value directly
+                const auto& vec = arg.get();
+                for (size_t i = 0; i < vec.size(); ++i) {
+                    Value subtree = collect_entries(vec[i], type);
+                    transient.set(get_index_string(i), std::move(subtree));
                 }
-                return Value{transient.persistent()};
+                return Value{BoxedValueMap{transient.persistent()}};
             } else if constexpr (!std::is_same_v<T, std::monostate>) {
                 // Leaf value: create diff node - use single-value version
                 return make_diff_node(type, val);
@@ -762,57 +766,18 @@ Value DiffValueCollector::collect_entries(const Value& val, DiffEntry::Type type
         val.data);
 }
 
-// ValueBox version for zero-copy - stores the box directly without unpacking/repacking
-Value DiffValueCollector::collect_entries_box(const ValueBox& val_box, DiffEntry::Type type) {
-    const Value& val = *val_box;
-
-    // In shallow mode, just create a diff node using the box directly
-    if (!recursive_) {
-        return make_diff_node(type, val_box);
-    }
-
-    // Recursive mode: descend into containers
-    return std::visit(
-        [&](const auto& arg) -> Value {
-            using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, ValueMap>) {
-                // Use transient for O(n) batch updates
-                auto transient = ValueMap{}.transient();
-                for (const auto& [k, v] : arg) {
-                    Value subtree = collect_entries_box(v, type);
-                    transient.set(k, ValueBox{subtree});
-                }
-                return Value{transient.persistent()};
-            } else if constexpr (std::is_same_v<T, ValueVector>) {
-                // Use transient for O(n) batch updates
-                auto transient = ValueMap{}.transient();
-                for (size_t i = 0; i < arg.size(); ++i) {
-                    Value subtree = collect_entries_box(arg[i], type);
-                    // Use cached index string to avoid allocation
-                    transient.set(get_index_string(i), ValueBox{subtree});
-                }
-                return Value{transient.persistent()};
-            } else if constexpr (!std::is_same_v<T, std::monostate>) {
-                // Leaf value: create diff node using the box directly (zero-copy)
-                return make_diff_node(type, val_box);
-            } else {
-                return Value{}; // monostate - nothing to collect
-            }
-        },
-        val.data);
-}
-
 bool DiffValueCollector::is_diff_node(const Value& val) {
-    if (auto* m = val.get_if<ValueMap>()) {
-        return m->count(diff_keys::TYPE) > 0;
+    if (auto* boxed_map = val.get_if<BoxedValueMap>()) {
+        return boxed_map->get().count(diff_keys::TYPE) > 0;
     }
     return false;
 }
 
 DiffEntry::Type DiffValueCollector::get_diff_type(const Value& val) {
-    if (auto* m = val.get_if<ValueMap>()) {
-        if (auto* type_box = m->find(diff_keys::TYPE)) {
-            if (auto* type_val = type_box->get().get_if<uint8_t>()) {
+    if (auto* boxed_map = val.get_if<BoxedValueMap>()) {
+        const auto& m = boxed_map->get();
+        if (auto* type_val_ptr = m.find(diff_keys::TYPE)) {
+            if (auto* type_val = type_val_ptr->get_if<uint8_t>()) {
                 if (*type_val <= static_cast<uint8_t>(DiffEntry::Type::Change)) {
                     return static_cast<DiffEntry::Type>(*type_val);
                 }
@@ -823,18 +788,20 @@ DiffEntry::Type DiffValueCollector::get_diff_type(const Value& val) {
 }
 
 Value DiffValueCollector::get_old_value(const Value& val) {
-    if (auto* m = val.get_if<ValueMap>()) {
-        if (auto* old_box = m->find(diff_keys::OLD)) {
-            return old_box->get();
+    if (auto* boxed_map = val.get_if<BoxedValueMap>()) {
+        const auto& m = boxed_map->get();
+        if (auto* old_val_ptr = m.find(diff_keys::OLD)) {
+            return *old_val_ptr;
         }
     }
     return Value{};
 }
 
 Value DiffValueCollector::get_new_value(const Value& val) {
-    if (auto* m = val.get_if<ValueMap>()) {
-        if (auto* new_box = m->find(diff_keys::NEW)) {
-            return new_box->get();
+    if (auto* boxed_map = val.get_if<BoxedValueMap>()) {
+        const auto& m = boxed_map->get();
+        if (auto* new_val_ptr = m.find(diff_keys::NEW)) {
+            return *new_val_ptr;
         }
     }
     return Value{};
@@ -899,21 +866,25 @@ Value apply_diff_recursive(const Value& root, const Value& diff_tree, const Path
     }
 
     // This is an intermediate node - recurse into its children
-    if (auto* diff_map = diff_tree.get_if<ValueMap>()) {
+    // Container Boxing: diff_tree should be a BoxedValueMap
+    if (auto* diff_boxed_map = diff_tree.get_if<BoxedValueMap>()) {
+        const auto& diff_map = diff_boxed_map->get();
+        
         // The diff tree is a map - apply changes to the corresponding structure in root
-        if (auto* root_map = root.get_if<ValueMap>()) {
+        if (auto* root_boxed_map = root.get_if<BoxedValueMap>()) {
+            const auto& root_map = root_boxed_map->get();
             // Root is also a map - merge changes using transient for O(n) batch updates
-            auto transient = root_map->transient();
+            auto transient = root_map.transient();
 
-            for (const auto& [key, diff_child_box] : *diff_map) {
-                const Value& diff_child = *diff_child_box;
+            // Container Boxing: ValueMap now stores Value directly
+            for (const auto& [key, diff_child] : diff_map) {
                 Path child_path = path;
                 child_path.push_back(key);
 
                 // Get the current value at this key (or null if not present)
                 Value current_val;
-                if (auto* existing_box = root_map->find(key)) {
-                    current_val = existing_box->get();
+                if (auto* existing_val_ptr = root_map.find(key)) {
+                    current_val = *existing_val_ptr;
                 } else {
                     current_val = Value{}; // null for missing keys
                 }
@@ -926,18 +897,18 @@ Value apply_diff_recursive(const Value& root, const Value& diff_tree, const Path
                     // Remove the key if the result is null
                     transient.erase(key);
                 } else {
-                    // Set the new value
-                    transient.set(key, ValueBox{new_child});
+                    // Set the new value - Container Boxing: store Value directly
+                    transient.set(key, std::move(new_child));
                 }
             }
 
-            return Value{transient.persistent()};
+            return Value{BoxedValueMap{transient.persistent()}};
         } else if (root.is_null()) {
             // Root is null but we have changes to apply - create a new map using transient
             auto transient = ValueMap{}.transient();
 
-            for (const auto& [key, diff_child_box] : *diff_map) {
-                const Value& diff_child = *diff_child_box;
+            // Container Boxing: ValueMap now stores Value directly
+            for (const auto& [key, diff_child] : diff_map) {
                 Path child_path = path;
                 child_path.push_back(key);
 
@@ -945,101 +916,100 @@ Value apply_diff_recursive(const Value& root, const Value& diff_tree, const Path
                 Value new_child = apply_diff_recursive(Value{}, diff_child, child_path);
 
                 if (!new_child.is_null()) {
-                    transient.set(key, ValueBox{new_child});
+                    transient.set(key, std::move(new_child));
                 }
             }
 
-            return Value{transient.persistent()};
+            return Value{BoxedValueMap{transient.persistent()}};
         } else {
+            // Check if this looks like a vector diff (all keys are numeric strings)
+            bool all_numeric = true;
+            for (const auto& [key, _] : diff_map) {
+                try {
+                    [[maybe_unused]] size_t parsed = std::stoul(key);
+                } catch (...) {
+                    all_numeric = false;
+                    break;
+                }
+            }
+
+            if (all_numeric) {
+                // This is a vector diff represented as a map with numeric string keys
+                if (auto* root_boxed_vec = root.get_if<BoxedValueVector>()) {
+                    const auto& root_vec = root_boxed_vec->get();
+                    // Root is a vector - apply indexed changes using transient
+                    auto transient = root_vec.transient();
+                    size_t current_size = root_vec.size();
+
+                    // Container Boxing: ValueVector now stores Value directly
+                    for (const auto& [index_str, diff_child] : diff_map) {
+                        size_t index = std::stoul(index_str);
+                        Path child_path = path;
+                        child_path.push_back(index);
+
+                        // Get the current value at this index (or null if out of bounds)
+                        Value current_val;
+                        if (index < current_size) {
+                            current_val = root_vec[index];
+                        } else {
+                            current_val = Value{}; // null for out-of-bounds indices
+                        }
+
+                        // Recursively apply diff to this child
+                        Value new_child = apply_diff_recursive(current_val, diff_child, child_path);
+
+                        // Update the vector
+                        if (!new_child.is_null()) {
+                            // Extend vector if necessary
+                            while (transient.size() <= index) {
+                                transient.push_back(Value{});
+                            }
+                            transient.set(index, std::move(new_child));
+                        } else if (index < transient.size()) {
+                            // For removal, set it to null to preserve indices
+                            transient.set(index, Value{});
+                        }
+                    }
+
+                    return Value{BoxedValueVector{transient.persistent()}};
+                } else if (root.is_null()) {
+                    // Root is null but we have vector changes to apply
+                    auto transient = ValueVector{}.transient();
+
+                    // Collect all indices and sort them
+                    std::vector<std::pair<size_t, const Value*>> indexed_diffs;
+                    for (const auto& [index_str, diff_child] : diff_map) {
+                        size_t index = std::stoul(index_str);
+                        indexed_diffs.emplace_back(index, &diff_child);
+                    }
+                    std::sort(indexed_diffs.begin(), indexed_diffs.end());
+
+                    // Apply changes in order
+                    for (const auto& [index, diff_child] : indexed_diffs) {
+                        Path child_path = path;
+                        child_path.push_back(index);
+
+                        Value new_child = apply_diff_recursive(Value{}, *diff_child, child_path);
+
+                        if (!new_child.is_null()) {
+                            // Extend vector if necessary
+                            while (transient.size() <= index) {
+                                transient.push_back(Value{});
+                            }
+                            transient.set(index, std::move(new_child));
+                        }
+                    }
+
+                    return Value{BoxedValueVector{transient.persistent()}};
+                } else {
+                    throw std::runtime_error("apply_diff: Type mismatch - diff expects vector but root "
+                                             "is not a vector at path: " +
+                                             path.to_dot_notation());
+                }
+            }
+            
             throw std::runtime_error("apply_diff: Type mismatch - diff expects map but root is not a map at path: " +
                                      path.to_dot_notation());
-        }
-    } else if (auto* diff_vector_map = diff_tree.get_if<ValueMap>()) {
-        // Check if this looks like a vector diff (all keys are numeric strings)
-        bool all_numeric = true;
-        for (const auto& [key, _] : *diff_vector_map) {
-            try {
-                [[maybe_unused]] size_t parsed = std::stoul(key); // Try to parse as unsigned integer
-            } catch (...) {
-                all_numeric = false;
-                break;
-            }
-        }
-
-        if (all_numeric) {
-            // This is a vector diff represented as a map with numeric string keys
-            if (auto* root_vec = root.get_if<ValueVector>()) {
-                // Root is a vector - apply indexed changes using transient
-                auto transient = root_vec->transient();
-                size_t current_size = root_vec->size();
-
-                for (const auto& [index_str, diff_child_box] : *diff_vector_map) {
-                    const Value& diff_child = *diff_child_box;
-                    size_t index = std::stoul(index_str);
-                    Path child_path = path;
-                    child_path.push_back(index);
-
-                    // Get the current value at this index (or null if out of bounds)
-                    Value current_val;
-                    if (index < current_size) {
-                        current_val = *(*root_vec)[index];
-                    } else {
-                        current_val = Value{}; // null for out-of-bounds indices
-                    }
-
-                    // Recursively apply diff to this child
-                    Value new_child = apply_diff_recursive(current_val, diff_child, child_path);
-
-                    // Update the vector
-                    if (!new_child.is_null()) {
-                        // Extend vector if necessary
-                        while (transient.size() <= index) {
-                            transient.push_back(ValueBox{Value{}});
-                        }
-                        transient.set(index, ValueBox{new_child});
-                    } else if (index < transient.size()) {
-                        // For removal, we could either remove the element or set it to null
-                        // For now, let's set it to null to preserve indices
-                        transient.set(index, ValueBox{Value{}});
-                    }
-                }
-
-                return Value{transient.persistent()};
-            } else if (root.is_null()) {
-                // Root is null but we have vector changes to apply - create a new vector using
-                // transient
-                auto transient = ValueVector{}.transient();
-
-                // Collect all indices and sort them
-                std::vector<std::pair<size_t, const Value*>> indexed_diffs;
-                for (const auto& [index_str, diff_child_box] : *diff_vector_map) {
-                    size_t index = std::stoul(index_str);
-                    indexed_diffs.emplace_back(index, &(*diff_child_box));
-                }
-                std::sort(indexed_diffs.begin(), indexed_diffs.end());
-
-                // Apply changes in order
-                for (const auto& [index, diff_child] : indexed_diffs) {
-                    Path child_path = path;
-                    child_path.push_back(index);
-
-                    Value new_child = apply_diff_recursive(Value{}, *diff_child, child_path);
-
-                    if (!new_child.is_null()) {
-                        // Extend vector if necessary
-                        while (transient.size() <= index) {
-                            transient.push_back(ValueBox{Value{}});
-                        }
-                        transient.set(index, ValueBox{new_child});
-                    }
-                }
-
-                return Value{transient.persistent()};
-            } else {
-                throw std::runtime_error("apply_diff: Type mismatch - diff expects vector but root "
-                                         "is not a vector at path: " +
-                                         path.to_dot_notation());
-            }
         }
     }
 
@@ -1055,8 +1025,9 @@ Value apply_diff(const Value& root, const Value& diff_tree) {
     }
 
     // Check if diff is empty (no changes recorded)
-    if (auto* diff_map = diff_tree.get_if<ValueMap>()) {
-        if (diff_map->empty()) {
+    // Container Boxing: use BoxedValueMap
+    if (auto* diff_boxed_map = diff_tree.get_if<BoxedValueMap>()) {
+        if (diff_boxed_map->get().empty()) {
             return root; // Empty diff, no changes
         }
     }

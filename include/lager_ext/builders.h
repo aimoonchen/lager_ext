@@ -54,8 +54,8 @@ public:
     ///       .set("updated", true)
     ///       .finish();
     explicit MapBuilder(const Value& existing)
-        : transient_(existing.is<ValueMap>() ? existing.get_if<ValueMap>()->transient()
-                                             : ValueMap{}.transient()) {}
+        : transient_(existing.is<BoxedValueMap>() ? existing.get_if<BoxedValueMap>()->get().transient()
+                                                  : ValueMap{}.transient()) {}
 
     // Move operations (allowed)
     MapBuilder(MapBuilder&&) noexcept = default;
@@ -71,13 +71,13 @@ public:
     /// @return Reference to this builder for chaining
     template <typename T>
     MapBuilder& set(std::string_view key, T&& val) {
-        transient_.set(std::string{key}, ValueBox{Value{std::forward<T>(val)}});
+        transient_.set(std::string{key}, Value{std::forward<T>(val)});
         return *this;
     }
 
     /// Set a key with an already constructed Value
     MapBuilder& set(std::string_view key, Value val) {
-        transient_.set(std::string{key}, ValueBox{std::move(val)});
+        transient_.set(std::string{key}, std::move(val));
         return *this;
     }
 
@@ -102,13 +102,13 @@ public:
     /// Set with rvalue string key (zero-copy key transfer)
     template <typename T>
     MapBuilder& set(std::string&& key, T&& val) {
-        transient_.set(std::move(key), ValueBox{Value{std::forward<T>(val)}});
+        transient_.set(std::move(key), Value{std::forward<T>(val)});
         return *this;
     }
 
     /// Set with rvalue string key (zero-copy key transfer)
     MapBuilder& set(std::string&& key, Value val) {
-        transient_.set(std::move(key), ValueBox{std::move(val)});
+        transient_.set(std::move(key), std::move(val));
         return *this;
     }
 
@@ -128,7 +128,7 @@ public:
     /// @return The value, or default_val if not found
     [[nodiscard]] Value get(std::string_view key, Value default_val = Value{}) const {
         if (auto* found = transient_.find(key)) {
-            return found->get();
+            return *found;  // Container Boxing: ValueMap stores Value directly
         }
         return default_val;
     }
@@ -142,8 +142,8 @@ public:
         requires ValueTransformer<Fn, Value>
     MapBuilder& update_at(std::string_view key, Fn&& fn) {
         if (auto* found = transient_.find(key)) {
-            auto new_val = std::forward<Fn>(fn)(found->get());
-            transient_.set(std::string{key}, ValueBox{std::move(new_val)});
+            auto new_val = std::forward<Fn>(fn)(*found);  // Container Boxing: no .get()
+            transient_.set(std::string{key}, std::move(new_val));
         }
         return *this;
     }
@@ -157,10 +157,10 @@ public:
     MapBuilder& upsert(std::string_view key, Fn&& fn) {
         Value current{};
         if (auto* found = transient_.find(key)) {
-            current = found->get();
+            current = *found;  // Container Boxing: no .get()
         }
         auto new_val = std::forward<Fn>(fn)(std::move(current));
-        transient_.set(std::string{key}, ValueBox{std::move(new_val)});
+        transient_.set(std::string{key}, std::move(new_val));
         return *this;
     }
 
@@ -189,7 +189,7 @@ public:
         // Use subpath(1) - zero-copy view slice
         Value new_root = set_at_path_strict_impl(root_val, path.subpath(1), Value{std::forward<T>(val)});
         if (!new_root.is_null()) {
-            transient_.set(std::string{*first_key}, ValueBox{std::move(new_root)});
+            transient_.set(std::string{*first_key}, std::move(new_root));
         }
         return *this;
     }
@@ -219,7 +219,7 @@ public:
 
         // Use subpath(1) - zero-copy view slice (no memory allocation)
         Value new_root = set_at_path_vivify_impl(root_val, path.subpath(1), Value{std::forward<T>(val)});
-        transient_.set(std::string{*first_key}, ValueBox{std::move(new_root)});
+        transient_.set(std::string{*first_key}, std::move(new_root));
         return *this;
     }
 
@@ -257,7 +257,7 @@ public:
         // Set back using strict impl
         Value new_root = set_at_path_strict_impl(root_val, sub_path, std::move(new_val));
         if (!new_root.is_null()) {
-            transient_.set(std::string{*first_key}, ValueBox{std::move(new_root)});
+            transient_.set(std::string{*first_key}, std::move(new_root));
         }
         return *this;
     }
@@ -288,13 +288,13 @@ public:
         Value new_val = std::forward<Fn>(fn)(std::move(current));
         // Set back with vivification
         Value new_root = set_at_path_vivify_impl(root_val, sub_path, std::move(new_val));
-        transient_.set(std::string{*first_key}, ValueBox{std::move(new_root)});
+        transient_.set(std::string{*first_key}, std::move(new_root));
         return *this;
     }
 
     /// Finish building and return the immutable Value
     /// Note: After calling finish(), the builder is in an undefined state
-    [[nodiscard]] Value finish() { return Value{transient_.persistent()}; }
+    [[nodiscard]] Value finish() { return Value{BoxedValueMap{transient_.persistent()}}; }
 
     /// Finish and return just the map (not wrapped in Value)
     [[nodiscard]] ValueMap finish_map() { return transient_.persistent(); }
@@ -333,23 +333,10 @@ private:
             return Value{}; // Propagate failure
         }
 
-        // Set child back to parent (use set, not set_vivify)
+        // Set child back to parent using Value's set method (handles Container Boxing internally)
         return std::visit(
             [&root, &new_child](auto key_or_idx) -> Value {
-                // For strict mode, we need to check if the container supports this key/index
-                if constexpr (std::is_same_v<std::decay_t<decltype(key_or_idx)>, std::string_view>) {
-                    if (auto* m = root.get_if<ValueMap>()) {
-                        return m->set(std::string{key_or_idx}, ValueBox{std::move(new_child)});
-                    }
-                    return Value{}; // Not a map
-                } else {
-                    if (auto* v = root.get_if<ValueVector>()) {
-                        if (key_or_idx < v->size()) {
-                            return v->set(key_or_idx, ValueBox{std::move(new_child)});
-                        }
-                    }
-                    return Value{}; // Not a vector or index out of bounds
-                }
+                return root.set(key_or_idx, std::move(new_child));
             },
             elem);
     }
@@ -367,9 +354,9 @@ private:
         if (current_child.is_null() && path.size() > 1) {
             const auto& next = path[1];
             if (std::holds_alternative<std::string_view>(next)) {
-                current_child = Value{ValueMap{}};
+                current_child = Value{BoxedValueMap{ValueMap{}}};
             } else {
-                current_child = Value{ValueVector{}};
+                current_child = Value{BoxedValueVector{ValueVector{}}};
             }
         }
 
@@ -397,8 +384,8 @@ public:
 
     /// Create a builder from a Value containing a vector
     explicit VectorBuilder(const Value& existing)
-        : transient_(existing.is<ValueVector>() ? existing.get_if<ValueVector>()->transient()
-                                                : ValueVector{}.transient()) {}
+        : transient_(existing.is<BoxedValueVector>() ? existing.get_if<BoxedValueVector>()->get().transient()
+                                                     : ValueVector{}.transient()) {}
 
     // Move operations (allowed)
     VectorBuilder(VectorBuilder&&) noexcept = default;
@@ -411,13 +398,13 @@ public:
     /// Append a value to the end
     template <typename T>
     VectorBuilder& push_back(T&& val) {
-        transient_.push_back(ValueBox{Value{std::forward<T>(val)}});
+        transient_.push_back(Value{std::forward<T>(val)});
         return *this;
     }
 
     /// Append an already constructed Value
     VectorBuilder& push_back(Value val) {
-        transient_.push_back(ValueBox{std::move(val)});
+        transient_.push_back(std::move(val));
         return *this;
     }
 
@@ -425,7 +412,7 @@ public:
     template <typename T>
     VectorBuilder& set(std::size_t index, T&& val) {
         if (index < transient_.size()) {
-            transient_.set(index, ValueBox{Value{std::forward<T>(val)}});
+            transient_.set(index, Value{std::forward<T>(val)});
         }
         return *this;
     }
@@ -436,7 +423,7 @@ public:
     /// Get a previously set value by index
     [[nodiscard]] Value get(std::size_t index, Value default_val = Value{}) const {
         if (index < transient_.size()) {
-            return transient_[index].get();
+            return transient_[index];  // Container Boxing: no .get()
         }
         return default_val;
     }
@@ -446,8 +433,8 @@ public:
         requires ValueTransformer<Fn, Value>
     VectorBuilder& update_at(std::size_t index, Fn&& fn) {
         if (index < transient_.size()) {
-            auto new_val = std::forward<Fn>(fn)(transient_[index].get());
-            transient_.set(index, ValueBox{std::move(new_val)});
+            auto new_val = std::forward<Fn>(fn)(transient_[index]);  // Container Boxing: no .get()
+            transient_.set(index, std::move(new_val));
         }
         return *this;
     }
@@ -467,13 +454,13 @@ public:
             return set(*first_idx, std::forward<T>(val));
         }
 
-        Value root_val = transient_[*first_idx].get();
+        Value root_val = transient_[*first_idx];  // Container Boxing: no .get()
         if (root_val.is_null())
             return *this; // Strict mode: path must exist
 
         Value new_root = set_at_path_strict_impl(root_val, path.subpath(1), Value{std::forward<T>(val)});
         if (!new_root.is_null()) {
-            transient_.set(*first_idx, ValueBox{std::move(new_root)});
+            transient_.set(*first_idx, std::move(new_root));
         }
         return *this;
     }
@@ -493,9 +480,9 @@ public:
             return set(*first_idx, std::forward<T>(val));
         }
 
-        Value root_val = transient_[*first_idx].get();
+        Value root_val = transient_[*first_idx];  // Container Boxing: no .get()
         Value new_root = set_at_path_vivify_impl(root_val, path.subpath(1), Value{std::forward<T>(val)});
-        transient_.set(*first_idx, ValueBox{std::move(new_root)});
+        transient_.set(*first_idx, std::move(new_root));
         return *this;
     }
 
@@ -515,7 +502,7 @@ public:
             return update_at(*first_idx, std::forward<Fn>(fn));
         }
 
-        Value root_val = transient_[*first_idx].get();
+        Value root_val = transient_[*first_idx];  // Container Boxing: no .get()
         if (root_val.is_null())
             return *this; // Strict mode: path must exist
 
@@ -527,7 +514,7 @@ public:
         Value new_val = std::forward<Fn>(fn)(std::move(current));
         Value new_root = set_at_path_strict_impl(root_val, sub_path, std::move(new_val));
         if (!new_root.is_null()) {
-            transient_.set(*first_idx, ValueBox{std::move(new_root)});
+            transient_.set(*first_idx, std::move(new_root));
         }
         return *this;
     }
@@ -547,17 +534,17 @@ public:
             return update_at(*first_idx, std::forward<Fn>(fn));
         }
 
-        Value root_val = transient_[*first_idx].get();
+        Value root_val = transient_[*first_idx];  // Container Boxing: no .get()
         PathView sub_path = path.subpath(1);
         Value current = get_at_path_impl(root_val, sub_path);
         Value new_val = std::forward<Fn>(fn)(std::move(current));
         Value new_root = set_at_path_vivify_impl(root_val, sub_path, std::move(new_val));
-        transient_.set(*first_idx, ValueBox{std::move(new_root)});
+        transient_.set(*first_idx, std::move(new_root));
         return *this;
     }
 
     /// Finish building and return the immutable Value
-    [[nodiscard]] Value finish() { return Value{transient_.persistent()}; }
+    [[nodiscard]] Value finish() { return Value{BoxedValueVector{transient_.persistent()}}; }
 
     /// Finish and return just the vector (not wrapped in Value)
     [[nodiscard]] ValueVector finish_vector() { return transient_.persistent(); }
@@ -594,22 +581,10 @@ private:
             return Value{}; // Propagate failure
         }
 
-        // Set child back to parent (use set, not set_vivify)
+        // Set child back to parent using Value's set method (handles Container Boxing internally)
         return std::visit(
             [&root, &new_child](auto key_or_idx) -> Value {
-                if constexpr (std::is_same_v<std::decay_t<decltype(key_or_idx)>, std::string_view>) {
-                    if (auto* m = root.get_if<ValueMap>()) {
-                        return m->set(std::string{key_or_idx}, ValueBox{std::move(new_child)});
-                    }
-                    return Value{}; // Not a map
-                } else {
-                    if (auto* v = root.get_if<ValueVector>()) {
-                        if (key_or_idx < v->size()) {
-                            return v->set(key_or_idx, ValueBox{std::move(new_child)});
-                        }
-                    }
-                    return Value{}; // Not a vector or index out of bounds
-                }
+                return root.set(key_or_idx, std::move(new_child));
             },
             elem);
     }
@@ -624,9 +599,9 @@ private:
         if (current_child.is_null() && path.size() > 1) {
             const auto& next = path[1];
             if (std::holds_alternative<std::string_view>(next)) {
-                current_child = Value{ValueMap{}};
+                current_child = Value{BoxedValueMap{ValueMap{}}};
             } else {
-                current_child = Value{ValueVector{}};
+                current_child = Value{BoxedValueVector{ValueVector{}}};
             }
         }
         Value new_child = set_at_path_vivify_impl(current_child, path.subpath(1), std::move(new_val));
@@ -646,8 +621,8 @@ public:
     ArrayBuilder() : transient_(ValueArray{}.transient()) {}
     explicit ArrayBuilder(const ValueArray& existing) : transient_(existing.transient()) {}
     explicit ArrayBuilder(const Value& existing)
-        : transient_(existing.is<ValueArray>() ? existing.get_if<ValueArray>()->transient()
-                                               : ValueArray{}.transient()) {}
+        : transient_(existing.is<BoxedValueArray>() ? existing.get_if<BoxedValueArray>()->get().transient()
+                                                    : ValueArray{}.transient()) {}
 
     ArrayBuilder(ArrayBuilder&&) noexcept = default;
     ArrayBuilder& operator=(ArrayBuilder&&) noexcept = default;
@@ -656,18 +631,18 @@ public:
 
     template <typename T>
     ArrayBuilder& push_back(T&& val) {
-        transient_.push_back(ValueBox{Value{std::forward<T>(val)}});
+        transient_.push_back(Value{std::forward<T>(val)});
         return *this;
     }
 
     ArrayBuilder& push_back(Value val) {
-        transient_.push_back(ValueBox{std::move(val)});
+        transient_.push_back(std::move(val));
         return *this;
     }
 
     [[nodiscard]] std::size_t size() const { return transient_.size(); }
 
-    [[nodiscard]] Value finish() { return Value{transient_.persistent()}; }
+    [[nodiscard]] Value finish() { return Value{BoxedValueArray{transient_.persistent()}}; }
 
     [[nodiscard]] ValueArray finish_array() { return transient_.persistent(); }
 
@@ -683,8 +658,8 @@ public:
     TableBuilder() : transient_(ValueTable{}.transient()) {}
     explicit TableBuilder(const ValueTable& existing) : transient_(existing.transient()) {}
     explicit TableBuilder(const Value& existing)
-        : transient_(existing.is<ValueTable>() ? existing.get_if<ValueTable>()->transient()
-                                               : ValueTable{}.transient()) {}
+        : transient_(existing.is<BoxedValueTable>() ? existing.get_if<BoxedValueTable>()->get().transient()
+                                                    : ValueTable{}.transient()) {}
 
     TableBuilder(TableBuilder&&) noexcept = default;
     TableBuilder& operator=(TableBuilder&&) noexcept = default;
@@ -692,6 +667,7 @@ public:
     TableBuilder& operator=(const TableBuilder&) = delete;
 
     /// Insert a value with string_view id (id is copied internally)
+    /// Note: TableEntry::value still uses ValueBox (Element Boxing for tables)
     template <typename T>
     TableBuilder& insert(std::string_view id, T&& val) {
         transient_.insert(TableEntry{std::string{id}, ValueBox{Value{std::forward<T>(val)}}});
@@ -742,7 +718,7 @@ public:
     [[nodiscard]] Value get(std::string_view id, Value default_val = Value{}) const {
         const auto* ptr = transient_.find(id);
         if (ptr) {
-            return ptr->value.get();
+            return ptr->value.get();  // TableEntry::value is ValueBox, needs .get()
         }
         return default_val;
     }
@@ -752,7 +728,7 @@ public:
     TableBuilder& update(std::string_view id, Fn&& fn) {
         const auto* ptr = transient_.find(id);
         if (ptr) {
-            auto new_val = Value{std::forward<Fn>(fn)(ptr->value.get())};
+            auto new_val = Value{std::forward<Fn>(fn)(ptr->value.get())};  // TableEntry::value is ValueBox
             transient_.insert(TableEntry{std::string{id}, ValueBox{std::move(new_val)}});
         }
         return *this;
@@ -764,7 +740,7 @@ public:
         Value current{};
         const auto* ptr = transient_.find(id);
         if (ptr) {
-            current = ptr->value.get();
+            current = ptr->value.get();  // TableEntry::value is ValueBox
         }
         auto new_val = std::forward<Fn>(fn)(std::move(current));
         transient_.insert(TableEntry{std::string{id}, ValueBox{std::move(new_val)}});
@@ -773,7 +749,7 @@ public:
 
     [[nodiscard]] std::size_t size() const { return transient_.size(); }
 
-    [[nodiscard]] Value finish() { return Value{transient_.persistent()}; }
+    [[nodiscard]] Value finish() { return Value{BoxedValueTable{transient_.persistent()}}; }
 
     [[nodiscard]] ValueTable finish_table() { return transient_.persistent(); }
 

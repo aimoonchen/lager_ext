@@ -198,18 +198,24 @@ std::pair<Value, PathErrorCode> try_get_element(const Value& current, const Path
             }
 
             if constexpr (std::is_same_v<T, std::string_view>) {
-                if (auto* map = current.get_if<ValueMap>()) {
+                // Container Boxing: use BoxedValueMap
+                if (auto* boxed_map = current.get_if<BoxedValueMap>()) {
+                    const auto& map = boxed_map->get();
                     // Convert string_view to string for map lookup
-                    if (auto found = map->find(std::string{key}); found != nullptr) {
-                        return {found->get(), PathErrorCode::Success};
+                    if (auto found = map.find(std::string{key}); found != nullptr) {
+                        // Container Boxing: map now stores Value directly
+                        return {*found, PathErrorCode::Success};
                     }
                     return {Value{}, PathErrorCode::KeyNotFound};
                 }
                 return {Value{}, PathErrorCode::TypeMismatch};
             } else {
-                if (auto* vec = current.get_if<ValueVector>()) {
-                    if (key < vec->size()) {
-                        return {(*vec)[key].get(), PathErrorCode::Success};
+                // Container Boxing: use BoxedValueVector
+                if (auto* boxed_vec = current.get_if<BoxedValueVector>()) {
+                    const auto& vec = boxed_vec->get();
+                    if (key < vec.size()) {
+                        // Container Boxing: vector now stores Value directly
+                        return {vec[key], PathErrorCode::Success};
                     }
                     return {Value{}, PathErrorCode::IndexOutOfRange};
                 }
@@ -293,9 +299,11 @@ PathAccessResult set_at_path_safe(const Value& root, const Path& path, Value new
         [&current](const auto& key) -> bool {
             using T = std::decay_t<decltype(key)>;
             if constexpr (std::is_same_v<T, std::string_view>) {
-                return current.is_null() || current.get_if<ValueMap>() != nullptr;
+                // Container Boxing: use BoxedValueMap
+                return current.is_null() || current.get_if<BoxedValueMap>() != nullptr;
             } else {
-                return current.get_if<ValueVector>() != nullptr;
+                // Container Boxing: use BoxedValueVector
+                return current.get_if<BoxedValueVector>() != nullptr;
             }
         },
         last_elem);

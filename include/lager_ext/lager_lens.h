@@ -112,20 +112,20 @@ using LagerValueLens = lager::lens<Value, Value>;
 /// @brief Create a lens for accessing a map key
 [[nodiscard]] inline auto key_lens(std::string_view key) {
     return lager::lenses::getset(
-        // Getter
+        // Getter - Container Boxing: access boxed map, then find value directly
         [key](const Value& obj) -> Value {
-            if (auto* map = obj.get_if<ValueMap>()) {
-                if (auto found = map->find(key); found != nullptr) {
-                    return **found;
+            if (auto* boxed_map = obj.get_if<BoxedValueMap>()) {
+                if (auto* found = boxed_map->get().find(key); found != nullptr) {
+                    return *found;  // Container Boxing: ValueMap stores Value directly
                 }
             }
             return Value{};
         },
-        // Setter (strict mode)
+        // Setter (strict mode) - Container Boxing: unbox -> modify -> rebox
         [key](Value obj, Value value) -> Value {
-            if (auto* map = obj.get_if<ValueMap>()) {
-                auto new_map = map->set(std::string{key}, ValueBox{std::move(value)});
-                return Value{std::move(new_map)};
+            if (auto* boxed_map = obj.get_if<BoxedValueMap>()) {
+                auto new_map = boxed_map->get().set(std::string{key}, std::move(value));
+                return Value{BoxedValueMap{std::move(new_map)}};
             }
             return obj;
         });
@@ -134,21 +134,23 @@ using LagerValueLens = lager::lens<Value, Value>;
 /// @brief Create a lens for accessing a vector index
 [[nodiscard]] inline auto index_lens(std::size_t index) {
     return lager::lenses::getset(
-        // Getter
+        // Getter - Container Boxing: access boxed vector, then get value directly
         [index](const Value& obj) -> Value {
-            if (auto* vec = obj.get_if<ValueVector>()) {
-                if (index < vec->size()) {
-                    return *(*vec)[index];
+            if (auto* boxed_vec = obj.get_if<BoxedValueVector>()) {
+                const auto& vec = boxed_vec->get();
+                if (index < vec.size()) {
+                    return vec[index];  // Container Boxing: ValueVector stores Value directly
                 }
             }
             return Value{};
         },
-        // Setter (strict mode)
+        // Setter (strict mode) - Container Boxing: unbox -> modify -> rebox
         [index](Value obj, Value value) -> Value {
-            if (auto* vec = obj.get_if<ValueVector>()) {
-                if (index < vec->size()) {
-                    auto new_vec = vec->update(index, [&](auto&&) { return ValueBox{std::move(value)}; });
-                    return Value{std::move(new_vec)};
+            if (auto* boxed_vec = obj.get_if<BoxedValueVector>()) {
+                const auto& vec = boxed_vec->get();
+                if (index < vec.size()) {
+                    auto new_vec = vec.set(index, std::move(value));
+                    return Value{BoxedValueVector{std::move(new_vec)}};
                 }
             }
             return obj;

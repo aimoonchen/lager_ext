@@ -44,13 +44,18 @@ struct AppState {
 // ============================================================
 
 AppState create_initial_state() {
-    auto item1 = Value{ValueMap{{"title", immer::box<Value>{"Task 1"}}, {"done", immer::box<Value>{false}}}};
+    // Container Boxing: build structures using raw containers, then wrap in box
+    ValueMap item1;
+    item1 = item1.set("title", Value{"Task 1"});
+    item1 = item1.set("done", Value{false});
 
-    auto items = Value{ValueVector{immer::box<Value>{std::move(item1)}}};
+    ValueVector items;
+    items = items.push_back(Value{BoxedValueMap{item1}});
 
-    auto root = Value{ValueMap{{"items", immer::box<Value>{std::move(items)}}}};
+    ValueMap root;
+    root = root.set("items", Value{BoxedValueVector{items}});
 
-    return AppState{.data = std::move(root), .history = immer::vector<Value>{}, .future = immer::vector<Value>{}};
+    return AppState{.data = Value{BoxedValueMap{root}}, .history = immer::vector<Value>{}, .future = immer::vector<Value>{}};
 }
 
 // ============================================================
@@ -97,11 +102,17 @@ AppState reducer(AppState state, Action action) {
                 auto items_lens = lager_path_lens(items_path);
                 auto current_items = lager::view(items_lens, new_state.data);
 
-                if (auto* vec = current_items.get_if<ValueVector>()) {
-                    auto new_item =
-                        Value{ValueMap{{"title", immer::box<Value>{act.text}}, {"done", immer::box<Value>{false}}}};
-                    auto new_vec = vec->push_back(immer::box<Value>{std::move(new_item)});
-                    new_state.data = lager::set(items_lens, new_state.data, Value{std::move(new_vec)});
+                // Container Boxing: use BoxedValueVector instead of ValueVector
+                if (auto* boxed_vec = current_items.get_if<BoxedValueVector>()) {
+                    // Create new item using Container Boxing
+                    ValueMap item_map;
+                    item_map = item_map.set("title", Value{act.text});
+                    item_map = item_map.set("done", Value{false});
+                    auto new_item = Value{BoxedValueMap{item_map}};
+                    
+                    // Unbox -> modify -> rebox
+                    auto new_vec = boxed_vec->get().push_back(std::move(new_item));
+                    new_state.data = lager::set(items_lens, new_state.data, Value{BoxedValueVector{new_vec}});
                 }
 
                 return new_state;
