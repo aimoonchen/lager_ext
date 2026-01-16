@@ -52,7 +52,7 @@ namespace lager_ext {
 /// This performs a deep copy, converting:
 /// - MutableValueMap -> ValueMap (immer::map)
 /// - MutableValueVector -> ValueVector (immer::vector)
-/// - MutableBoxedMat3/MutableBoxedMat4x3 -> boxed_mat3/boxed_mat4x3 (immer::box)
+/// - MutableMat3Ptr/MutableMat4x3Ptr -> boxed_mat3/boxed_mat4x3 (immer::box)
 /// - All other types are copied directly
 ///
 /// @param mv The MutableValue to convert
@@ -75,7 +75,7 @@ namespace lager_ext {
 /// This performs a deep copy, converting:
 /// - ValueMap -> MutableValueMap (tsl::robin_map)
 /// - ValueVector -> MutableValueVector (std::vector)
-/// - boxed_mat3/boxed_mat4x3 -> MutableBoxedMat3/MutableBoxedMat4x3 (unique_ptr)
+/// - boxed_mat3/boxed_mat4x3 -> MutableMat3Ptr/MutableMat4x3Ptr (unique_ptr)
 /// - All other types are copied directly
 ///
 /// @param v The Value to convert

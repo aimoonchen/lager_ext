@@ -14,9 +14,16 @@
 ///
 /// ## Key Differences from Value (immutable)
 /// - MutableValue allows in-place modification
-/// - Uses unique_ptr for ownership (no sharing)
+/// - Uses direct value storage in containers (better cache locality, fewer allocations)
 /// - Uses tsl::robin_map for faster map operations
 /// - Designed for C++ reflection and serialization use cases
+///
+/// ## Performance Characteristics
+/// - Container children stored directly (not via unique_ptr) for:
+///   - Fewer heap allocations during construction
+///   - Better cache locality during traversal
+///   - Simpler memory management
+/// - Containers themselves are boxed (unique_ptr) to break recursive type dependency
 ///
 /// ## Usage Example
 /// ```cpp
@@ -78,15 +85,32 @@ struct MutableValueStringEqual {
 // Forward declaration
 struct MutableValue;
 
-/// Pointer type for nested MutableValue
+// ============================================================
+// Boxed Container Types
+// ============================================================
+// To support direct value storage in containers while avoiding recursive
+// type definition issues, we define the raw container types first, then
+// box them in unique_ptr for use in the variant.
+//
+// This gives us:
+// - Direct MutableValue storage inside containers (no per-element unique_ptr)
+// - Containers boxed at variant level (breaks recursive dependency)
+// - sizeof(MutableValue) reduced from ~64 bytes to ~40 bytes
+
+/// Raw map type - stores MutableValue directly
+using MutableValueMap = tsl::robin_map<std::string, MutableValue, MutableValueStringHash, MutableValueStringEqual>;
+
+/// Raw vector type - stores MutableValue directly  
+using MutableValueVector = std::vector<MutableValue>;
+
+/// Boxed map type for use in variant (breaks recursive type dependency)
+using MutableValueMapPtr = std::unique_ptr<MutableValueMap>;
+
+/// Boxed vector type for use in variant
+using MutableValueVectorPtr = std::unique_ptr<MutableValueVector>;
+
+/// Legacy pointer type (kept for compatibility, but internal storage no longer uses this)
 using MutableValuePtr = std::unique_ptr<MutableValue>;
-
-/// Map type using robin_map with transparent lookup support
-/// Allows find/count/contains operations with string_view without allocation
-using MutableValueMap = tsl::robin_map<std::string, MutableValuePtr, MutableValueStringHash, MutableValueStringEqual>;
-
-/// Vector type for arrays
-using MutableValueVector = std::vector<MutableValuePtr>;
 
 // ============================================================
 // Boxed Types for Variant Size Optimization
@@ -101,11 +125,11 @@ using MutableValueVector = std::vector<MutableValuePtr>;
 
 /// Boxed Mat3 type for MutableValue (36 bytes -> 8 bytes in variant)
 /// Named with Mutable prefix to avoid collision with Value's BoxedMat3 (immer::box)
-using MutableBoxedMat3 = std::unique_ptr<Mat3>;
+using MutableMat3Ptr = std::unique_ptr<Mat3>;
 
 /// Boxed Mat4x3 type for MutableValue (48 bytes -> 8 bytes in variant)
 /// Named with Mutable prefix to avoid collision with Value's BoxedMat4x3 (immer::box)
-using MutableBoxedMat4x3 = std::unique_ptr<Mat4x3>;
+using MutableMat4x3Ptr = std::unique_ptr<Mat4x3>;
 
 /// @brief Mutable dynamic value type supporting JSON-like structures
 ///
@@ -115,8 +139,8 @@ using MutableBoxedMat4x3 = std::unique_ptr<Mat4x3>;
 /// before converting to immutable Value.
 struct LAGER_EXT_API MutableValue {
     /// Variant holding all possible value types
-    /// Note: Mat3 and Mat4x3 are boxed (stored via unique_ptr) to reduce variant size
-    /// from ~64 bytes to ~40 bytes, improving cache efficiency.
+    /// Note: Mat3, Mat4x3, Map, and Vector are boxed (stored via unique_ptr)
+    /// to reduce variant size to ~40 bytes and break recursive type dependency.
     using DataVariant = std::variant<std::monostate,     // null (1 byte)
                                      bool,               // 1 byte
                                      int8_t,             // 1 byte
@@ -133,14 +157,12 @@ struct LAGER_EXT_API MutableValue {
                                      Vec2,               // 8 bytes
                                      Vec3,               // 12 bytes
                                      Vec4,               // 16 bytes
-                                     MutableBoxedMat3,   // 8 bytes (pointer to 36-byte Mat3)
-                                     MutableBoxedMat4x3, // 8 bytes (pointer to 48-byte Mat4x3)
-                                     MutableValueMap,    // ~56 bytes -> but boxed implicitly via robin_map internals
-                                     MutableValueVector  // 24 bytes
+                                     MutableMat3Ptr,     // 8 bytes (pointer to 36-byte Mat3)
+                                     MutableMat4x3Ptr,   // 8 bytes (pointer to 48-byte Mat4x3)
+                                     MutableValueMapPtr, // 8 bytes (pointer to robin_map)
+                                     MutableValueVectorPtr // 8 bytes (pointer to vector)
                                      >;
-    // Total variant size ~ max(32, 56) + 8 (discriminant + padding) ~ 64 bytes
-    // With boxing: max(32, 24) + 8 ~ 40 bytes (if we also box map/vector)
-    // Current: ~64 bytes due to MutableValueMap, but Mat3/Mat4x3 no longer contribute
+    // Total variant size ~ max(32) + 8 (discriminant + padding) ~ 40 bytes
 
     DataVariant data;
 
@@ -177,11 +199,11 @@ struct LAGER_EXT_API MutableValue {
     MutableValue(const char* v) : data(std::string(v)) {}
     MutableValue(std::string_view v) : data(std::string(v)) {}
 
-    /// Construct from map (takes ownership)
-    MutableValue(MutableValueMap v) : data(std::move(v)) {}
+    /// Construct from map data (takes ownership, boxes it)
+    MutableValue(MutableValueMap v) : data(std::make_unique<MutableValueMap>(std::move(v))) {}
 
-    /// Construct from vector (takes ownership)
-    MutableValue(MutableValueVector v) : data(std::move(v)) {}
+    /// Construct from vector data (takes ownership, boxes it)
+    MutableValue(MutableValueVector v) : data(std::make_unique<MutableValueVector>(std::move(v))) {}
 
     /// Construct from math types
     MutableValue(Vec2 v) noexcept : data(v) {}
@@ -251,10 +273,10 @@ struct LAGER_EXT_API MutableValue {
     }
 
     /// Check if value is a map
-    [[nodiscard]] bool is_map() const { return is<MutableValueMap>(); }
+    [[nodiscard]] bool is_map() const { return is<MutableValueMapPtr>(); }
 
     /// Check if value is a vector
-    [[nodiscard]] bool is_vector() const { return is<MutableValueVector>(); }
+    [[nodiscard]] bool is_vector() const { return is<MutableValueVectorPtr>(); }
 
     /// Check if value is a string
     [[nodiscard]] bool is_string() const { return is<std::string>(); }
@@ -278,10 +300,10 @@ struct LAGER_EXT_API MutableValue {
     [[nodiscard]] bool is_vec4() const { return is<Vec4>(); }
 
     /// Check if value is a Mat3 (boxed)
-    [[nodiscard]] bool is_mat3() const { return is<MutableBoxedMat3>(); }
+    [[nodiscard]] bool is_mat3() const { return is<MutableMat3Ptr>(); }
 
     /// Check if value is a Mat4x3 (boxed)
-    [[nodiscard]] bool is_mat4x3() const { return is<MutableBoxedMat4x3>(); }
+    [[nodiscard]] bool is_mat4x3() const { return is<MutableMat4x3Ptr>(); }
 
     /// Check if value is any vector math type (Vec2, Vec3, Vec4)
     [[nodiscard]] bool is_vector_math() const { return is_vec2() || is_vec3() || is_vec4(); }
@@ -371,7 +393,7 @@ struct LAGER_EXT_API MutableValue {
 
     /// Get as Mat3, or return default (unboxes the value)
     [[nodiscard]] Mat3 as_mat3(Mat3 default_val = {}) const {
-        if (auto* p = get_if<MutableBoxedMat3>()) {
+        if (auto* p = get_if<MutableMat3Ptr>()) {
             return *p ? **p : default_val;
         }
         return default_val;
@@ -379,7 +401,7 @@ struct LAGER_EXT_API MutableValue {
 
     /// Get as Mat4x3, or return default (unboxes the value)
     [[nodiscard]] Mat4x3 as_mat4x3(Mat4x3 default_val = {}) const {
-        if (auto* p = get_if<MutableBoxedMat4x3>()) {
+        if (auto* p = get_if<MutableMat4x3Ptr>()) {
             return *p ? **p : default_val;
         }
         return default_val;
@@ -469,6 +491,51 @@ struct LAGER_EXT_API MutableValue {
 
     /// Convert to string representation (for debugging)
     [[nodiscard]] std::string to_string() const;
+
+private:
+    /// Get raw map pointer (internal helper)
+    [[nodiscard]] MutableValueMap* get_map_data() {
+        if (auto* p = get_if<MutableValueMapPtr>()) {
+            return p->get();
+        }
+        return nullptr;
+    }
+    [[nodiscard]] const MutableValueMap* get_map_data() const {
+        if (auto* p = get_if<MutableValueMapPtr>()) {
+            return p->get();
+        }
+        return nullptr;
+    }
+
+    /// Get raw vector pointer (internal helper)
+    [[nodiscard]] MutableValueVector* get_vector_data() {
+        if (auto* p = get_if<MutableValueVectorPtr>()) {
+            return p->get();
+        }
+        return nullptr;
+    }
+    [[nodiscard]] const MutableValueVector* get_vector_data() const {
+        if (auto* p = get_if<MutableValueVectorPtr>()) {
+            return p->get();
+        }
+        return nullptr;
+    }
+
+    /// Ensure this value is a map, creating one if needed
+    MutableValueMap& ensure_map() {
+        if (!is_map()) {
+            data = std::make_unique<MutableValueMap>();
+        }
+        return *std::get<MutableValueMapPtr>(data);
+    }
+
+    /// Ensure this value is a vector, creating one if needed
+    MutableValueVector& ensure_vector() {
+        if (!is_vector()) {
+            data = std::make_unique<MutableValueVector>();
+        }
+        return *std::get<MutableValueVectorPtr>(data);
+    }
 };
 
 // ============================================================

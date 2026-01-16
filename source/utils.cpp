@@ -19,35 +19,29 @@ Value to_value(const MutableValue& mv) {
 
             if constexpr (std::is_same_v<T, std::monostate>) {
                 return Value{};
-            } else if constexpr (std::is_same_v<T, MutableValueMap>) {
+            } else if constexpr (std::is_same_v<T, MutableValueMapPtr>) {
+                if (!val) return Value{ValueMap{}};
                 // Use transient for O(n) batch construction instead of O(n log n)
                 auto transient = ValueMap{}.transient();
-                for (const auto& [key, child_ptr] : val) {
-                    if (child_ptr) {
-                        transient.set(key, ValueBox{to_value(*child_ptr)});
-                    } else {
-                        transient.set(key, ValueBox{Value{}});
-                    }
+                for (const auto& [key, child] : *val) {
+                    transient.set(key, ValueBox{to_value(child)});
                 }
                 return Value{transient.persistent()};
-            } else if constexpr (std::is_same_v<T, MutableValueVector>) {
+            } else if constexpr (std::is_same_v<T, MutableValueVectorPtr>) {
+                if (!val) return Value{ValueVector{}};
                 // Use transient for O(n) batch construction instead of O(n log n)
                 auto transient = ValueVector{}.transient();
-                for (const auto& child_ptr : val) {
-                    if (child_ptr) {
-                        transient.push_back(ValueBox{to_value(*child_ptr)});
-                    } else {
-                        transient.push_back(ValueBox{Value{}});
-                    }
+                for (const auto& child : *val) {
+                    transient.push_back(ValueBox{to_value(child)});
                 }
                 return Value{transient.persistent()};
-            } else if constexpr (std::is_same_v<T, MutableBoxedMat3>) {
+            } else if constexpr (std::is_same_v<T, MutableMat3Ptr>) {
                 // Unbox and convert to Value's boxed type
                 if (val) {
                     return Value{*val};
                 }
                 return Value{};
-            } else if constexpr (std::is_same_v<T, MutableBoxedMat4x3>) {
+            } else if constexpr (std::is_same_v<T, MutableMat4x3Ptr>) {
                 // Unbox and convert to Value's boxed type
                 if (val) {
                     return Value{*val};
@@ -71,34 +65,28 @@ Value to_value(MutableValue&& mv) {
             } else if constexpr (std::is_same_v<T, std::string>) {
                 // Move the string to avoid copy
                 return Value{std::move(val)};
-            } else if constexpr (std::is_same_v<T, MutableValueMap>) {
+            } else if constexpr (std::is_same_v<T, MutableValueMapPtr>) {
+                if (!val) return Value{ValueMap{}};
                 // Use transient for O(n) batch construction instead of O(n log n)
                 auto transient = ValueMap{}.transient();
-                for (auto& [key, child_ptr] : val) {
-                    if (child_ptr) {
-                        transient.set(key, ValueBox{to_value(std::move(*child_ptr))});
-                    } else {
-                        transient.set(key, ValueBox{Value{}});
-                    }
+                for (auto& [key, child] : *val) {
+                    transient.set(key, ValueBox{to_value(std::move(child))});
                 }
                 return Value{transient.persistent()};
-            } else if constexpr (std::is_same_v<T, MutableValueVector>) {
+            } else if constexpr (std::is_same_v<T, MutableValueVectorPtr>) {
+                if (!val) return Value{ValueVector{}};
                 // Use transient for O(n) batch construction instead of O(n log n)
                 auto transient = ValueVector{}.transient();
-                for (auto& child_ptr : val) {
-                    if (child_ptr) {
-                        transient.push_back(ValueBox{to_value(std::move(*child_ptr))});
-                    } else {
-                        transient.push_back(ValueBox{Value{}});
-                    }
+                for (auto& child : *val) {
+                    transient.push_back(ValueBox{to_value(std::move(child))});
                 }
                 return Value{transient.persistent()};
-            } else if constexpr (std::is_same_v<T, MutableBoxedMat3>) {
+            } else if constexpr (std::is_same_v<T, MutableMat3Ptr>) {
                 if (val) {
                     return Value{*val};
                 }
                 return Value{};
-            } else if constexpr (std::is_same_v<T, MutableBoxedMat4x3>) {
+            } else if constexpr (std::is_same_v<T, MutableMat4x3Ptr>) {
                 if (val) {
                     return Value{*val};
                 }
@@ -127,7 +115,7 @@ MutableValue to_mutable_value(const Value& v) {
                 MutableValueMap result;
                 result.reserve(val.size());
                 for (const auto& [key, child_box] : val) {
-                    result[key] = std::make_unique<MutableValue>(to_mutable_value(*child_box));
+                    result.emplace(key, to_mutable_value(*child_box));
                 }
                 return MutableValue{std::move(result)};
             } else if constexpr (std::is_same_v<T, ValueVector>) {
@@ -135,7 +123,7 @@ MutableValue to_mutable_value(const Value& v) {
                 MutableValueVector result;
                 result.reserve(val.size());
                 for (const auto& child_box : val) {
-                    result.push_back(std::make_unique<MutableValue>(to_mutable_value(*child_box)));
+                    result.push_back(to_mutable_value(*child_box));
                 }
                 return MutableValue{std::move(result)};
             } else if constexpr (std::is_same_v<T, ValueArray>) {
@@ -143,7 +131,7 @@ MutableValue to_mutable_value(const Value& v) {
                 MutableValueVector result;
                 result.reserve(val.size());
                 for (const auto& child_box : val) {
-                    result.push_back(std::make_unique<MutableValue>(to_mutable_value(*child_box)));
+                    result.push_back(to_mutable_value(*child_box));
                 }
                 return MutableValue{std::move(result)};
             } else if constexpr (std::is_same_v<T, ValueTable>) {
@@ -153,7 +141,7 @@ MutableValue to_mutable_value(const Value& v) {
                 result.reserve(val.size());
                 for (const auto& entry : val) {
                     // entry is BasicTableEntry with .id and .value members
-                    result[entry.id] = std::make_unique<MutableValue>(to_mutable_value(*entry.value));
+                    result.emplace(entry.id, to_mutable_value(*entry.value));
                 }
                 return MutableValue{std::move(result)};
             } else if constexpr (std::is_same_v<T, Value::boxed_mat3>) {

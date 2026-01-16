@@ -236,10 +236,10 @@ int main() {
         case 'c':
             lager_ext::demo_recursive_diff_collector();
             break;
-        case 'P':
-        case 'p':
-            lager_ext::demo_shared_state();
-            break;
+        // case 'P':
+        // case 'p':
+        //     lager_ext::demo_shared_state();
+        //     break;
         case 'G':
         case 'g':
             lager_ext::demo_editor_engine();

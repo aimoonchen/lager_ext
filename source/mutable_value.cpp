@@ -13,7 +13,7 @@ namespace lager_ext {
 // ============================================================
 
 MutableValue* MutableValue::get(std::string_view key) {
-    auto* map = get_if<MutableValueMap>();
+    auto* map = get_map_data();
     if (!map)
         return nullptr;
 
@@ -22,11 +22,12 @@ MutableValue* MutableValue::get(std::string_view key) {
     if (it == map->end())
         return nullptr;
 
-    return it->second.get();
+    // robin_map iterator returns pair<const Key, T>, value() gives mutable reference
+    return &it.value();
 }
 
 const MutableValue* MutableValue::get(std::string_view key) const {
-    const auto* map = get_if<MutableValueMap>();
+    const auto* map = get_map_data();
     if (!map)
         return nullptr;
 
@@ -35,49 +36,39 @@ const MutableValue* MutableValue::get(std::string_view key) const {
     if (it == map->end())
         return nullptr;
 
-    return it->second.get();
+    return &it->second;
 }
 
 MutableValue& MutableValue::set(std::string_view key, MutableValue value) {
-    // Ensure we're a map
-    if (!is_map()) {
-        data = MutableValueMap{};
-    }
-
-    auto& map = as<MutableValueMap>();
+    auto& map = ensure_map();
     // Heterogeneous lookup - no allocation if key exists
     auto it = map.find(key);
     if (it != map.end()) {
         // Key exists, just update value - no string allocation needed
-        it.value() = std::make_unique<MutableValue>(std::move(value));
+        it.value() = std::move(value);
     } else {
         // Key doesn't exist, must allocate string for new key
-        map.emplace(std::string{key}, std::make_unique<MutableValue>(std::move(value)));
+        map.emplace(std::string{key}, std::move(value));
     }
     return *this;
 }
 
 MutableValue& MutableValue::set(std::string&& key, MutableValue value) {
-    // Ensure we're a map
-    if (!is_map()) {
-        data = MutableValueMap{};
-    }
-
-    auto& map = as<MutableValueMap>();
+    auto& map = ensure_map();
     // Heterogeneous lookup - no allocation if key exists
     auto it = map.find(key);
     if (it != map.end()) {
         // Key exists, just update value - no string allocation needed
-        it.value() = std::make_unique<MutableValue>(std::move(value));
+        it.value() = std::move(value);
     } else {
         // Key doesn't exist, move the caller's string directly (zero-copy)
-        map.emplace(std::move(key), std::make_unique<MutableValue>(std::move(value)));
+        map.emplace(std::move(key), std::move(value));
     }
     return *this;
 }
 
 bool MutableValue::contains(std::string_view key) const {
-    const auto* map = get_if<MutableValueMap>();
+    const auto* map = get_map_data();
     if (!map)
         return false;
 
@@ -86,7 +77,7 @@ bool MutableValue::contains(std::string_view key) const {
 }
 
 std::size_t MutableValue::count(std::string_view key) const {
-    const auto* map = get_if<MutableValueMap>();
+    const auto* map = get_map_data();
     if (!map)
         return 0;
 
@@ -95,7 +86,7 @@ std::size_t MutableValue::count(std::string_view key) const {
 }
 
 bool MutableValue::erase(std::string_view key) {
-    auto* map = get_if<MutableValueMap>();
+    auto* map = get_map_data();
     if (!map)
         return false;
 
@@ -113,52 +104,42 @@ bool MutableValue::erase(std::string_view key) {
 // ============================================================
 
 MutableValue* MutableValue::get(std::size_t index) {
-    auto* vec = get_if<MutableValueVector>();
+    auto* vec = get_vector_data();
     if (!vec || index >= vec->size())
         return nullptr;
 
-    return (*vec)[index].get();
+    return &(*vec)[index];
 }
 
 const MutableValue* MutableValue::get(std::size_t index) const {
-    const auto* vec = get_if<MutableValueVector>();
+    const auto* vec = get_vector_data();
     if (!vec || index >= vec->size())
         return nullptr;
 
-    return (*vec)[index].get();
+    return &(*vec)[index];
 }
 
 void MutableValue::set(std::size_t index, MutableValue value) {
-    // Ensure we're a vector
-    if (!is_vector()) {
-        data = MutableValueVector{};
-    }
-
-    auto& vec = as<MutableValueVector>();
+    auto& vec = ensure_vector();
 
     // Extend vector with nulls if needed
     while (vec.size() <= index) {
-        vec.push_back(std::make_unique<MutableValue>());
+        vec.emplace_back();  // Default construct (null)
     }
 
-    vec[index] = std::make_unique<MutableValue>(std::move(value));
+    vec[index] = std::move(value);
 }
 
 void MutableValue::push_back(MutableValue value) {
-    // Ensure we're a vector
-    if (!is_vector()) {
-        data = MutableValueVector{};
-    }
-
-    auto& vec = as<MutableValueVector>();
-    vec.push_back(std::make_unique<MutableValue>(std::move(value)));
+    auto& vec = ensure_vector();
+    vec.push_back(std::move(value));
 }
 
 std::size_t MutableValue::size() const {
-    if (const auto* vec = get_if<MutableValueVector>()) {
+    if (const auto* vec = get_vector_data()) {
         return vec->size();
     }
-    if (const auto* map = get_if<MutableValueMap>()) {
+    if (const auto* map = get_map_data()) {
         return map->size();
     }
     return 0;
@@ -223,11 +204,7 @@ void MutableValue::set_at_path(PathView path, MutableValue value) {
 
         if (auto* key = std::get_if<std::string_view>(&elem)) {
             // Need a map at this level
-            if (!current->is_map()) {
-                current->data = MutableValueMap{};
-            }
-
-            auto& map = current->as<MutableValueMap>();
+            auto& map = current->ensure_map();
             // Heterogeneous lookup - no allocation for find
             auto it = map.find(*key);
 
@@ -236,42 +213,35 @@ void MutableValue::set_at_path(PathView path, MutableValue value) {
                 std::string key_str{*key};
                 // Create intermediate node based on next element type
                 if (std::holds_alternative<std::string_view>(next_elem)) {
-                    auto [new_it, _] =
-                        map.emplace(std::move(key_str), std::make_unique<MutableValue>(MutableValueMap{}));
-                    current = new_it->second.get();
+                    auto [new_it, _] = map.emplace(std::move(key_str), MutableValue{MutableValueMap{}});
+                    current = &new_it.value();
                 } else {
-                    auto [new_it, _] =
-                        map.emplace(std::move(key_str), std::make_unique<MutableValue>(MutableValueVector{}));
-                    current = new_it->second.get();
+                    auto [new_it, _] = map.emplace(std::move(key_str), MutableValue{MutableValueVector{}});
+                    current = &new_it.value();
                 }
             } else {
-                current = it->second.get();
+                current = &it.value();
             }
         } else {
             // Need a vector at this level
             auto idx = std::get<std::size_t>(elem);
-
-            if (!current->is_vector()) {
-                current->data = MutableValueVector{};
-            }
-
-            auto& vec = current->as<MutableValueVector>();
+            auto& vec = current->ensure_vector();
 
             // Extend with nulls if needed
             while (vec.size() <= idx) {
-                vec.push_back(std::make_unique<MutableValue>());
+                vec.emplace_back();  // Default construct (null)
             }
 
             // Initialize element based on next element type
-            if (!vec[idx] || vec[idx]->is_null()) {
+            if (vec[idx].is_null()) {
                 if (std::holds_alternative<std::string_view>(next_elem)) {
-                    vec[idx] = std::make_unique<MutableValue>(MutableValueMap{});
+                    vec[idx] = MutableValue{MutableValueMap{}};
                 } else {
-                    vec[idx] = std::make_unique<MutableValue>(MutableValueVector{});
+                    vec[idx] = MutableValue{MutableValueVector{}};
                 }
             }
 
-            current = vec[idx].get();
+            current = &vec[idx];
         }
     }
 
@@ -304,9 +274,9 @@ bool MutableValue::erase_at_path(PathView path) {
         return parent->erase(*key);
     } else {
         auto idx = std::get<std::size_t>(last_elem);
-        if (auto* vec = parent->get_if<MutableValueVector>()) {
+        if (auto* vec = parent->get_vector_data()) {
             if (idx < vec->size()) {
-                (*vec)[idx] = std::make_unique<MutableValue>(); // Set to null
+                (*vec)[idx] = MutableValue{}; // Set to null
                 return true;
             }
         }
@@ -330,46 +300,50 @@ bool MutableValue::operator==(const MutableValue& other) const {
         [&other](const auto& val) -> bool {
             using T = std::decay_t<decltype(val)>;
 
-            if constexpr (std::is_same_v<T, MutableValueMap>) {
-                const auto& other_map = std::get<MutableValueMap>(other.data);
-                if (val.size() != other_map.size())
+            if constexpr (std::is_same_v<T, MutableValueMapPtr>) {
+                const auto& other_map_ptr = std::get<MutableValueMapPtr>(other.data);
+                // Handle null pointers
+                if (!val && !other_map_ptr) return true;
+                if (!val || !other_map_ptr) return false;
+                
+                const auto& this_map = *val;
+                const auto& other_map = *other_map_ptr;
+                if (this_map.size() != other_map.size())
                     return false;
 
-                for (const auto& [k, v] : val) {
+                for (const auto& [k, v] : this_map) {
                     auto it = other_map.find(k);
                     if (it == other_map.end())
                         return false;
-                    if (!v && !it->second)
-                        continue;
-                    if (!v || !it->second)
-                        return false;
-                    if (*v != *it->second)
+                    if (v != it->second)
                         return false;
                 }
                 return true;
-            } else if constexpr (std::is_same_v<T, MutableValueVector>) {
-                const auto& other_vec = std::get<MutableValueVector>(other.data);
-                if (val.size() != other_vec.size())
+            } else if constexpr (std::is_same_v<T, MutableValueVectorPtr>) {
+                const auto& other_vec_ptr = std::get<MutableValueVectorPtr>(other.data);
+                // Handle null pointers
+                if (!val && !other_vec_ptr) return true;
+                if (!val || !other_vec_ptr) return false;
+                
+                const auto& this_vec = *val;
+                const auto& other_vec = *other_vec_ptr;
+                if (this_vec.size() != other_vec.size())
                     return false;
 
-                for (std::size_t i = 0; i < val.size(); ++i) {
-                    if (!val[i] && !other_vec[i])
-                        continue;
-                    if (!val[i] || !other_vec[i])
-                        return false;
-                    if (*val[i] != *other_vec[i])
+                for (std::size_t i = 0; i < this_vec.size(); ++i) {
+                    if (this_vec[i] != other_vec[i])
                         return false;
                 }
                 return true;
-            } else if constexpr (std::is_same_v<T, MutableBoxedMat3>) {
-                const auto& other_box = std::get<MutableBoxedMat3>(other.data);
+            } else if constexpr (std::is_same_v<T, MutableMat3Ptr>) {
+                const auto& other_box = std::get<MutableMat3Ptr>(other.data);
                 if (!val && !other_box)
                     return true;
                 if (!val || !other_box)
                     return false;
                 return *val == *other_box;
-            } else if constexpr (std::is_same_v<T, MutableBoxedMat4x3>) {
-                const auto& other_box = std::get<MutableBoxedMat4x3>(other.data);
+            } else if constexpr (std::is_same_v<T, MutableMat4x3Ptr>) {
+                const auto& other_box = std::get<MutableMat4x3Ptr>(other.data);
                 if (!val && !other_box)
                     return true;
                 if (!val || !other_box)
@@ -391,44 +365,38 @@ MutableValue MutableValue::clone() const {
         [](const auto& val) -> MutableValue {
             using T = std::decay_t<decltype(val)>;
 
-            if constexpr (std::is_same_v<T, MutableValueMap>) {
+            if constexpr (std::is_same_v<T, MutableValueMapPtr>) {
+                if (!val) return MutableValue{MutableValueMap{}};
                 MutableValueMap new_map;
-                for (const auto& [k, v] : val) {
-                    if (v) {
-                        new_map[k] = std::make_unique<MutableValue>(v->clone());
-                    } else {
-                        new_map[k] = nullptr;
-                    }
+                for (const auto& [k, v] : *val) {
+                    new_map.emplace(k, v.clone());
                 }
                 return MutableValue{std::move(new_map)};
-            } else if constexpr (std::is_same_v<T, MutableValueVector>) {
+            } else if constexpr (std::is_same_v<T, MutableValueVectorPtr>) {
+                if (!val) return MutableValue{MutableValueVector{}};
                 MutableValueVector new_vec;
-                new_vec.reserve(val.size());
-                for (const auto& v : val) {
-                    if (v) {
-                        new_vec.push_back(std::make_unique<MutableValue>(v->clone()));
-                    } else {
-                        new_vec.push_back(nullptr);
-                    }
+                new_vec.reserve(val->size());
+                for (const auto& v : *val) {
+                    new_vec.push_back(v.clone());
                 }
                 return MutableValue{std::move(new_vec)};
-            } else if constexpr (std::is_same_v<T, MutableBoxedMat3>) {
+            } else if constexpr (std::is_same_v<T, MutableMat3Ptr>) {
                 // Clone boxed Mat3 - dereference and re-box
                 if (val) {
                     return MutableValue{*val};
                 }
                 // Edge case: null boxed value (shouldn't happen, but handle gracefully)
                 MutableValue result;
-                result.data = MutableBoxedMat3{nullptr};
+                result.data = MutableMat3Ptr{nullptr};
                 return result;
-            } else if constexpr (std::is_same_v<T, MutableBoxedMat4x3>) {
+            } else if constexpr (std::is_same_v<T, MutableMat4x3Ptr>) {
                 // Clone boxed Mat4x3 - dereference and re-box
                 if (val) {
                     return MutableValue{*val};
                 }
                 // Edge case: null boxed value (shouldn't happen, but handle gracefully)
                 MutableValue result;
-                result.data = MutableBoxedMat4x3{nullptr};
+                result.data = MutableMat4x3Ptr{nullptr};
                 return result;
             } else if constexpr (std::is_same_v<T, std::monostate>) {
                 return MutableValue{};
@@ -462,7 +430,7 @@ std::string MutableValue::to_string() const {
                 std::ostringstream oss;
                 oss << "[" << val[0] << ", " << val[1] << ", " << val[2] << ", " << val[3] << "]";
                 return oss.str();
-            } else if constexpr (std::is_same_v<T, MutableBoxedMat3>) {
+            } else if constexpr (std::is_same_v<T, MutableMat3Ptr>) {
                 if (!val)
                     return "null";
                 std::ostringstream oss;
@@ -474,7 +442,7 @@ std::string MutableValue::to_string() const {
                 }
                 oss << "]";
                 return oss.str();
-            } else if constexpr (std::is_same_v<T, MutableBoxedMat4x3>) {
+            } else if constexpr (std::is_same_v<T, MutableMat4x3Ptr>) {
                 if (!val)
                     return "null";
                 std::ostringstream oss;
@@ -486,36 +454,29 @@ std::string MutableValue::to_string() const {
                 }
                 oss << "]";
                 return oss.str();
-            } else if constexpr (std::is_same_v<T, MutableValueMap>) {
+            } else if constexpr (std::is_same_v<T, MutableValueMapPtr>) {
+                if (!val) return "{}";
                 std::ostringstream oss;
                 oss << "{";
                 bool first = true;
-                for (const auto& [k, v] : val) {
+                for (const auto& [k, v] : *val) {
                     if (!first)
                         oss << ", ";
                     first = false;
-                    oss << "\"" << k << "\": ";
-                    if (v) {
-                        oss << v->to_string();
-                    } else {
-                        oss << "null";
-                    }
+                    oss << "\"" << k << "\": " << v.to_string();
                 }
                 oss << "}";
                 return oss.str();
-            } else if constexpr (std::is_same_v<T, MutableValueVector>) {
+            } else if constexpr (std::is_same_v<T, MutableValueVectorPtr>) {
+                if (!val) return "[]";
                 std::ostringstream oss;
                 oss << "[";
                 bool first = true;
-                for (const auto& v : val) {
+                for (const auto& v : *val) {
                     if (!first)
                         oss << ", ";
                     first = false;
-                    if (v) {
-                        oss << v->to_string();
-                    } else {
-                        oss << "null";
-                    }
+                    oss << v.to_string();
                 }
                 oss << "]";
                 return oss.str();
