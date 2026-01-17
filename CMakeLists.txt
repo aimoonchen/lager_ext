@@ -354,6 +354,16 @@ if(LAGER_EXT_BUILD_EXAMPLES AND LAGER_EXT_IS_TOP_LEVEL)
 endif()
 
 # ============================================================
+# Build Tests (only if explicitly enabled)
+# Catch2 is fetched only when tests are enabled
+# ============================================================
+
+if(LAGER_EXT_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(test)
+endif()
+
+# ============================================================
 # Installation
 # ============================================================
 
