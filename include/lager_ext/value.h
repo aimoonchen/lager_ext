@@ -225,7 +225,7 @@ struct ImmerValue;
 // Estimated size: 16 bytes (for derive_bl calculation)
 template <>
 struct size_traits<ImmerValue> {
-    static constexpr std::size_t value = 16;
+    static constexpr std::size_t value = 24;
 };
 
 /// ValueBox wraps ImmerValue in an immer::box for efficient sharing
@@ -741,6 +741,12 @@ struct ImmerValue {
 
     using size_type = std::size_t;
 };
+
+// template <std::size_t>
+// struct print_size;
+// static_assert(sizeof(print_size<sizeof(ImmerValue)>), "show size");
+
+static_assert(sizeof(ImmerValue) == size_traits<ImmerValue>::value);
 
 // ============================================================
 // ImmerValue comparison operators (C++20)
